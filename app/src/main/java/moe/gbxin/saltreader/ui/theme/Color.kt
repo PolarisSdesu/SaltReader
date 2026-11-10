@@ -1,0 +1,85 @@
+package moe.gbxin.saltreader.ui.theme
+
+import androidx.compose.ui.graphics.Color
+
+// Generated from Material Color Utilities with seed #0061A4 (Material blue).
+// Full light scheme.
+val BlueLightPrimary = Color(0xFF0061A4)
+val BlueLightOnPrimary = Color(0xFFFFFFFF)
+val BlueLightPrimaryContainer = Color(0xFFD1E4FF)
+val BlueLightOnPrimaryContainer = Color(0xFF001D36)
+val BlueLightSecondary = Color(0xFF535F70)
+val BlueLightOnSecondary = Color(0xFFFFFFFF)
+val BlueLightSecondaryContainer = Color(0xFFD7E3F8)
+val BlueLightOnSecondaryContainer = Color(0xFF101C2B)
+val BlueLightTertiary = Color(0xFF6B5778)
+val BlueLightOnTertiary = Color(0xFFFFFFFF)
+val BlueLightTertiaryContainer = Color(0xFFF3DAFF)
+val BlueLightOnTertiaryContainer = Color(0xFF251431)
+val BlueLightError = Color(0xFFBA1A1A)
+val BlueLightOnError = Color(0xFFFFFFFF)
+val BlueLightErrorContainer = Color(0xFFFFDAD6)
+val BlueLightOnErrorContainer = Color(0xFF410002)
+val BlueLightBackground = Color(0xFFFDFCFF)
+val BlueLightOnBackground = Color(0xFF1A1C1E)
+val BlueLightSurface = Color(0xFFFDFCFF)
+val BlueLightOnSurface = Color(0xFF1A1C1E)
+val BlueLightSurfaceVariant = Color(0xFFDFE2EB)
+val BlueLightOnSurfaceVariant = Color(0xFF43474E)
+val BlueLightOutline = Color(0xFF73777F)
+val BlueLightOutlineVariant = Color(0xFFC3C6CF)
+val BlueLightInverseSurface = Color(0xFF2F3033)
+val BlueLightInverseOnSurface = Color(0xFFF1F0F4)
+val BlueLightInversePrimary = Color(0xFF9FCAFF)
+val BlueLightSurfaceDim = Color(0xFFDADADD)
+val BlueLightSurfaceBright = Color(0xFFFAF9FC)
+val BlueLightSurfaceContainerLowest = Color(0xFFFFFFFF)
+val BlueLightSurfaceContainerLow = Color(0xFFF4F3F7)
+val BlueLightSurfaceContainer = Color(0xFFEEEDF1)
+val BlueLightSurfaceContainerHigh = Color(0xFFE8E8EB)
+val BlueLightSurfaceContainerHighest = Color(0xFFE2E2E6)
+
+// Full dark scheme.
+val BlueDarkPrimary = Color(0xFF9FCAFF)
+val BlueDarkOnPrimary = Color(0xFF003258)
+val BlueDarkPrimaryContainer = Color(0xFF00497D)
+val BlueDarkOnPrimaryContainer = Color(0xFFD1E4FF)
+val BlueDarkSecondary = Color(0xFFBBC7DB)
+val BlueDarkOnSecondary = Color(0xFF253140)
+val BlueDarkSecondaryContainer = Color(0xFF3B4858)
+val BlueDarkOnSecondaryContainer = Color(0xFFD7E3F8)
+val BlueDarkTertiary = Color(0xFFD7BEE4)
+val BlueDarkOnTertiary = Color(0xFF3B2948)
+val BlueDarkTertiaryContainer = Color(0xFF523F5F)
+val BlueDarkOnTertiaryContainer = Color(0xFFF3DAFF)
+val BlueDarkError = Color(0xFFFFB4AB)
+val BlueDarkOnError = Color(0xFF690005)
+val BlueDarkErrorContainer = Color(0xFF93000A)
+val BlueDarkOnErrorContainer = Color(0xFFFFB4AB)
+val BlueDarkBackground = Color(0xFF1A1C1E)
+val BlueDarkOnBackground = Color(0xFFE2E2E6)
+val BlueDarkSurface = Color(0xFF1A1C1E)
+val BlueDarkOnSurface = Color(0xFFE2E2E6)
+val BlueDarkSurfaceVariant = Color(0xFF43474E)
+val BlueDarkOnSurfaceVariant = Color(0xFFC3C6CF)
+val BlueDarkOutline = Color(0xFF8D9199)
+val BlueDarkOutlineVariant = Color(0xFF43474E)
+val BlueDarkInverseSurface = Color(0xFFE2E2E6)
+val BlueDarkInverseOnSurface = Color(0xFF2F3033)
+val BlueDarkInversePrimary = Color(0xFF0061A4)
+val BlueDarkSurfaceDim = Color(0xFF121316)
+val BlueDarkSurfaceBright = Color(0xFF38393C)
+val BlueDarkSurfaceContainerLowest = Color(0xFF0D0E11)
+val BlueDarkSurfaceContainerLow = Color(0xFF1A1C1E)
+val BlueDarkSurfaceContainer = Color(0xFF1E2022)
+val BlueDarkSurfaceContainerHigh = Color(0xFF282A2D)
+val BlueDarkSurfaceContainerHighest = Color(0xFF333538)
+
+val CoverAccents = listOf(
+    Color(0xFF0061A4),
+    Color(0xFF4E6077),
+    Color(0xFF6B5778),
+    Color(0xFF48626A),
+    Color(0xFF6C5D4F),
+    Color(0xFF3F5F8A),
+)

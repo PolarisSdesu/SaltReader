@@ -1,0 +1,45 @@
+name: Android CI
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build debug APK and run unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle with build cache
+        uses: gradle/actions/setup-gradle@v4
+
+      # No keystore.properties is present on CI: release signing is optional and
+      # only assembleDebug + JVM unit tests are exercised here.
+      - name: Build and test
+        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest --no-daemon --stacktrace
+
+      - name: Upload unit test reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-reports
+          path: app/build/reports/tests/
+          if-no-files-found: ignore
