@@ -1,7 +1,6 @@
 package moe.gbxin.saltreader.data
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -10,66 +9,138 @@ import android.text.Html
 import android.text.Layout
 import android.text.StaticLayout
 import android.text.TextPaint
+import io.documentnode.epub4j.domain.Book
 import io.documentnode.epub4j.domain.Resource
 import io.documentnode.epub4j.domain.Resources
 import io.documentnode.epub4j.epub.EpubReader
 import org.rr.mobi4java.MobiReader
 import java.io.BufferedOutputStream
-import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.IOException
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
 /**
- * EPUB / MOBI -> CBZ conversion at import time.
+ * EPUB / MOBI -> CBZ 的派生缓存转换（只在索引时执行一次）。
  *
- * The reader only deals with fixed page images, so e-books are flattened once
- * instead of adding a second rendering pipeline to the reading UI.
+ * 阅读器只认固定页图片，所以电子书在这里拍平；转换结果只是缓存，不复制用户原文件。
+ * 转换过程全程流式写 Zip：图片页出现一页写一页，文本页排版一页写一页，
+ * 不再把所有页的 JPEG ByteArray 同时驻留内存。
  */
 object FormatConverters {
+    private const val CHUNK_CHARS = 20_000
+
     fun toCbz(input: File, output: File, extension: String): Int {
-        output.parentFile?.mkdirs()
-        return when (extension) {
-            "epub" -> epubToCbz(input, output)
-            "mobi", "azw", "azw3" -> mobiToCbz(input, output)
-            else -> 0
+        val ext = extension.lowercase()
+        if (ext !in setOf("epub", "mobi", "azw", "azw3")) return 0
+        val target = output.absoluteFile
+        val dir = target.parentFile ?: throw IOException("缓存路径无效：$output")
+        if (!dir.exists() && !dir.mkdirs()) throw IOException("无法创建缓存目录：$dir")
+        val tmp = File(dir, target.name + ".tmp")
+        val count = try {
+            when (ext) {
+                "epub" -> epubToCbz(input, tmp)
+                else -> mobiToCbz(input, tmp)
+            }
+        } catch (t: Throwable) {
+            tmp.delete()
+            throw t
         }
+        if (count <= 0) {
+            tmp.delete()
+            return 0
+        }
+        if (!tmp.renameTo(target)) {
+            tmp.delete()
+            throw IOException("无法写入缓存文件：$target")
+        }
+        return count
     }
 
+    /** 第一遍只统计图片页，决定走「图片页」还是「文字排版」分支。 */
     private fun epubToCbz(input: File, output: File): Int {
         val book = FileInputStream(input).use { EpubReader().readEpub(it) }
         val spine = book.spine.spineReferences
-        val images = mutableListOf<ByteArray>()
-        val text = StringBuilder()
+        var imagePages = 0
         for (reference in spine) {
             val resource = reference.resource ?: continue
             val html = runCatching { resource.data.toString(Charsets.UTF_8) }.getOrNull() ?: continue
-            val sources = Regex("""<img[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE).findAll(html).map { it.groupValues[1] }.toList()
-            if (sources.isEmpty()) {
-                text.append(Html.fromHtml(html, Html.FROM_HTML_MODE_LEGACY).toString()).append('\n')
-            } else {
-                for (src in sources) {
-                    val image = resolveImage(book.resources, resource.href, src) ?: continue
-                    if (image.isNotEmpty()) images += image
-                }
+            val sources = imageSources(html)
+            if (sources.isEmpty()) continue
+            for (src in sources) {
+                if (resolveImage(book.resources, resource.href, src) != null) imagePages++
             }
         }
-        val pages = if (images.size >= 2 && images.size >= spine.size / 2) {
-            images
-        } else {
-            TextPageWriter.render(text.toString(), book.coverImage?.data, book.title)
+        val useImages = imagePages >= 2 && imagePages >= spine.size / 2
+        return ZipOutputStream(BufferedOutputStream(FileOutputStream(output), 64 * 1024)).use { zip ->
+            if (useImages) writeEpubImages(zip, book) else writeEpubText(zip, book)
         }
-        return writeCbz(output, pages)
+    }
+
+    private fun writeEpubImages(zip: ZipOutputStream, book: Book): Int {
+        var pages = 0
+        for (reference in book.spine.spineReferences) {
+            val resource = reference.resource ?: continue
+            val html = runCatching { resource.data.toString(Charsets.UTF_8) }.getOrNull() ?: continue
+            for (src in imageSources(html)) {
+                val image = resolveImage(book.resources, resource.href, src) ?: continue
+                if (image.isEmpty()) continue
+                pages++
+                if (pages > PageIndexing.MAX_ZIP_ENTRIES) throw IOException("电子书页数超出上限")
+                zip.putNextEntry(ZipEntry("%04d.%s".format(pages, imageExtension(image))))
+                zip.write(image)
+                zip.closeEntry()
+            }
+        }
+        return pages
+    }
+
+    private fun writeEpubText(zip: ZipOutputStream, book: Book): Int {
+        val writer = TextPageWriter(zip)
+        try {
+            writer.writeCover(book.coverImage?.data)
+            val pending = StringBuilder()
+            for (reference in book.spine.spineReferences) {
+                val resource = reference.resource ?: continue
+                val html = runCatching { resource.data.toString(Charsets.UTF_8) }.getOrNull() ?: continue
+                if (imageSources(html).isNotEmpty()) continue
+                pending.append(Html.fromHtml(html, Html.FROM_HTML_MODE_LEGACY).toString()).append('\n')
+                while (pending.length >= CHUNK_CHARS) {
+                    val cut = findChunkCut(pending, CHUNK_CHARS)
+                    writer.append(pending.substring(0, cut))
+                    pending.delete(0, cut)
+                }
+            }
+            writer.append(pending.toString())
+            if (writer.pageCount == 0) writer.append(book.title.orEmpty())
+            return writer.finish()
+        } finally {
+            writer.recycle()
+        }
     }
 
     private fun mobiToCbz(input: File, output: File): Int {
         val document = MobiReader().read(input)
-        val text = Html.fromHtml(document.textContent, Html.FROM_HTML_MODE_LEGACY).toString()
-        val pages = TextPageWriter.render(text, document.cover, document.fullName)
-        return writeCbz(output, pages)
+        val text = Html.fromHtml(document.textContent ?: "", Html.FROM_HTML_MODE_LEGACY).toString()
+        return ZipOutputStream(BufferedOutputStream(FileOutputStream(output), 64 * 1024)).use { zip ->
+            val writer = TextPageWriter(zip)
+            try {
+                writer.writeCover(document.cover)
+                writer.append(text.ifBlank { document.fullName.orEmpty() })
+                writer.finish()
+            } finally {
+                writer.recycle()
+            }
+        }
     }
+
+    private fun imageSources(html: String): List<String> =
+        Regex("""<img[^>]+src=["']([^"']+)["']""", RegexOption.IGNORE_CASE)
+            .findAll(html)
+            .map { it.groupValues[1] }
+            .toList()
 
     private fun resolveImage(resources: Resources, baseHref: String, rawSrc: String): ByteArray? {
         val src = rawSrc.substringBefore('#').substringBefore('?')
@@ -77,7 +148,9 @@ object FormatConverters {
         val combined = normalize(if (baseDir.isEmpty()) src else "$baseDir/$src")
         val resource: Resource? = resources.getByHref(combined)
             ?: resources.getByHref(src)
-            ?: resources.all.firstOrNull { it.href.endsWith(src) || it.href.substringAfterLast('/') == src.substringAfterLast('/') }
+            ?: resources.all.firstOrNull {
+                it.href.endsWith(src) || it.href.substringAfterLast('/') == src.substringAfterLast('/')
+            }
         return runCatching { resource?.data?.takeIf { it.isNotEmpty() } }.getOrNull()
     }
 
@@ -93,17 +166,12 @@ object FormatConverters {
         return out.joinToString("/")
     }
 
-    private fun writeCbz(output: File, pages: List<ByteArray>): Int {
-        if (pages.isEmpty()) return 0
-        ZipOutputStream(BufferedOutputStream(FileOutputStream(output))).use { zip ->
-            pages.forEachIndexed { index, bytes ->
-                val ext = imageExtension(bytes)
-                zip.putNextEntry(ZipEntry("%04d.%s".format(index + 1, ext)))
-                zip.write(bytes)
-                zip.closeEntry()
-            }
+    private fun findChunkCut(text: StringBuilder, target: Int): Int {
+        val floor = target * 3 / 5
+        for (index in target downTo floor) {
+            if (text[index - 1] == '\n') return index
         }
-        return pages.size
+        return target
     }
 
     private fun imageExtension(bytes: ByteArray): String = when {
@@ -115,43 +183,61 @@ object FormatConverters {
     }
 }
 
-private object TextPageWriter {
-    private const val WIDTH = 1080
-    private const val HEIGHT = 1600
-    private const val MARGIN = 90
-    private const val CONTENT_WIDTH = WIDTH - MARGIN * 2
-    private const val CONTENT_HEIGHT = HEIGHT - MARGIN * 2
-    private const val TEXT_SIZE = 36f
-    private const val LINE_SPACING = 12f
+/**
+ * 文字排版写入器：复用一张页面位图和一个 StaticLayout 尺寸，
+ * 按块排版、逐页压缩进 Zip，页数连续。
+ */
+private class TextPageWriter(private val zip: ZipOutputStream) {
+    private var pages = 0
+    private var bitmap: Bitmap? = null
+    private var canvas: Canvas? = null
+    private val paint: TextPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(26, 28, 30)
+        textSize = TEXT_SIZE
+        typeface = Typeface.DEFAULT
+    }
+    private val pageNumberPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = Color.rgb(115, 119, 127)
+        textSize = 24f
+        textAlign = Paint.Align.RIGHT
+    }
 
-    fun render(text: String, cover: ByteArray?, title: String?): List<ByteArray> {
-        val pages = mutableListOf<ByteArray>()
-        cover?.let { bytes ->
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.let { bitmap ->
-                pages += bitmapToJpeg(bitmap)
-                bitmap.recycle()
-            }
+    val pageCount: Int get() = pages
+
+    fun writeCover(bytes: ByteArray?) {
+        if (bytes == null || bytes.isEmpty()) return
+        val cover = decodePage(bytes, WIDTH) ?: return
+        try {
+            writeBitmap(cover)
+        } finally {
+            cover.recycle()
         }
-        val safeText = text.trim().ifBlank { title.orEmpty() }
-        if (safeText.isNotBlank()) {
-            pages += textToJpegPages(safeText)
-        }
+    }
+
+    fun append(text: String) {
+        if (text.isBlank()) return
+        renderChunk(text)
+    }
+
+    fun finish(): Int {
+        recycle()
         return pages
     }
 
-    private fun textToJpegPages(text: String): List<ByteArray> {
-        val paint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-            color = Color.rgb(26, 28, 30)
-            textSize = TEXT_SIZE
-            typeface = Typeface.DEFAULT
-        }
+    fun recycle() {
+        runCatching { bitmap?.recycle() }
+        bitmap = null
+        canvas = null
+    }
+
+    private fun renderChunk(text: String) {
+        if (text.isBlank()) return
         val layout = StaticLayout.Builder.obtain(text, 0, text.length, paint, CONTENT_WIDTH)
             .setAlignment(Layout.Alignment.ALIGN_NORMAL)
             .setLineSpacing(LINE_SPACING, 1f)
             .setIncludePad(false)
             .build()
-        if (layout.lineCount == 0) return emptyList()
-        val pages = mutableListOf<ByteArray>()
+        if (layout.lineCount == 0) return
         var startLine = 0
         while (startLine < layout.lineCount) {
             var endLine = startLine
@@ -160,30 +246,43 @@ private object TextPageWriter {
             ) {
                 endLine++
             }
-            val bitmap = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
-            val canvas = Canvas(bitmap)
-            canvas.drawColor(Color.rgb(253, 252, 255))
-            canvas.save()
-            canvas.clipRect(MARGIN, MARGIN, WIDTH - MARGIN, HEIGHT - MARGIN - 24)
-            canvas.translate(MARGIN.toFloat(), (MARGIN - layout.getLineTop(startLine)).toFloat())
-            layout.draw(canvas)
-            canvas.restore()
-            val pagePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                color = Color.rgb(115, 119, 127)
-                textSize = 24f
-                textAlign = Paint.Align.RIGHT
-            }
-            canvas.drawText("${pages.size + 1}", (WIDTH - MARGIN).toFloat(), (HEIGHT - 42).toFloat(), pagePaint)
-            pages += bitmapToJpeg(bitmap)
-            bitmap.recycle()
+            val page = ensurePageBitmap()
+            val target = canvas ?: return
+            target.drawColor(Color.rgb(253, 252, 255))
+            target.save()
+            target.clipRect(MARGIN, MARGIN, WIDTH - MARGIN, HEIGHT - MARGIN - 24)
+            target.translate(MARGIN.toFloat(), (MARGIN - layout.getLineTop(startLine)).toFloat())
+            layout.draw(target)
+            target.restore()
+            target.drawText("${pages + 1}", (WIDTH - MARGIN).toFloat(), (HEIGHT - 42).toFloat(), pageNumberPaint)
+            writeBitmap(page)
             startLine = endLine + 1
         }
-        return pages
     }
 
-    private fun bitmapToJpeg(bitmap: Bitmap): ByteArray {
-        val output = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 88, output)
-        return output.toByteArray()
+    private fun ensurePageBitmap(): Bitmap {
+        bitmap?.let { return it }
+        val created = Bitmap.createBitmap(WIDTH, HEIGHT, Bitmap.Config.ARGB_8888)
+        bitmap = created
+        canvas = Canvas(created)
+        return created
+    }
+
+    private fun writeBitmap(bitmap: Bitmap) {
+        pages++
+        if (pages > PageIndexing.MAX_ZIP_ENTRIES) throw IOException("电子书页数超出上限")
+        zip.putNextEntry(ZipEntry("%04d.jpg".format(pages)))
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 88, zip)
+        zip.closeEntry()
+    }
+
+    private companion object {
+        const val WIDTH = 1080
+        const val HEIGHT = 1600
+        const val MARGIN = 90
+        const val CONTENT_WIDTH = WIDTH - MARGIN * 2
+        const val CONTENT_HEIGHT = HEIGHT - MARGIN * 2
+        const val TEXT_SIZE = 36f
+        const val LINE_SPACING = 12f
     }
 }

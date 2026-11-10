@@ -3,23 +3,13 @@
   Legacy backup rules for API 30 and below (android:fullBackupContent).
   Product decision: ONLY user settings are ever backed up.
 
-  The library itself lives in folders the user picked through SAF; it is never
-  copied into app storage and must never be uploaded or restored. App-private
-  derived data (covers, flattened EPUB/MOBI caches, legacy library copies) is
-  reproducible from the user's own files and is therefore excluded as well.
+  The comic library lives in folders the user picked through SAF; it is never
+  copied into app storage. Listing a single include makes this a whitelist:
+  everything else (covers, e-book caches, the library index, legacy copies)
+  is excluded implicitly, which is also what Android's FullBackupContent lint
+  rule expects.
 -->
 <full-backup-content>
     <!-- The only data that survives a backup/restore. -->
     <include domain="sharedpref" path="saltreader_settings.xml" />
-
-    <!-- Old library index prefs; books.json is authoritative now, do not restore. -->
-    <exclude domain="sharedpref" path="saltreader_library.xml" />
-
-    <!-- Library copies / covers / e-book caches under filesDir: never backed up. -->
-    <exclude domain="file" path="library/" />
-    <exclude domain="file" path="." />
-
-    <!-- No databases, no external (scoped-storage) files. -->
-    <exclude domain="database" path="." />
-    <exclude domain="external" path="." />
 </full-backup-content>

@@ -2,15 +2,17 @@ package moe.gbxin.saltreader.data
 
 import android.content.Context
 import android.content.Intent
-import android.os.Environment
+import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.DocumentsContract
-import android.provider.OpenableColumns
+import android.util.Log
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -22,22 +24,37 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
-import java.io.FileOutputStream
-import androidx.documentfile.provider.DocumentFile
 import java.util.UUID
+import kotlin.coroutines.coroutineContext
 import kotlin.math.max
 
+/**
+ * 书库仓库：所有书籍都通过持久化 SAF tree URI 就地索引，应用私有目录只放派生缓存
+ * （封面、电子书拍平后的 CBZ、ZIP 随机读缓存、旧版本副本）。
+ *
+ * 线程约定：
+ * - 公开的 suspend 方法内部切到 Dispatchers.IO，并保证锁的临界区尽量短；
+ * - `pageSource()`/`roots()` 同步返回，不做 I/O（roots 走内存缓存）；
+ * - `updateProgress()`/`markOpened()` 只改内存并调度防抖落盘。
+ */
 class LibraryRepository(private val context: Context) {
-    private val bookExtensions = setOf("cbz", "zip", "pdf", "epub", "mobi", "azw", "azw3")
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val mutex = Mutex()
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; encodeDefaults = true }
 
-    val root: File = File(context.filesDir, "library")
-    private val contentDir = File(root, "content")
-    private val coversDir = File(root, "covers")
-    private val booksFile = File(root, "books.json")
-    private val prefs = context.getSharedPreferences("saltreader_library", Context.MODE_PRIVATE)
+    private val libraryDir = File(context.filesDir, "library")
+    private val legacyContentDir = File(libraryDir, "content")
+    private val coversDir = File(libraryDir, "covers")
+    private val booksFile = File(libraryDir, "books.json")
+
+    /** ZIP 随机读缓存：cacheDir/books/<id>_<modifiedAt>_<size>.<ext> */
+    private val cacheRoot = File(context.cacheDir, "books")
+
+    /** EPUB/MOBI 派生缓存：cacheDir/ebooks/<id>.cbz */
+    private val ebookCacheDir = File(context.cacheDir, "ebooks")
+    private val tempCacheDir = File(context.cacheDir, "tmp")
+
+    private val rootsStore = LibraryRootsStore(context)
 
     private val _books = MutableStateFlow<List<ComicBook>>(emptyList())
     val books: StateFlow<List<ComicBook>> = _books.asStateFlow()
@@ -45,276 +62,504 @@ class LibraryRepository(private val context: Context) {
     private val _ready = MutableStateFlow(false)
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
 
-    private var persistJob: Job? = null
-    private val progressPending = mutableMapOf<String, ComicBook>()
+    /** 进度变更的合并信号：CONFLATED 保证只保留“还有未落盘变更”这一事实。 */
+    private val persistSignal = Channel<Unit>(Channel.CONFLATED)
+
+    init {
+        scope.launch { persistWorker() }
+    }
+
+    // -----------------------------------------------------------------------
+    // 启动
+    // -----------------------------------------------------------------------
 
     suspend fun initialize() = withContext(Dispatchers.IO) {
+        libraryDir.mkdirs()
+        coversDir.mkdirs()
+
+        val loaded = readBooksFromDisk()
+        // 只有旧副本缺失、或既不是 SAF 也没有 contentPath 的条目才丢弃；
+        // SAF 书籍即使当前 tree 暂不可达也保留索引。
+        val kept = loaded.filter {
+            (it.isSaf && !it.treeUri.isNullOrBlank()) || (it.isLegacyCopy && legacyFile(it).exists())
+        }
+        val keptIds = kept.mapTo(HashSet()) { it.id }
+        val dropped = loaded.filterNot { it.id in keptIds }
+
+        // 预热 roots 缓存（之后 roots() 可在任意线程同步返回）。
+        val roots = rootsStore.all()
+        if (roots.isEmpty()) migrateRoots(kept)
+
         mutex.withLock {
-            root.mkdirs()
-            contentDir.mkdirs()
-            coversDir.mkdirs()
-            val loaded = runCatching {
-                if (booksFile.exists()) json.decodeFromString<List<ComicBook>>(booksFile.readText()) else emptyList()
-            }.getOrElse {
-                runCatching { booksFile.renameTo(File(root, "books.corrupt.json")) }
-                emptyList()
+            _books.value = sortBooks(kept)
+            if (kept != loaded) {
+                try {
+                    persistBooksLocked(_books.value)
+                } catch (e: Exception) {
+                    Log.e(TAG, "初始化时写入 books.json 失败", e)
+                }
             }
-            val cleaned = loaded.filter {
-                it.sourcePath?.let { path -> File(path).exists() } ?: File(root, it.contentPath).exists()
+        }
+
+        ensureCovers(kept)
+        dropped.forEach { removeDerivedFiles(it) }
+        pruneCaches(_books.value)
+        _ready.value = true
+        Unit
+    }
+
+    private fun readBooksFromDisk(): List<ComicBook> = runCatching {
+        if (!booksFile.exists()) emptyList()
+        else json.decodeFromString<List<ComicBook>>(booksFile.readText(Charsets.UTF_8))
+    }.getOrElse { error ->
+        Log.e(TAG, "books.json 解析失败，已备份为 books.corrupt.json", error)
+        runCatching { booksFile.renameTo(File(libraryDir, "books.corrupt.json")) }
+        emptyList()
+    }
+
+    /** 老版本只持久化了裸路径；升级后从 SAF 书籍反推 root 列表并写入 roots.json。 */
+    private fun migrateRoots(books: List<ComicBook>) {
+        val derived = books.asSequence()
+            .mapNotNull { it.treeUri }
+            .distinct()
+            .map { treeUri ->
+                val name = runCatching {
+                    val uri = Uri.parse(treeUri)
+                    if (!DocumentsContract.isTreeUri(uri)) return@runCatching null
+                    SafTree(context, uri).rootName()
+                }.getOrNull()
+                LibraryRoot(treeUri, name ?: treeUri)
             }
-            _books.value = cleaned.sortedByDescending { it.lastReadAt ?: it.addedAt }
-            if (prefs.getStringSet("library_roots", emptySet()).isNullOrEmpty()) {
-                val derived = cleaned.mapNotNull { book ->
-                    book.sourcePath?.let(::File)?.parentFile?.takeIf { it.isDirectory }?.absolutePath
-                }.toSet()
-                if (derived.isNotEmpty()) prefs.edit().putStringSet("library_roots", derived).apply()
-            }
-            ensureCoversLocked(_books.value)
-            writeBooksLocked(_books.value)
-            _ready.value = true
+            .toList()
+        if (derived.isNotEmpty()) {
+            runCatching { rootsStore.save(derived) }
+                .onFailure { Log.e(TAG, "迁移 roots.json 失败", it) }
         }
     }
 
-    suspend fun importArchives(uris: List<Uri>, onProgress: (Float, String) -> Unit = { _, _ -> }): ImportReport =
-        withContext(Dispatchers.IO) {
-            mutex.withLock {
-                val imported = mutableListOf<ComicBook>()
-                val failures = mutableListOf<ImportFailure>()
-                uris.forEachIndexed { index, uri ->
-                    val name = displayName(uri) ?: "未命名漫画"
-                    onProgress(index.toFloat() / max(1, uris.size), name)
-                    runCatching { importArchiveLocked(uri, name) }
-                        .onSuccess { imported += it }
-                        .onFailure { failures += ImportFailure(name, it.message ?: "导入失败") }
-                }
-                if (imported.isNotEmpty()) {
-                    _books.update { current -> (imported + current) }
-                    writeBooksLocked(_books.value)
-                }
-                onProgress(1f, "完成")
-                ImportReport(imported, failures)
-            }
-        }
+    // -----------------------------------------------------------------------
+    // 索引 / 刷新
+    // -----------------------------------------------------------------------
 
-    suspend fun importFolder(uri: Uri): ImportReport = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            val tree = DocumentFile.fromTreeUri(context, uri) ?: return@withLock ImportReport(failures = listOf(ImportFailure("文件夹", "无法读取该文件夹")))
-            val title = tree.name?.trim()?.ifBlank { "未命名漫画" } ?: "未命名漫画"
-            runCatching { importFolderLocked(tree, title) }
-                .fold(
-                    onSuccess = { book ->
-                        _books.update { current -> listOf(book) + current }
-                        writeBooksLocked(_books.value)
-                        ImportReport(imported = listOf(book))
-                    },
-                    onFailure = { ImportReport(failures = listOf(ImportFailure(title, it.message ?: "导入失败"))) },
-                )
+    /**
+     * 就地索引一个 SAF 文件夹：不复制任何用户文件，只记录元数据并生成派生封面/缓存。
+     */
+    suspend fun importLibraryTree(
+        uri: Uri,
+        onProgress: (Float, String) -> Unit = { _, _ -> },
+    ): ImportReport = withContext(Dispatchers.IO) {
+        if (!DocumentsContract.isTreeUri(uri)) {
+            return@withContext ImportReport(failures = listOf(ImportFailure("目录", "请选择一个文件夹")))
         }
+        val tree = runCatching { SafTree(context, uri) }.getOrNull()
+            ?: return@withContext ImportReport(failures = listOf(ImportFailure("目录", "无法访问该文件夹")))
+        takePersistableReadPermission(context, uri)
+        val root = tree.rootEntry()
+            ?: return@withContext ImportReport(failures = listOf(ImportFailure("目录", "无法读取该文件夹")))
+
+        val result = try {
+            scanTree(tree, 0f..1f, onProgress)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return@withContext ImportReport(failures = listOf(ImportFailure(root.name, e.message ?: "扫描失败")))
+        }
+        if (!result.completed) {
+            return@withContext ImportReport(failures = result.failures)
+        }
+        val persisted = mergeTreeResult(result)
+        runCatching { rootsStore.add(LibraryRoot(uri.toString(), root.name)) }
+            .onFailure { Log.e(TAG, "写入 roots.json 失败", it) }
+        pruneCaches(_books.value)
+
+        val failures = result.failures.toMutableList()
+        if (!persisted) failures += ImportFailure(root.name, "索引已更新，但保存 books.json 失败")
+        if (result.scanned.isEmpty() && failures.isEmpty()) {
+            failures += ImportFailure(root.name, "没有找到 CBZ、ZIP、PDF、EPUB、MOBI 或图片文件夹")
+        }
+        ImportReport(result.scanned, failures)
     }
 
-    /**
-     * Index a SAF folder in place. The source files stay where they are;
-     * only metadata and covers live inside the app.
-     */
-    suspend fun importLibraryTree(uri: Uri, onProgress: (Float, String) -> Unit = { _, _ -> }): ImportReport =
-        withContext(Dispatchers.IO) {
-            mutex.withLock {
-                runCatching {
-                    context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                val folder = treeUriToFile(uri)
-                    ?: return@withLock ImportReport(failures = listOf(ImportFailure("目录", "无法定位该文件夹")))
-                if (!folder.isDirectory) {
-                    return@withLock ImportReport(failures = listOf(ImportFailure("目录", "该路径不是文件夹")))
-                }
-                scanExternalTreeLocked(folder, onProgress)
+    /** 增量刷新所有已添加的 root：指纹（modifiedAt + sizeBytes）未变的书不重新打开。 */
+    suspend fun refreshLibrary(
+        onProgress: (Float, String) -> Unit = { _, _ -> },
+    ): ImportReport = withContext(Dispatchers.IO) {
+        val roots = rootsStore.all()
+        if (roots.isEmpty()) {
+            return@withContext ImportReport(failures = listOf(ImportFailure("书架", "还没有可刷新的漫画目录")))
+        }
+        val failures = ArrayList<ImportFailure>()
+        for ((index, rootInfo) in roots.withIndex()) {
+            coroutineContext.ensureActive()
+            val span = 1f / roots.size
+            val start = index * span
+            onProgress(start, "正在刷新 ${rootInfo.displayName}")
+
+            val uri = runCatching { Uri.parse(rootInfo.treeUri) }.getOrNull()
+            if (uri == null || !DocumentsContract.isTreeUri(uri)) {
+                failures += ImportFailure(rootInfo.displayName, "目录地址无效")
+                continue
+            }
+            takePersistableReadPermission(context, uri)
+            val tree = runCatching { SafTree(context, uri) }.getOrNull()
+            if (tree == null) {
+                failures += ImportFailure(rootInfo.displayName, "无法访问该目录")
+                continue
+            }
+            val result = try {
+                scanTree(tree, start..(start + span), onProgress)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failures += ImportFailure(rootInfo.displayName, e.message ?: "刷新失败")
+                continue
+            }
+            failures += result.failures
+            // 目录枚举失败时整棵 tree 放弃合并，避免把仍存在的书记录删掉。
+            if (!result.completed) continue
+            if (!mergeTreeResult(result)) {
+                failures += ImportFailure(rootInfo.displayName, "保存 books.json 失败")
             }
         }
-
-    /**
-     * Index the shared storage in place. Source files are never copied into the app.
-     */
-    suspend fun scanAllStorage(onProgress: (Float, String) -> Unit = { _, _ -> }): ImportReport =
-        withContext(Dispatchers.IO) {
-            mutex.withLock { scanExternalTreeLocked(Environment.getExternalStorageDirectory(), onProgress) }
-        }
-
-    private suspend fun scanExternalTreeLocked(root: File, onProgress: (Float, String) -> Unit): ImportReport {
-        val imported = mutableListOf<ComicBook>()
-        val failures = mutableListOf<ImportFailure>()
-        val sources = mutableListOf<File>()
-
-        fun walk(dir: File, depth: Int) {
-            if (depth > 10 || !dir.isDirectory || dir.name.startsWith(".")) return
-            if (dir.name == "Android" || dir.name == "LOST.DIR") return
-            val children = runCatching { dir.listFiles()?.sortedWith(PageFileComparator) }.getOrNull() ?: return
-            val hasDirs = children.any { it.isDirectory }
-            val images = children.count { it.isComicImage() }
-            children.forEach { child ->
-                if (child.isDirectory) walk(child, depth + 1)
-                else if (child.extension.lowercase() in bookExtensions) sources += child
-            }
-            if (images >= 3 && !hasDirs) sources += dir
-        }
-        onProgress(0f, "正在扫描文件夹…")
-        runCatching { walk(root, 0) }.onFailure { failures += ImportFailure("存储", it.message ?: "无法扫描") }
-        val uniqueSources = sources.distinctBy { it.absolutePath }
-        val existing = _books.value.filter { it.sourcePath != null }
-            .associateBy { it.sourcePath!! }
-        val rootPrefix = root.absolutePath + File.separator
-        val insideRoot = _books.value.filter { book ->
-            val path = book.sourcePath ?: return@filter false
-            path == root.absolutePath || path.startsWith(rootPrefix)
-        }
-        val outsideRoot = _books.value.filterNot { it in insideRoot }
-        val scanned = mutableListOf<ComicBook>()
-        val total = uniqueSources.size
-        uniqueSources.forEachIndexed { index, source ->
-            onProgress(if (total == 0) 1f else index.toFloat() / total, "正在索引 ${source.name}")
-            val old = existing[source.absolutePath]
-            if (old != null) {
-                val updated = runCatching {
-                    val probe = old.copy(pageCount = 0)
-                    val count = pageSource(probe).use { it.pageCount }
-                    old.copy(
-                        pageCount = if (count > 0) count else old.pageCount,
-                        sizeBytes = if (source.isDirectory) folderSize(source) else source.length(),
-                    ).also { if (!coverFile(it).exists()) writeCover(it) }
-                }.getOrElse {
-                    failures += ImportFailure(source.name, "无法读取")
-                    old
-                }
-                scanned += updated
-            } else {
-                val created = runCatching { createExternalBook(source) }.getOrNull()
-                if (created != null) {
-                    writeCover(created)
-                    scanned += created
-                } else {
-                    failures += ImportFailure(source.name, "没有找到可读页面")
-                }
-            }
-        }
-        val merged = (outsideRoot + scanned).distinctBy { it.id }
-        _books.value = merged.sortedByDescending { it.lastReadAt ?: it.addedAt }
-        writeBooksLocked(_books.value)
-        prefs.edit().putStringSet(
-            "library_roots",
-            (prefs.getStringSet("library_roots", emptySet()) ?: emptySet()) + root.absolutePath,
-        ).apply()
+        pruneCaches(_books.value)
         onProgress(1f, "完成")
-        if (uniqueSources.isEmpty() && failures.isEmpty()) {
-            failures += ImportFailure("文件夹", "没有找到 CBZ、ZIP、PDF、EPUB、MOBI 或图片文件夹")
-        }
-        return ImportReport(scanned, failures)
+        ImportReport(emptyList(), failures)
     }
 
-    private fun createExternalBook(source: File): ComicBook? {
-        val path = source.absolutePath
-        val id = UUID.nameUUIDFromBytes(path.toByteArray()).toString()
-        val name = source.name.substringBeforeLast('.').ifBlank { source.name }
-            .replace('_', ' ').trim().ifBlank { "未命名漫画" }
-        val kind = when {
-            source.isDirectory -> BookKind.FOLDER
-            source.extension.lowercase() == "pdf" -> BookKind.PDF
-            else -> BookKind.ARCHIVE
+    private data class ScanCandidate(
+        val documentPath: String,
+        val name: String,
+        val kind: BookKind,
+        val sizeBytes: Long,
+        val modifiedAt: Long,
+        val uri: Uri,
+        val imageCount: Int,
+    )
+
+    private data class TreeScanResult(
+        val treeUri: String,
+        val scanned: List<ComicBook>,
+        val failures: List<ImportFailure>,
+        val completed: Boolean,
+    )
+
+    /**
+     * 扫描一棵 tree：先只在局部集合里收集候选（不持锁），最后才短临界区合并。
+     * 目录枚举出错时返回 completed=false，调用方必须放弃合并。
+     */
+    private suspend fun scanTree(
+        tree: SafTree,
+        progress: ClosedFloatingPointRange<Float>,
+        onProgress: (Float, String) -> Unit,
+    ): TreeScanResult {
+        val treeUri = tree.treeUri.toString()
+        val failures = ArrayList<ImportFailure>()
+        val root = tree.rootEntry()
+        if (root == null) {
+            return TreeScanResult(treeUri, emptyList(), listOf(ImportFailure("目录", "无法读取该文件夹")), false)
         }
-        val draft = ComicBook(
+        onProgress(progress.start, "正在扫描 ${root.name}…")
+
+        val candidates = ArrayList<ScanCandidate>()
+        if (!walkTree(tree, root, 0, candidates, failures)) {
+            if (failures.isEmpty()) failures += ImportFailure(root.name, "无法读取目录")
+            return TreeScanResult(treeUri, emptyList(), failures, false)
+        }
+
+        val existing = _books.value
+            .filter { it.isSaf && it.treeUri == treeUri }
+            .associateBy { it.documentPath ?: "" }
+
+        val scanned = ArrayList<ComicBook>(candidates.size)
+        val total = candidates.size
+        for ((index, candidate) in candidates.withIndex()) {
+            coroutineContext.ensureActive()
+            val fraction = if (total == 0) 1f else index.toFloat() / total
+            onProgress(
+                progress.start + (progress.endInclusive - progress.start) * fraction,
+                "正在索引 ${candidate.name}",
+            )
+            try {
+                val book = indexCandidate(treeUri, candidate, existing[candidate.documentPath], failures)
+                if (book != null) scanned += book
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failures += ImportFailure(candidate.name, e.message ?: "无法读取")
+            }
+        }
+        onProgress(progress.endInclusive, "完成")
+        return TreeScanResult(treeUri, scanned, failures, true)
+    }
+
+    private suspend fun walkTree(
+        tree: SafTree,
+        dir: SafTree.Entry,
+        depth: Int,
+        out: MutableList<ScanCandidate>,
+        failures: MutableList<ImportFailure>,
+    ): Boolean {
+        coroutineContext.ensureActive()
+        if (depth > MAX_SCAN_DEPTH) return true
+        val children = tree.children(dir.documentId, dir.documentPath)
+        if (children == null) {
+            failures += ImportFailure(dir.name, "无法读取目录")
+            return false
+        }
+
+        val bookFiles = ArrayList<SafTree.Entry>(4)
+        var hasSubdirectory = false
+        var imageCount = 0
+        var imageBytes = 0L
+        var imageModified = 0L
+
+        for (child in children) {
+            coroutineContext.ensureActive()
+            if (child.isDirectory) {
+                hasSubdirectory = true
+                if (!shouldSkipDirectory(child.name)) {
+                    if (!walkTree(tree, child, depth + 1, out, failures)) return false
+                }
+            } else {
+                val ext = child.name.substringAfterLast('.', "").lowercase()
+                if (ext in BOOK_EXTENSIONS) {
+                    bookFiles += child
+                } else if (PageIndexing.isComicImageName(child.name)) {
+                    imageCount++
+                    imageBytes += child.sizeBytes
+                    if (child.lastModified > imageModified) imageModified = child.lastModified
+                }
+            }
+        }
+
+        for (file in bookFiles) {
+            val ext = file.name.substringAfterLast('.', "").lowercase()
+            out += ScanCandidate(
+                documentPath = file.documentPath,
+                name = file.name,
+                kind = if (ext == "pdf") BookKind.PDF else BookKind.ARCHIVE,
+                sizeBytes = file.sizeBytes,
+                modifiedAt = file.lastModified,
+                uri = file.uri,
+                imageCount = 0,
+            )
+        }
+        // 图片文件夹书：直接子级至少 3 张图片且没有子目录（沿用旧策略）。
+        if (imageCount >= 3 && !hasSubdirectory) {
+            out += ScanCandidate(
+                documentPath = dir.documentPath,
+                name = dir.name,
+                kind = BookKind.FOLDER,
+                sizeBytes = imageBytes,
+                modifiedAt = imageModified,
+                uri = dir.uri,
+                imageCount = imageCount,
+            )
+        }
+        return true
+    }
+
+    private suspend fun indexCandidate(
+        treeUri: String,
+        candidate: ScanCandidate,
+        old: ComicBook?,
+        failures: MutableList<ImportFailure>,
+    ): ComicBook? {
+        // 增量刷新：指纹未变且封面还在，直接复用旧记录，不重新打开文件。
+        if (old != null &&
+            old.kind == candidate.kind &&
+            old.modifiedAt == candidate.modifiedAt &&
+            old.sizeBytes == candidate.sizeBytes &&
+            old.pageCount > 0
+        ) {
+            if (!coverFile(old).exists()) writeCover(old)
+            return old
+        }
+
+        val id = old?.id ?: stableBookId(treeUri, candidate.documentPath)
+        val pageCount = try {
+            countPages(candidate, id)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            failures += ImportFailure(candidate.name, e.message ?: "无法读取")
+            return old
+        }
+        if (pageCount <= 0) {
+            failures += ImportFailure(candidate.name, "没有找到可读页面")
+            return old
+        }
+
+        val title = titleFromName(candidate.name)
+        val book = ComicBook(
             id = id,
-            title = name.take(120),
-            kind = kind,
+            title = old?.title ?: title,
+            author = old?.author,
+            description = old?.description,
+            kind = candidate.kind,
             contentPath = "",
-            sourcePath = path,
-            pageCount = 0,
-            sizeBytes = if (source.isDirectory) folderSize(source) else source.length(),
-            addedAt = System.currentTimeMillis(),
-            accent = accentFor(name),
+            treeUri = treeUri,
+            documentPath = candidate.documentPath,
+            pageCount = pageCount,
+            sizeBytes = candidate.sizeBytes,
+            addedAt = old?.addedAt ?: System.currentTimeMillis(),
+            lastReadAt = old?.lastReadAt,
+            currentPage = (old?.currentPage ?: 0).coerceIn(0, max(0, pageCount - 1)),
+            finished = old?.finished ?: false,
+            accent = old?.accent ?: accentFor(title),
+            direction = old?.direction,
+            modifiedAt = candidate.modifiedAt,
         )
-        val count = pageSource(draft).use { it.pageCount }
-        if (count <= 0) return null
-        return draft.copy(pageCount = count)
+        if (!coverFile(book).exists()) writeCover(book)
+        return book
     }
 
-    private fun folderSize(dir: File): Long =
-        dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-
-    private fun treeUriToFile(uri: Uri): File? = runCatching {
-        val docId = DocumentsContract.getTreeDocumentId(uri)
-        val parts = docId.split(':', limit = 2)
-        val volume = parts[0]
-        val relative = if (parts.size > 1) parts[1] else ""
-        val base = if (volume.equals("primary", ignoreCase = true)) Environment.getExternalStorageDirectory()
-        else File("/storage/$volume")
-        if (relative.isBlank()) base else File(base, relative)
-    }.getOrNull()
-
-    fun roots(): List<File> = prefs.getStringSet("library_roots", emptySet())
-        ?.map(::File)?.filter { it.exists() }?.distinctBy { it.absolutePath }
-        ?.sortedBy { it.absolutePath }
-        .orEmpty()
-
-    suspend fun removeRoot(root: File) = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            prefs.edit().putStringSet(
-                "library_roots",
-                (prefs.getStringSet("library_roots", emptySet()) ?: emptySet()) - root.absolutePath,
-            ).apply()
-            val prefix = root.absolutePath + File.separator
-            val affected = _books.value.filter { book ->
-                val path = book.sourcePath ?: return@filter false
-                path == root.absolutePath || path.startsWith(prefix)
+    private fun countPages(candidate: ScanCandidate, id: String): Int = when (candidate.kind) {
+        BookKind.FOLDER -> candidate.imageCount
+        BookKind.PDF -> PageIndexing.pdfPageCount(context.contentResolver, candidate.uri)
+        BookKind.ARCHIVE -> {
+            val ext = candidate.name.substringAfterLast('.', "").lowercase()
+            if (ext in EBOOK_EXTENSIONS) {
+                convertEbook(candidate, id, ext)
+            } else {
+                context.contentResolver.openInputStream(candidate.uri)?.use { input ->
+                    PageIndexing.countZipPages(input)
+                } ?: 0
             }
-            affected.forEach {
-                coverFile(it).delete()
-                File(context.cacheDir, "ebooks/${it.id}.cbz").delete()
-            }
-            _books.update { list -> list.filterNot { it in affected } }
-            writeBooksLocked(_books.value)
         }
     }
 
-    suspend fun refreshLibrary(onProgress: (Float, String) -> Unit = { _, _ -> }): ImportReport =
-        withContext(Dispatchers.IO) {
-            mutex.withLock {
-                val roots = prefs.getStringSet("library_roots", emptySet())
-                    ?.map(::File)?.filter { it.exists() }?.distinctBy { it.absolutePath }
-                    .orEmpty()
-                if (roots.isEmpty()) {
-                    return@withLock ImportReport(failures = listOf(ImportFailure("书架", "还没有可刷新的漫画目录")))
-                }
-                val failures = mutableListOf<ImportFailure>()
-                var count = 0
-                roots.forEachIndexed { index, root ->
-                    onProgress(index.toFloat() / roots.size, "正在刷新 ${root.name}")
-                    val report = runCatching { scanExternalTreeLocked(root) { _, _ -> } }
-                        .getOrElse {
-                            failures += ImportFailure(root.name, it.message ?: "刷新失败")
-                            ImportReport()
-                        }
-                    count += report.count
-                    failures += report.failures
-                }
-                onProgress(1f, "完成")
-                ImportReport(emptyList(), failures)
+    /** EPUB/MOBI 在索引时拍平到派生缓存（先写 .tmp，成功后 rename，失败清理）。 */
+    private fun convertEbook(candidate: ScanCandidate, id: String, ext: String): Int {
+        ebookCacheDir.mkdirs()
+        val target = File(ebookCacheDir, "$id.cbz")
+        target.delete()
+        tempCacheDir.mkdirs()
+        val temp = File.createTempFile("ebook-", ".$ext", tempCacheDir)
+        return try {
+            context.contentResolver.openInputStream(candidate.uri)?.use { input ->
+                temp.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
+            } ?: return 0
+            FormatConverters.toCbz(temp, target, ext)
+        } finally {
+            temp.delete()
+        }
+    }
+
+    private suspend fun mergeTreeResult(result: TreeScanResult): Boolean {
+        val merged = mutex.withLock {
+            val survivors = _books.value.filterNot { it.isSaf && it.treeUri == result.treeUri }
+            val next = sortBooks(survivors + result.scanned)
+            _books.value = next
+            try {
+                persistBooksLocked(next)
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "写入 books.json 失败", e)
+                false
             }
         }
+        return merged
+    }
+
+    // -----------------------------------------------------------------------
+    // 目录 / 删除 / 元数据
+    // -----------------------------------------------------------------------
+
+    fun roots(): List<LibraryRoot> = rootsStore.all()
+
+    suspend fun removeRoot(treeUri: String) = withContext(Dispatchers.IO) {
+        val removed = mutex.withLock {
+            val affected = _books.value.filter { it.isSaf && it.treeUri == treeUri }
+            _books.value = _books.value.filterNot { it.isSaf && it.treeUri == treeUri }
+            try {
+                persistBooksLocked(_books.value)
+            } catch (e: Exception) {
+                Log.e(TAG, "写入 books.json 失败", e)
+            }
+            affected
+        }
+        removed.forEach { removeDerivedFiles(it) }
+        runCatching { rootsStore.remove(treeUri) }
+            .onFailure { Log.e(TAG, "写入 roots.json 失败", it) }
+        runCatching { Uri.parse(treeUri) }.getOrNull()?.let { uri ->
+            runCatching {
+                context.contentResolver.releasePersistableUriPermission(
+                    uri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION,
+                )
+            }
+        }
+        pruneCaches(_books.value)
+        Unit
+    }
 
     suspend fun delete(book: ComicBook) = withContext(Dispatchers.IO) {
+        // SAF 书只删派生数据，绝不碰用户文件；旧副本删除前做路径守卫。
+        if (book.isLegacyCopy) deleteLegacyCopy(book)
         mutex.withLock {
-            if (book.sourcePath == null) File(root, book.contentPath).deleteRecursively()
-            File(context.cacheDir, "ebooks/${book.id}.cbz").delete()
-            coverFile(book).delete()
             _books.update { list -> list.filterNot { it.id == book.id } }
-            writeBooksLocked(_books.value)
+            try {
+                persistBooksLocked(_books.value)
+            } catch (e: Exception) {
+                Log.e(TAG, "写入 books.json 失败", e)
+            }
+        }
+        removeDerivedFiles(book)
+        pruneCaches(_books.value)
+        Unit
+    }
+
+    private fun deleteLegacyCopy(book: ComicBook) {
+        val contentPath = book.contentPath
+        check(contentPath.isNotBlank()) { "旧副本缺少 contentPath，拒绝删除" }
+        val filesRoot = context.filesDir.canonicalFile
+        val target = legacyFile(book).canonicalFile
+        val insideFilesDir = target.path == filesRoot.path ||
+            target.path.startsWith(filesRoot.path + File.separator)
+        check(insideFilesDir) { "拒绝删除应用私有目录之外的文件：$target" }
+        if (target.exists() && !target.deleteRecursively()) {
+            Log.w(TAG, "删除旧副本失败：$target")
         }
     }
 
-    suspend fun rename(book: ComicBook, newTitle: String) = withContext(Dispatchers.IO) {
-        val clean = newTitle.trim().take(120)
-        if (clean.isBlank()) return@withContext
+    suspend fun rename(book: ComicBook, title: String): Boolean = withContext(Dispatchers.IO) {
+        val clean = title.trim().take(120)
+        if (clean.isBlank()) return@withContext false
         mutex.withLock {
             _books.update { list -> list.map { if (it.id == book.id) it.copy(title = clean) else it } }
-            writeBooksLocked(_books.value)
+            try {
+                persistBooksLocked(_books.value)
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "写入 books.json 失败", e)
+                false
+            }
+        }
+    }
+
+    suspend fun setFinished(book: ComicBook, finished: Boolean): Boolean = withContext(Dispatchers.IO) {
+        mutex.withLock {
+            _books.update { list ->
+                list.map {
+                    if (it.id == book.id) {
+                        it.copy(
+                            finished = finished,
+                            currentPage = if (finished) max(0, it.pageCount - 1) else 0,
+                            lastReadAt = if (finished) System.currentTimeMillis() else it.lastReadAt,
+                        )
+                    } else {
+                        it
+                    }
+                }
+            }
+            try {
+                persistBooksLocked(_books.value)
+                true
+            } catch (e: Exception) {
+                Log.e(TAG, "写入 books.json 失败", e)
+                false
+            }
         }
     }
 
@@ -323,23 +568,13 @@ class LibraryRepository(private val context: Context) {
             _books.update { list ->
                 list.map { if (it.id == bookId) it.copy(direction = direction) else it }
             }
-            writeBooksLocked(_books.value)
-        }
-    }
-
-    suspend fun setFinished(book: ComicBook, finished: Boolean) = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            _books.update { list ->
-                list.map {
-                    if (it.id == book.id) it.copy(
-                        finished = finished,
-                        currentPage = if (finished) max(0, it.pageCount - 1) else 0,
-                        lastReadAt = if (finished) System.currentTimeMillis() else it.lastReadAt,
-                    ) else it
-                }
+            try {
+                persistBooksLocked(_books.value)
+            } catch (e: Exception) {
+                Log.e(TAG, "写入 books.json 失败", e)
             }
-            writeBooksLocked(_books.value)
         }
+        Unit
     }
 
     fun updateProgress(bookId: String, page: Int) {
@@ -352,7 +587,6 @@ class LibraryRepository(private val context: Context) {
             finished = current.pageCount > 0 && safePage >= current.pageCount - 1,
         )
         _books.update { list -> list.map { if (it.id == bookId) updated else it } }
-        progressPending[bookId] = updated
         schedulePersist()
     }
 
@@ -360,198 +594,154 @@ class LibraryRepository(private val context: Context) {
         val current = _books.value.firstOrNull { it.id == bookId } ?: return
         val updated = current.copy(lastReadAt = System.currentTimeMillis())
         _books.update { list -> list.map { if (it.id == bookId) updated else it } }
-        progressPending[bookId] = updated
         schedulePersist()
     }
 
     private fun schedulePersist() {
-        persistJob?.cancel()
-        persistJob = scope.launch {
-            delay(240)
-            mutex.withLock {
-                val snapshot = _books.value
-                progressPending.clear()
-                writeBooksLocked(snapshot)
+        persistSignal.trySend(Unit)
+    }
+
+    /** 单一持久化协程 + 400ms 防抖：只落盘最新快照，不再维护 progressPending。 */
+    private suspend fun persistWorker() {
+        @Suppress("UNUSED_VARIABLE")
+        for (signal in persistSignal) {
+            delay(PERSIST_DEBOUNCE_MS)
+            try {
+                // 在锁内取快照：避免扫描合并刚写入的新数据被旧快照覆盖。
+                mutex.withLock { persistBooksLocked(_books.value) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e(TAG, "保存 books.json 失败", e)
             }
         }
     }
 
+    // -----------------------------------------------------------------------
+    // 派生数据
+    // -----------------------------------------------------------------------
+
     fun coverFile(book: ComicBook): File = File(coversDir, "${book.id}.jpg")
 
-    fun contentFile(book: ComicBook): File = File(root, book.contentPath)
+    /** 同步构造，绝不 I/O：具体打开动作延迟到第一次 loadPage。 */
+    fun pageSource(book: ComicBook): ComicPageSource =
+        ComicPageSourceFactory.open(book, context, cacheRoot, ebookCacheDir)
 
-    fun pageSource(book: ComicBook): ComicPageSource = ComicPageSourceFactory.open(book, root, context.cacheDir)
+    /** 派生缓存 + 旧副本占用；遍历目录，调用方应在 IO 线程调用。 */
+    fun appDataBytes(): Long =
+        dirSize(coversDir) +
+            dirSize(ebookCacheDir) +
+            dirSize(cacheRoot) +
+            dirSize(tempCacheDir) +
+            dirSize(legacyContentDir)
 
-    fun storageBytes(): Long {
-        fun size(f: File): Long = if (f.isDirectory) (f.listFiles()?.sumOf { size(it) } ?: 0L) else f.length()
-        return size(contentDir) + size(coversDir) + size(File(context.cacheDir, "ebooks"))
+    private fun dirSize(dir: File): Long {
+        val children = dir.listFiles() ?: return 0L
+        var total = 0L
+        for (child in children) {
+            total += if (child.isDirectory) dirSize(child) else child.length()
+        }
+        return total
     }
 
-    private suspend fun importArchiveLocked(uri: Uri, rawName: String, sourceUri: String? = null): ComicBook {
-        val id = UUID.randomUUID().toString()
-        val ext = rawName.substringAfterLast('.', "cbz").lowercase()
-            .let { if (it in bookExtensions) it else "cbz" }
-        val isPdf = ext == "pdf"
-        val isEbook = ext in setOf("epub", "mobi", "azw", "azw3")
-        val dest = File(contentDir, if (isPdf) "$id.pdf" else "$id.cbz")
-        val tmp = File(root, "$id.importing.$ext")
-        return runCatching {
-            context.contentResolver.openInputStream(uri)?.use { input ->
-                FileOutputStream(tmp).use { output -> input.copyTo(output, 1 shl 16) }
-            } ?: error("无法读取文件")
-            val title = titleFromName(rawName)
-            val draft = when {
-                isPdf -> {
-                    tmp.renameTo(dest)
-                    ComicBook(
-                        id = id,
-                        title = title,
-                        kind = BookKind.PDF,
-                        contentPath = dest.relativeTo(root).path,
-                        pageCount = 0,
-                        sizeBytes = dest.length(),
-                        addedAt = System.currentTimeMillis(),
-                        accent = accentFor(title),
-                        sourceUri = sourceUri,
-                    )
-                }
-                isEbook -> {
-                    val converted = FormatConverters.toCbz(tmp, dest, ext)
-                    if (converted <= 0) error("无法解析 ${ext.uppercase()} 内容")
-                    ComicBook(
-                        id = id,
-                        title = title,
-                        kind = BookKind.ARCHIVE,
-                        contentPath = dest.relativeTo(root).path,
-                        pageCount = converted,
-                        sizeBytes = dest.length(),
-                        addedAt = System.currentTimeMillis(),
-                        accent = accentFor(title),
-                        sourceUri = sourceUri,
-                    )
-                }
-                else -> {
-                    tmp.renameTo(dest)
-                    ComicBook(
-                        id = id,
-                        title = title,
-                        kind = BookKind.ARCHIVE,
-                        contentPath = dest.relativeTo(root).path,
-                        pageCount = 0,
-                        sizeBytes = dest.length(),
-                        addedAt = System.currentTimeMillis(),
-                        accent = accentFor(title),
-                        sourceUri = sourceUri,
-                    )
-                }
-            }
-            val pageCount = when (draft.kind) {
-                BookKind.PDF -> ComicPageSourceFactory.pdfPageCount(dest)
-                else -> ComicPageSourceFactory.listPageNames(draft, root).size
-            }
-            if (pageCount == 0) error("没有找到可读页面")
-            val book = draft.copy(pageCount = pageCount)
-            writeCover(book)
-            book
-        }.onFailure {
-            tmp.delete()
-            dest.delete()
-        }.getOrThrow()
-    }
-
-    private suspend fun importFolderLocked(tree: DocumentFile, title: String, sourceUri: String? = null): ComicBook {
-        val id = UUID.randomUUID().toString()
-        val dest = File(contentDir, id)
-        val tmp = File(contentDir, "$id.importing")
-        runCatching {
-            tmp.mkdirs()
-            val images = mutableListOf<Pair<String, DocumentFile>>()
-            fun walk(dir: DocumentFile, prefix: String, depth: Int) {
-                if (depth > 4) return
-                dir.listFiles().sortedWith(compareBy(PageNameComparator) { it.name ?: "" }).forEach { child ->
-                    if (child.isDirectory) {
-                        walk(child, prefix + (child.name ?: "") + "/", depth + 1)
-                    } else if (child.isFile && (child.name ?: "").substringAfterLast('.', "").lowercase() in imageExtensions) {
-                        images += (prefix + (child.name ?: "page")) to child
-                    }
-                }
-            }
-            walk(tree, "", 0)
-            if (images.isEmpty()) error("文件夹里没有找到图片")
-            images.forEachIndexed { index, (relative, doc) ->
-                val ext = relative.substringAfterLast('.', "jpg").lowercase()
-                val target = File(tmp, "page_%04d.%s".format(index + 1, ext))
-                context.contentResolver.openInputStream(doc.uri)?.use { input ->
-                    FileOutputStream(target).use { output -> input.copyTo(output, 1 shl 16) }
-                } ?: error("无法读取 ${doc.name}")
-            }
-            tmp.renameTo(dest)
-            val draft = ComicBook(
-                id = id,
-                title = title,
-                kind = BookKind.FOLDER,
-                contentPath = dest.relativeTo(root).path,
-                pageCount = images.size,
-                sizeBytes = dest.walkTopDown().filter { it.isFile }.sumOf { it.length() },
-                addedAt = System.currentTimeMillis(),
-                accent = accentFor(title),
-                sourceUri = sourceUri,
-            )
-            writeCover(draft)
-            return draft
-        }.onFailure {
-            tmp.deleteRecursively()
-            dest.deleteRecursively()
-        }.getOrThrow()
-    }
-
-    private suspend fun ensureCoversLocked(books: List<ComicBook>) {
-        books.forEach { book ->
+    private suspend fun ensureCovers(books: List<ComicBook>) {
+        for (book in books) {
+            coroutineContext.ensureActive()
             val cover = coverFile(book)
-            if (!cover.exists() || cover.length() < 512L) writeCover(book)
+            if (cover.exists() && cover.length() > 512L) continue
+            writeCover(book)
         }
     }
 
     private suspend fun writeCover(book: ComicBook) {
-        runCatching {
-            pageSource(book).use { source ->
-                val bitmap = source.loadPage(0, 480) ?: return@use
-                FileOutputStream(coverFile(book)).use { out -> bitmap.compress(android.graphics.Bitmap.CompressFormat.JPEG, 88, out) }
-                bitmap.recycle()
+        val bitmap = try {
+            pageSource(book).use { it.loadPage(0, COVER_WIDTH) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "生成封面失败：${book.title}", e)
+            null
+        } ?: return
+        try {
+            coversDir.mkdirs()
+            writeFileAtomically(coverFile(book)) { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 88, out)
             }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "写入封面失败：${book.title}", e)
+        } finally {
+            if (!bitmap.isRecycled) bitmap.recycle()
         }
     }
 
-    private fun writeBooksLocked(books: List<ComicBook>) {
-        runCatching {
-            root.mkdirs()
-            val tmp = File(root, "books.json.tmp")
-            tmp.writeText(json.encodeToString(books))
-            if (!tmp.renameTo(booksFile)) {
-                booksFile.writeText(tmp.readText())
-                tmp.delete()
-            }
+    private fun removeDerivedFiles(book: ComicBook) {
+        coverFile(book).delete()
+        File(ebookCacheDir, "${book.id}.cbz").delete()
+        cacheRoot.listFiles { file -> file.name.startsWith("${book.id}_") }?.forEach { it.delete() }
+    }
+
+    /** 清掉不再对应任何书籍的派生缓存（删书、重新索引、指纹变化都会走到这里）。 */
+    private fun pruneCaches(books: List<ComicBook>) {
+        val expectedArchives = books.asSequence()
+            .filter { it.isSaf && it.kind == BookKind.ARCHIVE && !isEbookBook(it) }
+            .map { bookCacheFile(it, cacheRoot).name }
+            .toSet()
+        cacheRoot.listFiles()?.forEach { file ->
+            // 跳过正在写入的临时缓存，避免删掉别的协程刚复制一半的文件。
+            if (file.name.endsWith(".tmp")) return@forEach
+            if (file.name !in expectedArchives) file.delete()
+        }
+        val expectedEbooks = books.asSequence()
+            .filter { it.isSaf && isEbookBook(it) }
+            .map { "${it.id}.cbz" }
+            .toSet()
+        ebookCacheDir.listFiles()?.forEach { file ->
+            if (file.name !in expectedEbooks) file.delete()
         }
     }
 
-    private fun displayName(uri: Uri): String? = runCatching {
-        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) cursor.getString(0) else null
-        }
-    }.getOrNull()
+    // -----------------------------------------------------------------------
+    // 持久化辅助
+    // -----------------------------------------------------------------------
+
+    private fun persistBooksLocked(books: List<ComicBook>) {
+        val payload = json.encodeToString(books).toByteArray(Charsets.UTF_8)
+        writeFileAtomically(booksFile) { out -> out.write(payload) }
+    }
+
+    private fun sortBooks(books: List<ComicBook>): List<ComicBook> =
+        books.sortedByDescending { it.lastReadAt ?: it.addedAt }
+
+    private fun legacyFile(book: ComicBook): File = File(legacyContentDir, book.contentPath)
+
+    private fun stableBookId(treeUri: String, documentPath: String): String =
+        UUID.nameUUIDFromBytes("$treeUri|$documentPath".toByteArray(Charsets.UTF_8)).toString()
+
+    private fun shouldSkipDirectory(name: String): Boolean =
+        name.startsWith(".") || name.equals("Android", ignoreCase = true) || name.equals("LOST.DIR", ignoreCase = true)
 
     private fun titleFromName(name: String): String {
-        val raw = name.substringBeforeLast('.').replace('_', ' ').replace('.', ' ').trim()
-        return raw.ifBlank { "未命名漫画" }.take(120)
+        val ext = name.substringAfterLast('.', "").lowercase()
+        val base = if (ext in BOOK_EXTENSIONS) name.substringBeforeLast('.') else name
+        return base.replace('_', ' ').replace('.', ' ').trim()
+            .ifBlank { "未命名漫画" }
+            .take(120)
     }
 
     private fun accentFor(title: String): Long {
         val palette = longArrayOf(0xFF7A3E2F, 0xFF3D5749, 0xFF3E5268, 0xFF77552E, 0xFF5F4358, 0xFF2F5C61)
         return palette[(title.hashCode() and Int.MAX_VALUE) % palette.size]
     }
-}
 
+    private companion object {
+        const val TAG = "LibraryRepository"
+        const val MAX_SCAN_DEPTH = 10
+        const val PERSIST_DEBOUNCE_MS = 400L
+        const val COVER_WIDTH = 480
 
-private object PageFileComparator : Comparator<File> {
-    override fun compare(a: File, b: File): Int = PageNameComparator.compare(a.name, b.name)
+        val BOOK_EXTENSIONS = setOf("cbz", "zip", "pdf", "epub", "mobi", "azw", "azw3")
+        val EBOOK_EXTENSIONS = setOf("epub", "mobi", "azw", "azw3")
+    }
 }

@@ -5,34 +5,15 @@
   direct device-to-device transfer.
 
   The comic library stays in the user's own SAF folders and is never copied into
-  the app; restoring a stale index or derived caches on another device would only
-  create broken entries. Everything except `saltreader_settings.xml` is excluded.
+  the app. Listing a single include makes each section a whitelist: the library
+  index, derived caches and legacy copies are excluded implicitly.
 -->
 <data-extraction-rules>
     <cloud-backup>
-        <!-- The only data that survives a cloud backup. -->
         <include domain="sharedpref" path="saltreader_settings.xml" />
-
-        <!-- Old library index prefs; books.json is authoritative now. -->
-        <exclude domain="sharedpref" path="saltreader_library.xml" />
-
-        <!-- Library copies / covers / e-book caches under filesDir: never backed up. -->
-        <exclude domain="file" path="library/" />
-        <exclude domain="file" path="." />
-
-        <!-- No databases, no external (scoped-storage) files. -->
-        <exclude domain="database" path="." />
-        <exclude domain="external" path="." />
     </cloud-backup>
 
     <device-transfer>
-        <!-- The only data transferred directly to a new device. -->
         <include domain="sharedpref" path="saltreader_settings.xml" />
-
-        <exclude domain="sharedpref" path="saltreader_library.xml" />
-        <exclude domain="file" path="library/" />
-        <exclude domain="file" path="." />
-        <exclude domain="database" path="." />
-        <exclude domain="external" path="." />
     </device-transfer>
 </data-extraction-rules>

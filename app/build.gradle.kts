@@ -99,6 +99,14 @@ configurations.configureEach {
     exclude(group = "xmlpull", module = "xmlpull")
 }
 
+// kxml2 ships org.xmlpull.v1/org.kxml2 as program classes, which collides with the
+// platform's android.content.res.XmlResourceParser during R8. Keep it on the compile
+// classpath (vendored parsers may reference it) but exclude it from the runtime classpath:
+// Android's framework provides these classes at runtime.
+configurations.matching { it.name.endsWith("RuntimeClasspath") }.configureEach {
+    exclude(group = "net.sf.kxml", module = "kxml2")
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui.base)

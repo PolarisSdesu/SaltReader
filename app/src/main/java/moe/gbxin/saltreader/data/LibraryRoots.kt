@@ -72,7 +72,8 @@ internal class LibraryRootsStore(context: Context) {
 internal fun writeFileAtomically(target: File, write: (OutputStream) -> Unit) {
     val dir = target.parentFile ?: throw IOException("目标文件路径无效：$target")
     if (!dir.exists() && !dir.mkdirs()) throw IOException("无法创建目录：$dir")
-    val tmp = File(dir, target.name + ".tmp")
+    // 用唯一临时文件，避免两个协程同时写同一目标时互相截断。
+    val tmp = File.createTempFile(target.name + ".", ".tmp", dir)
     try {
         FileOutputStream(tmp).use { fileOut ->
             val buffered = BufferedOutputStream(fileOut, 64 * 1024)
