@@ -584,6 +584,33 @@ private fun ReaderContent(
                         .fillMaxSize()
                         .clipToBounds()
                         .pointerInput(settings.readerMode) {
+                            // Pan within the zoomed viewport. Once the translation reaches an edge,
+                            // hand the remaining delta to the lazy list so zoomed reading can keep
+                            // scrolling through the book instead of being pinned to one viewport.
+                            fun panWithinBounds(pan: Offset) {
+                                val maxX = size.width * (verticalScale - 1f) / 2f
+                                val maxY = size.height * (verticalScale - 1f) / 2f
+                                verticalOffset = Offset(
+                                    (verticalOffset.x + pan.x).coerceIn(-maxX, maxX),
+                                    (verticalOffset.y + pan.y).coerceIn(-maxY, maxY),
+                                )
+                            }
+                            fun panAndScroll(pan: Offset) {
+                                val maxX = size.width * (verticalScale - 1f) / 2f
+                                val maxY = size.height * (verticalScale - 1f) / 2f
+                                val desiredY = verticalOffset.y + pan.y
+                                val clampedY = desiredY.coerceIn(-maxY, maxY)
+                                val leftover = desiredY - clampedY
+                                val consumed = if (leftover != 0f) {
+                                    listState.dispatchRawDelta(-leftover / verticalScale)
+                                } else {
+                                    0f
+                                }
+                                verticalOffset = Offset(
+                                    (verticalOffset.x + pan.x).coerceIn(-maxX, maxX),
+                                    (desiredY - consumed * verticalScale).coerceIn(-maxY, maxY),
+                                )
+                            }
                             awaitEachGesture {
                                 awaitFirstDown(requireUnconsumed = false)
                                 var dragged = 0f
@@ -598,15 +625,9 @@ private fun ReaderContent(
                                             verticalOffset = Offset.Zero
                                             verticalZoomed = false
                                         } else {
-                                            val pan = event.calculatePan() * ZOOM_PAN_GAIN
+                                            panWithinBounds(event.calculatePan() * ZOOM_PAN_GAIN)
                                             verticalScale = nextScale
                                             verticalZoomed = true
-                                            val maxX = size.width * (nextScale - 1f) / 2f
-                                            val maxY = size.height * (nextScale - 1f) / 2f
-                                            verticalOffset = Offset(
-                                                (verticalOffset.x + pan.x).coerceIn(-maxX, maxX),
-                                                (verticalOffset.y + pan.y).coerceIn(-maxY, maxY),
-                                            )
                                         }
                                         event.changes.forEach { it.consume() }
                                     } else if (verticalZoomed && pressed == 1) {
@@ -615,12 +636,7 @@ private fun ReaderContent(
                                         val pan = event.calculatePan() * ZOOM_PAN_GAIN
                                         dragged += pan.getDistance()
                                         if (dragged > viewConfiguration.touchSlop * 0.6f) {
-                                            val maxX = size.width * (verticalScale - 1f) / 2f
-                                            val maxY = size.height * (verticalScale - 1f) / 2f
-                                            verticalOffset = Offset(
-                                                (verticalOffset.x + pan.x).coerceIn(-maxX, maxX),
-                                                (verticalOffset.y + pan.y).coerceIn(-maxY, maxY),
-                                            )
+                                            panAndScroll(pan)
                                             event.changes.forEach { it.consume() }
                                         }
                                     }
