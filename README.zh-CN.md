@@ -4,10 +4,9 @@
 
 <img src="readme/logo.png" align="left" width="120" hspace="10" vspace="10">
 
-Salt Reader 是一个自由、本地优先的 Android 漫画与电子书阅读器。  
-它直接读取你设备上的文件：不导入、不转换。
+Salt Reader 是一个自由、本地优先的 Android 漫画与电子书阅读器。
 
-支持 CBZ/ZIP、图片型与文字型 EPUB、MOBI/AZW3、PDF 以及图片文件夹。
+它直接读取设备上的文件，支持 CBZ/ZIP、图片型与文字型 EPUB、MOBI/AZW3、PDF 以及图片文件夹。
 
 <br clear="all" />
 

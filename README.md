@@ -4,10 +4,9 @@
 
 <img src="readme/logo.png" align="left" width="120" hspace="10" vspace="10">
 
-Salt Reader is a free, local-first comic and ebook reader for Android.  
-It reads your files where they are: no importing and no conversion.
+Salt Reader is a free, local-first comic and ebook reader for Android.
 
-It supports CBZ/ZIP, image and text EPUB, MOBI/AZW3, PDF and folders of images.
+It reads your files in place and supports CBZ/ZIP, image and text EPUB, MOBI/AZW3, PDF and folders of images.
 
 <br clear="all" />
 
