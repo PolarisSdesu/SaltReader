@@ -77,7 +77,6 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -124,7 +123,7 @@ import moe.gbxin.saltreader.util.LANGUAGE_SYSTEM
 import moe.gbxin.saltreader.util.LANGUAGE_ZH_CN
 import moe.gbxin.saltreader.util.LANGUAGE_ZH_TW
 import moe.gbxin.saltreader.util.SUPPORTED_APP_LANGUAGES
-import moe.gbxin.saltreader.util.AppLanguageStore
+import moe.gbxin.saltreader.util.currentAppLanguage
 import moe.gbxin.saltreader.util.formatBytes
 import moe.gbxin.saltreader.util.setAppLanguage
 
@@ -268,8 +267,9 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
             SettingsSectionLabel(stringResource(R.string.settings_appearance_section_language))
             SettingsCard {
                 val context = LocalContext.current
-                // Observed so an in-app language change updates the summary without recreation.
-                val language by AppLanguageStore.language.collectAsState()
+                // Recomputed on every composition so a locale configuration change updates the
+                // summary without recreating the activity.
+                val language = currentAppLanguage(context)
                 var menuOpen by remember { mutableStateOf(false) }
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     Row(

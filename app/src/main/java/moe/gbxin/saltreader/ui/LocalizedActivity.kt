@@ -1,9 +1,15 @@
 package moe.gbxin.saltreader.ui
 
+import android.content.Context
 import androidx.activity.ComponentActivity
+import moe.gbxin.saltreader.util.localizedContext
 
 /**
- * Activities extend this so they can be swapped to a different base later; language changes are
- * handled live by [moe.gbxin.saltreader.ui.theme.SaltReaderTheme] without recreating them.
+ * ComponentActivity that re-attaches its base context with the in-app language chosen by the user.
+ * Activities should extend this class instead of ComponentActivity directly.
  */
-abstract class LocalizedActivity : ComponentActivity()
+abstract class LocalizedActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: Context) {
+        super.attachBaseContext(localizedContext(newBase))
+    }
+}
