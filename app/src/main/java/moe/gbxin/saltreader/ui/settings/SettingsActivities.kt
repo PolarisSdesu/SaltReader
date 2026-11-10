@@ -18,8 +18,10 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
@@ -100,6 +102,7 @@ import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.DpOffset
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -214,9 +217,7 @@ private fun SettingsScaffold(
             )
         },
     ) { innerPadding ->
-        Box(Modifier.fillMaxSize().navigationBarsPadding()) {
-            content(innerPadding)
-        }
+        content(innerPadding)
     }
 }
 
@@ -226,7 +227,7 @@ private fun SettingsHomePage(onBack: () -> Unit) {
     SettingsScaffold(stringResource(R.string.settings_title), onBack) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp + navigationBarBottomPadding()),
         ) {
             item { SettingsSectionLabel(stringResource(R.string.settings_home_section_personalization)) }
             item {
@@ -274,7 +275,7 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
     SettingsScaffold(stringResource(R.string.settings_appearance_title), onBack) { innerPadding ->
         Column(
             Modifier.fillMaxSize().padding(innerPadding).verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp + navigationBarBottomPadding()),
         ) {
             SettingsSectionLabel(stringResource(R.string.settings_appearance_section_language))
             SettingsCard {
@@ -416,7 +417,7 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
     SettingsScaffold(stringResource(R.string.settings_reader_title), onBack) { innerPadding ->
         Column(
             Modifier.fillMaxSize().padding(innerPadding).verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp + navigationBarBottomPadding()),
         ) {
             SettingsSectionLabel(stringResource(R.string.settings_reader_section_layout))
             SettingsCard {
@@ -634,7 +635,7 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
     SettingsScaffold(stringResource(R.string.settings_storage_title), onBack, snackbarHost = { SnackbarHost(snackbar) }) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp + navigationBarBottomPadding()),
         ) {
             item { SettingsSectionLabel(stringResource(R.string.settings_storage_section_library)) }
             item {
@@ -829,7 +830,7 @@ private fun LicensesSettingsPage(onBack: () -> Unit) {
     SettingsScaffold(stringResource(R.string.settings_licenses_title), onBack) { innerPadding ->
         LazyColumn(
             Modifier.fillMaxSize().padding(innerPadding),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp + navigationBarBottomPadding()),
         ) {
             item {
                 Text(
@@ -930,49 +931,10 @@ private fun LibraryRow(library: OpenSourceLibrary) {
 
 @Composable
 private fun AboutSettingsPage(onBack: () -> Unit) {
-    val context = LocalContext.current
-    val app = context.applicationContext as SaltReaderApplication
-    val scope = rememberCoroutineScope()
-    val snackbar = remember { SnackbarHostState() }
-    var cacheBytes by remember { mutableStateOf(0L) }
-    var clearing by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        cacheBytes = withContext(Dispatchers.IO) { app.library.appDataBytes() }
-    }
-
-    fun clearCache() {
-        if (clearing) return
-        scope.launch {
-            clearing = true
-            try {
-                val freed = withContext(Dispatchers.IO) { app.library.clearCaches() }
-                cacheBytes = withContext(Dispatchers.IO) { app.library.appDataBytes() }
-                snackbar.showSnackbar(
-                    if (freed > 0) {
-                        context.getString(R.string.settings_about_cache_cleared, formatBytes(freed))
-                    } else {
-                        context.getString(R.string.settings_about_cache_empty)
-                    },
-                )
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                val reason = e.message ?: context.getString(R.string.settings_unknown_error)
-                snackbar.showSnackbar(context.getString(R.string.settings_about_cache_failed, reason))
-            } finally {
-                clearing = false
-            }
-        }
-    }
-
-    SettingsScaffold(
-        stringResource(R.string.settings_about_title),
-        onBack,
-        snackbarHost = { SnackbarHost(snackbar) },
-    ) { innerPadding ->
+    SettingsScaffold(stringResource(R.string.settings_about_title), onBack) { innerPadding ->
         Column(
             Modifier.fillMaxSize().padding(innerPadding).verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
+                .padding(start = 16.dp, end = 16.dp, bottom = 32.dp + navigationBarBottomPadding()),
         ) {
             Column(
                 Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -1017,24 +979,14 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                 )
                 SettingsInfoRow(stringResource(R.string.settings_about_build), BuildConfig.BUILD_TYPE)
             }
-            SettingsSectionLabel(stringResource(R.string.settings_about_section_maintenance))
-            SettingsCard {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Delete,
-                    title = stringResource(R.string.settings_about_clear_cache),
-                    supporting = if (clearing) {
-                        stringResource(R.string.settings_about_clearing)
-                    } else {
-                        stringResource(R.string.settings_about_cache_usage, formatBytes(cacheBytes))
-                    },
-                    enabled = !clearing,
-                ) { clearCache() }
-
-            }
         }
     }
 
 }
+
+@Composable
+private fun navigationBarBottomPadding(): Dp =
+    WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
 @Composable
 private fun SettingsSectionLabel(text: String) {
