@@ -1,9 +1,19 @@
 package moe.gbxin.saltreader.data
 
 import kotlinx.serialization.Serializable
+import kotlin.math.roundToInt
 
 @Serializable
-enum class BookKind { ARCHIVE, FOLDER, PDF }
+enum class BookKind {
+    /** CBZ/ZIP archive (also image-based EPUB, read directly from its own ZIP). */
+    ARCHIVE,
+    /** Folder of images. */
+    FOLDER,
+    /** PDF rendered through PdfRenderer. */
+    PDF,
+    /** Reflowable text book (EPUB/MOBI/AZW3), rendered by the native text reader. */
+    TEXT,
+}
 
 @Serializable
 enum class ReaderMode { PAGED, VERTICAL }
@@ -23,10 +33,12 @@ enum class LibrarySort(val label: String) { RECENT("最近阅读"), ADDED("最�
 
 /**
  * A book is a reference to a document inside one of the user's SAF folder trees.
- * The app never copies the book; only derived data (covers, flattened e-book pages) is cached.
+ * The app never copies the book; only derived data is cached.
  *
- * [treeUri] is the persisted Storage Access Framework tree URI and [documentPath] is the path
- * relative to that tree root ("" means the tree root itself, i.e. an image-folder book).
+ * Image books (CBZ/ZIP/PDF/image folders/image-based EPUB) go through the image pager.
+ * Reflowable EPUBs ([reflowable] = true) are rendered by the text reader and keep their reading
+ * position as a character offset in [progressOffset]; [pageCount] is an estimate used only for
+ * shelf progress display.
  */
 @Serializable
 data class ComicBook(
@@ -49,12 +61,12 @@ data class ComicBook(
     val direction: ReadingDirection? = null,
     /** Document lastModified used for incremental refresh; 0 when the provider does not report it. */
     val modifiedAt: Long = 0L,
-    /**
-     * False while an e-book flattening cache (EPUB/MOBI -> CBZ) is still pending. Such books are
-     * indexed instantly with an estimated [pageCount]; a background worker fills in the real page
-     * count, and opening the book converts it on demand. Non-e-book books are always true.
-     */
-    val converted: Boolean = true,
+    /** True for reflowable text books rendered by the text reader. */
+    val reflowable: Boolean = false,
+    /** Character offset of the reading position inside the reflowable text. */
+    val progressOffset: Long = 0L,
+    /** Estimated character count of a reflowable book (from spine XHTML sizes, no parsing). */
+    val charCount: Long = 0L,
 ) {
     val progress: Float
         get() = if (pageCount <= 0) 0f else ((currentPage + if (finished) 1 else 0).toFloat() / pageCount).coerceIn(0f, 1f)
@@ -64,18 +76,31 @@ data class ComicBook(
 
     val pageLabel: String
         get() = when {
-            !converted -> "待转换"
             finished -> "已读完"
+            reflowable && progressOffset > 0L -> "读至 ${(progress * 100).roundToInt()}%"
             currentPage <= 0 -> "尚未开始"
             else -> "读到第 ${currentPage + 1} 页"
         }
 
-    /** Human-readable container type, used by the book actions sheet. */
+    /** File extension of the referenced document, lowercased ("" for folder books). */
+    val extension: String
+        get() = documentPath.substringAfterLast('.', "").lowercase()
+
+    /** Human-readable format label, used by the book cards and the actions sheet. */
     val kindLabel: String
         get() = when (kind) {
-            BookKind.ARCHIVE -> "压缩包"
-            BookKind.PDF -> "PDF"
             BookKind.FOLDER -> "文件夹"
+            BookKind.PDF -> "PDF"
+            BookKind.TEXT -> when (extension) {
+                "epub" -> "EPUB 电子书"
+                "mobi", "azw", "azw3" -> "MOBI 电子书"
+                else -> "电子书"
+            }
+            BookKind.ARCHIVE -> when (extension) {
+                "epub" -> "EPUB 电子书"
+                "mobi", "azw", "azw3" -> "MOBI 电子书"
+                else -> "压缩包"
+            }
         }
 }
 

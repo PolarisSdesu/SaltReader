@@ -7,6 +7,11 @@ import kotlinx.coroutines.flow.asStateFlow
 
 enum class LibraryLayout { COMPACT, COMFORTABLE, COVER_ONLY, LIST }
 
+/** Font size for the reflowable (text EPUB) reader. */
+const val READER_FONT_SIZE_MIN_SP = 14
+const val READER_FONT_SIZE_MAX_SP = 28
+const val READER_FONT_SIZE_DEFAULT_SP = 18
+
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val dynamicColor: Boolean = false,
@@ -20,6 +25,8 @@ data class AppSettings(
     val volumeKeyPaging: Boolean = true,
     val grayscale: Boolean = false,
     val invertColors: Boolean = false,
+    /** Font size (sp) used by the text EPUB reader; always within [READER_FONT_SIZE_MIN_SP]..[READER_FONT_SIZE_MAX_SP]. */
+    val readerFontSizeSp: Int = READER_FONT_SIZE_DEFAULT_SP,
     val libraryLayout: LibraryLayout = LibraryLayout.COMFORTABLE,
     val libraryColumns: Int = 0,
     val libraryTitleSizeSp: Int = 20,
@@ -46,6 +53,8 @@ class SettingsRepository(context: Context) {
         volumeKeyPaging = prefs.getBoolean("volume_key_paging", true),
         grayscale = prefs.getBoolean("reader_grayscale", false),
         invertColors = prefs.getBoolean("reader_invert", false),
+        readerFontSizeSp = prefs.getInt("reader_font_size", READER_FONT_SIZE_DEFAULT_SP)
+            .coerceIn(READER_FONT_SIZE_MIN_SP, READER_FONT_SIZE_MAX_SP),
         libraryLayout = runCatching { LibraryLayout.valueOf(prefs.getString("library_layout", LibraryLayout.COMFORTABLE.name)!!) }.getOrDefault(LibraryLayout.COMFORTABLE),
         libraryColumns = prefs.getInt("library_columns", 0),
         libraryTitleSizeSp = prefs.getInt("library_title_size", 20),
@@ -59,7 +68,7 @@ class SettingsRepository(context: Context) {
      */
     fun update(transform: (AppSettings) -> AppSettings) {
         val old = _state.value
-        val next = transform(old)
+        val next = transform(old).normalized()
         if (next == old) return
         _state.value = next
 
@@ -78,6 +87,9 @@ class SettingsRepository(context: Context) {
         if (next.volumeKeyPaging != old.volumeKeyPaging) editor.putBoolean("volume_key_paging", next.volumeKeyPaging)
         if (next.grayscale != old.grayscale) editor.putBoolean("reader_grayscale", next.grayscale)
         if (next.invertColors != old.invertColors) editor.putBoolean("reader_invert", next.invertColors)
+        if (next.readerFontSizeSp != old.readerFontSizeSp) {
+            editor.putInt("reader_font_size", next.readerFontSizeSp)
+        }
         if (next.libraryLayout != old.libraryLayout) editor.putString("library_layout", next.libraryLayout.name)
         if (next.libraryColumns != old.libraryColumns) editor.putInt("library_columns", next.libraryColumns)
         if (next.libraryTitleSizeSp != old.libraryTitleSizeSp) editor.putInt("library_title_size", next.libraryTitleSizeSp)
@@ -88,6 +100,10 @@ class SettingsRepository(context: Context) {
         editor.apply()
     }
 }
+
+private fun AppSettings.normalized(): AppSettings = copy(
+    readerFontSizeSp = readerFontSizeSp.coerceIn(READER_FONT_SIZE_MIN_SP, READER_FONT_SIZE_MAX_SP),
+)
 
 private inline fun <reified T : Enum<T>> android.content.SharedPreferences.enum(key: String, fallback: T): T =
     runCatching { enumValueOf<T>(getString(key, fallback.name) ?: fallback.name) }.getOrDefault(fallback)

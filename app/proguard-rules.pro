@@ -15,19 +15,13 @@
 -keepclasseswithmembers class moe.gbxin.saltreader.data.** { kotlinx.serialization.KSerializer serializer(...); }
 -keep,includedescriptorclasses class moe.gbxin.saltreader.data.**$$serializer { *; }
 
-# --- Third-party parsers ---------------------------------------------------
-# epub4j / mobi4java are reflection- and annotation-heavy (XML DOM, record
-# delegates). mobi4java is vendored in this repository and no longer depends on
-# Apache Commons: its commons-io/lang3/collections4 calls were replaced with JDK
-# equivalents, so no commons keep/dontwarn rules are needed anymore.
--keep class io.documentnode.epub4j.** { *; }
+# --- Vendored mobi parser --------------------------------------------------
+# mobi-api4java is vendored in this repository and no longer depends on Apache
+# Commons: its commons-io/lang3/collections4 calls were replaced with JDK
+# equivalents, so no commons keep/dontwarn rules are needed. EPUB is now read
+# directly by the in-repo RemoteZipReader/EpubIndexer (plain ZIP + Regex, no
+# reflection), so epub4j and its kxml2/xmlpull transitives are gone as well.
 -keep class org.rr.mobi4java.** { *; }
-
-# Optional / platform-provided dependencies of those libraries.
--dontwarn io.documentnode.epub4j.**
--dontwarn org.xmlpull.**
--dontwarn org.kxml2.**
--dontwarn org.slf4j.**
 
 # --- Material icons --------------------------------------------------------
 # androidx.compose.material:material-icons-extended is kept on purpose. The UI

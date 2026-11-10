@@ -51,7 +51,28 @@ internal object PageIndexing {
         var declaredUncompressed = 0L
         var coverBytes: ByteArray? = null
         return try {
-            ZipInputStream(BufferedInputStream(input, 64 * 1024)).use { zip ->
+            val buffered = BufferedInputStream(input, 64 * 1024)
+            // ZipInputStream quietly reports "no entries" for garbage instead of throwing, so a
+            // corrupt archive would look like an empty one. Validate the local-file signature
+            // up front and report -1 (corrupt) to the caller.
+            buffered.mark(4)
+            val signature = ByteArray(4)
+            var read = 0
+            while (read < 4) {
+                val n = buffered.read(signature, read, 4 - read)
+                if (n <= 0) break
+                read += n
+            }
+            buffered.reset()
+            val isZip = read == 4 &&
+                signature[0] == 0x50.toByte() && signature[1] == 0x4B.toByte() && (
+                    // local file header (PK\x03\x04), empty archive (PK\x05\x06) or spanned (PK\x07\x08)
+                    (signature[2].toInt() == 0x03 && signature[3].toInt() == 0x04) ||
+                        (signature[2].toInt() == 0x05 && signature[3].toInt() == 0x06) ||
+                        (signature[2].toInt() == 0x07 && signature[3].toInt() == 0x08)
+                    )
+            if (!isZip) return ZipIndex(-1, null)
+            ZipInputStream(buffered).use { zip ->
                 while (true) {
                     val entry = zip.nextEntry ?: break
                     entries++

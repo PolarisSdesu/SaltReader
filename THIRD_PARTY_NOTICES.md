@@ -3,16 +3,11 @@
 Salt Reader includes or depends on the following open-source components. All are
 distributed under the Apache License 2.0 unless noted otherwise.
 
-## epub4j
-- Artifact: `io.documentnode:epub4j-core:4.2.2` (plus transitives `zip4j`, `kxml2`, `minilog`)
-- License: Apache License 2.0
-- Project: https://github.com/documentnode/epub4j
-- Used to parse EPUB containers before pages are flattened into the derived CBZ cache.
-
 ## mobi-api4java (vendored)
 - Vendored source: `app/src/main/java/org/rr/mobi4java`
 - License: Apache License 2.0; full license text at `third_party/mobi-api4java-LICENSE.txt`
 - Project: https://github.com/Haoyi/mobi-api4java
+- Used to parse MOBI/AZW3 text content for the native text reader (no file conversion).
 - The sources are vendored and adapted for Salt Reader. Copyright remains with the
   original authors; Salt Reader does not claim ownership.
 - Adaptation note: the Apache Commons (`commons-io`, `commons-lang3`,
@@ -21,16 +16,22 @@ distributed under the Apache License 2.0 unless noted otherwise.
   (`org.rr.mobi4java.util.TeeOutputStream`, `org.rr.mobi4java.util.ToStringBuilder`)
   were written for this project and are covered by the same Apache License 2.0.
 
-## Apache Commons — no longer a dependency
-- Earlier builds depended on `commons-io`, `commons-lang3` and
-  `commons-collections4`. They have been removed completely (no runtime or
-  proguard references remain); the vendored mobi-api4java code now uses only the
-  JDK. No third-party Commons attribution is required anymore.
+## RemoteZipReader / EpubIndexer (first-party code)
+- Source: `app/src/main/java/moe/gbxin/saltreader/data/RemoteZipReader.kt` and
+  `EpubIndexer.kt`
+- These are original Salt Reader implementations (`java.nio` + `java.util.zip` +
+  `kotlin.text.Regex`). They read ZIP/CBZ and EPUB containers directly (EOCD/ZIP64
+  central directory, per-entry inflate) and do not derive from any third-party
+  library, so no external attribution is required.
+- EPUB is no longer parsed with epub4j: `epub4j-core` and its transitive
+  `zip4j`/`kxml2`/`minilog`/`xmlpull` dependencies were removed completely.
 
 ## AndroidX / Kotlin
 - Jetpack Compose, Material 3, AndroidX libraries, Kotlin and kotlinx
   (coroutines/serialization) are Apache License 2.0, with the Kotlin standard
   library under Apache License 2.0 as well.
+- Text reflow rendering uses the Android platform `WebView` (part of the OS, not a
+  bundled third-party library).
 
 ## Material 3 design reference
 - `hamen/material-3-skill` — MIT

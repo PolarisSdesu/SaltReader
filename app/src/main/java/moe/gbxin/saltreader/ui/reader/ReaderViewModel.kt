@@ -23,31 +23,51 @@ import kotlinx.coroutines.withContext
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.ComicBook
 import moe.gbxin.saltreader.data.ComicPageSource
+import moe.gbxin.saltreader.data.EbookChapter
 import moe.gbxin.saltreader.data.ReadingDirection
 
 /**
  * What the reader can show right now.
  *
- * - [Loading] while the library index is still publishing, or while the page source is being
- *   prepared (for e-books that can mean an on-demand conversion; [Loading.message] says which).
+ * - [Loading] while the library index is still publishing, or while the image page source is being
+ *   prepared ([Loading.message] says which).
  * - [Missing] only when the index is ready and the book is definitively gone.
- * - [Ready] once [ComicPageSource.prepare] has reported the real page count. This count may differ
- *   from the estimated `ComicBook.pageCount` of a not-yet-converted e-book, so it is carried here
- *   instead of being read from the book record.
- * - [Failed] when preparing the book failed (corrupt file / unsupported format / conversion error);
- *   the UI offers a retry.
+ * - [Ready] once [ComicPageSource.prepare] has reported the real page count. This count is the
+ *   authoritative one (it can differ from the estimate stored in the index, e.g. remote ZIP reads),
+ *   so it is carried here instead of being read from the book record.
+ * - [Failed] when preparing the book failed (corrupt file / unsupported format); UI offers a retry.
  */
 sealed interface ReaderUiState {
     data class Loading(val message: String = "正在打开…") : ReaderUiState
     data object Missing : ReaderUiState
     data class Ready(val book: ComicBook, val pageCount: Int) : ReaderUiState
     data object Failed : ReaderUiState
+
+    /**
+     * Reflowable text book (EPUB/MOBI/AZW3): chapters are being parsed / extracted on IO.
+     * The message is deliberately generic so the UI does not need to know the container format.
+     */
+    data class TextLoading(val message: String = "正在解析电子书…") : ReaderUiState
+
+    /** Reflowable text book ready to render; [chapters] are already sanitized HTML. */
+    data class TextReady(val book: ComicBook, val chapters: List<EbookChapter>) : ReaderUiState
+
+    /** Reflowable text book failed to load (corrupt file / extraction error) - retryable. */
+    data object TextFailed : ReaderUiState
 }
 
-/** Internal preparation progress for the currently open book. */
+/** Internal chapter-loading progress for reflowable books. */
+private sealed interface TextLoadState {
+    data object Idle : TextLoadState
+    data object Loading : TextLoadState
+    data class Done(val chapters: List<EbookChapter>) : TextLoadState
+    data object Failed : TextLoadState
+}
+
+/** Internal preparation progress for the image page source of the currently open book. */
 private sealed interface PrepareState {
     data object Idle : PrepareState
-    data class Running(val converting: Boolean) : PrepareState
+    data object Running : PrepareState
     data class Done(val pageCount: Int) : PrepareState
     data object Failed : PrepareState
 }
@@ -56,10 +76,11 @@ private sealed interface PrepareState {
  * State holder for one open book.
  *
  * All file / provider access happens off the main thread: the page source is created lazily on
- * [Dispatchers.IO] and prepared there before the reader becomes [ReaderUiState.Ready]. For e-books
- * whose cache is not ready yet, `prepare()` performs the on-demand conversion, which is why the
- * loading state is allowed to stay up for a while (with a "converting" message) instead of
- * returning to the shelf. The main thread never performs I/O.
+ * [Dispatchers.IO] and prepared there before the reader becomes [ReaderUiState.Ready]. Preparing an
+ * image source (remote ZIP central directory, PDF renderer, provider open) only happens off the
+ * main thread, which is why the loading state is allowed to stay up for a moment instead of
+ * returning to the shelf. Text books (reflowable) load their chapters on IO instead. The main
+ * thread never performs I/O.
  */
 class ReaderViewModel(
     application: Application,
@@ -90,6 +111,11 @@ class ReaderViewModel(
 
     private val prepareState = MutableStateFlow<PrepareState>(PrepareState.Idle)
 
+    /** Runs the one-time chapter extraction for reflowable EPUBs; guarded against duplicate starts. */
+    private var textJob: Job? = null
+
+    private val textState = MutableStateFlow<TextLoadState>(TextLoadState.Idle)
+
     private val maxCacheBytes = (Runtime.getRuntime().maxMemory() / 6L).coerceAtMost(96L * 1024L * 1024L)
     private val cache = object : LruCache<String, Bitmap>(maxCacheBytes.toInt()) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
@@ -99,14 +125,23 @@ class ReaderViewModel(
         ready: Boolean,
         books: List<ComicBook>,
         prepare: PrepareState,
+        text: TextLoadState,
     ): ReaderUiState {
         val indexed = books.firstOrNull { it.id == bookId }
             ?: return if (ready) ReaderUiState.Missing else ReaderUiState.Loading()
+        // Reflowable text books (EPUB/MOBI/AZW3) never go through the image page source.
+        if (indexed.reflowable) {
+            return when (text) {
+                TextLoadState.Idle, TextLoadState.Loading -> ReaderUiState.TextLoading()
+                is TextLoadState.Done -> ReaderUiState.TextReady(indexed, text.chapters)
+                TextLoadState.Failed -> ReaderUiState.TextFailed
+            }
+        }
         return when (prepare) {
-            PrepareState.Idle -> ReaderUiState.Loading()
-            is PrepareState.Running -> ReaderUiState.Loading(
-                if (prepare.converting) "正在转换电子书…" else "正在准备…",
-            )
+            // Book is indexed but its image page source has not started opening yet: same message as
+            // while preparing so the loading state is consistent for image books.
+            PrepareState.Idle -> ReaderUiState.Loading("正在准备…")
+            PrepareState.Running -> ReaderUiState.Loading("正在准备…")
             is PrepareState.Done -> ReaderUiState.Ready(indexed, prepare.pageCount)
             PrepareState.Failed -> ReaderUiState.Failed
         }
@@ -117,23 +152,37 @@ class ReaderViewModel(
      * updates and re-indexing flow through without extra file access.
      */
     val uiState: StateFlow<ReaderUiState> =
-        combine(repo.ready, repo.books, prepareState) { ready, books, prepare ->
-            stateFor(ready, books, prepare)
+        combine(repo.ready, repo.books, prepareState, textState) { ready, books, prepare, text ->
+            stateFor(ready, books, prepare, text)
         }
             .stateIn(
                 viewModelScope,
                 SharingStarted.WhileSubscribed(5_000),
-                stateFor(repo.ready.value, repo.books.value, prepareState.value),
+                stateFor(repo.ready.value, repo.books.value, prepareState.value, textState.value),
             )
 
     /** The book currently being read, or null while loading / missing / failed. */
     val book: StateFlow<ComicBook?> = uiState
-        .map { (it as? ReaderUiState.Ready)?.book }
+        .map { state ->
+            when (state) {
+                is ReaderUiState.Ready -> state.book
+                is ReaderUiState.TextReady -> state.book
+                else -> null
+            }
+        }
         .stateIn(
             viewModelScope,
             SharingStarted.WhileSubscribed(5_000),
-            (stateFor(repo.ready.value, repo.books.value, prepareState.value) as? ReaderUiState.Ready)?.book,
+            initialBook(),
         )
+
+    private fun initialBook(): ComicBook? = when (
+        val state = stateFor(repo.ready.value, repo.books.value, prepareState.value, textState.value)
+    ) {
+        is ReaderUiState.Ready -> state.book
+        is ReaderUiState.TextReady -> state.book
+        else -> null
+    }
 
     init {
         // bookkeeping only: never touches the page source and runs off the main thread.
@@ -142,17 +191,26 @@ class ReaderViewModel(
     }
 
     /**
-     * Starts preparing the book as soon as the index contains it, and retries once automatically if
-     * the background conversion later succeeds after an open-time failure (the `converted` flag
-     * changes). Re-indexing / deleting the book resets the preparation state.
+     * Reacts to the book appearing / changing in the index:
+     * - reflowable EPUB: extract chapters on IO (no page source, no prepare);
+     * - image book: prepare the page source (and auto-retry when a background conversion finishes).
+     * Re-indexing (modifiedAt changes) reloads the content; deleting the book resets both states.
      */
     private suspend fun observePrepareTarget() {
         repo.books
             .map { books -> books.firstOrNull { it.id == bookId } }
-            .distinctUntilChangedBy { indexed -> indexed?.converted }
+            .distinctUntilChangedBy { indexed ->
+                indexed?.let { listOf(it.reflowable, it.modifiedAt) }
+            }
             .collect { indexed ->
                 if (indexed == null) {
                     prepareState.value = PrepareState.Idle
+                    textState.value = TextLoadState.Idle
+                } else if (indexed.reflowable) {
+                    when (textState.value) {
+                        is TextLoadState.Loading, is TextLoadState.Done -> Unit
+                        else -> startLoadChapters(indexed)
+                    }
                 } else {
                     when (prepareState.value) {
                         is PrepareState.Done, is PrepareState.Running -> Unit
@@ -162,11 +220,27 @@ class ReaderViewModel(
             }
     }
 
+    private fun startLoadChapters(indexed: ComicBook) {
+        if (released) return
+        if (textJob?.isActive == true) return
+        textJob = viewModelScope.launch(Dispatchers.IO) {
+            textState.value = TextLoadState.Loading
+            // Data layer returns an empty list when extraction fails (contract), so an empty result
+            // is treated as a retryable failure instead of an empty book.
+            val chapters = runCatching { repo.loadEbookChapters(indexed) }.getOrNull()
+            textState.value = if (chapters.isNullOrEmpty()) {
+                TextLoadState.Failed
+            } else {
+                TextLoadState.Done(chapters)
+            }
+        }
+    }
+
     private fun startPrepare(indexed: ComicBook) {
         if (released) return
         if (prepareJob?.isActive == true) return
         prepareJob = viewModelScope.launch(Dispatchers.IO) {
-            prepareState.value = PrepareState.Running(converting = !indexed.converted)
+            prepareState.value = PrepareState.Running
             val pageCount: Int? = runCatching {
                 val pageSource = ensureSource(indexed) ?: return@runCatching null
                 pageSource.prepare().takeIf { it > 0 }
@@ -194,6 +268,23 @@ class ReaderViewModel(
             prepareState.value = PrepareState.Idle
             repo.books.value.firstOrNull { it.id == bookId }?.let(::startPrepare)
         }
+    }
+
+    /** UI retry after [ReaderUiState.TextFailed]: reload and re-extract the chapters. */
+    fun retryLoadChapters() {
+        if (released || textState.value is TextLoadState.Loading) return
+        textJob?.cancel()
+        textJob = null
+        textState.value = TextLoadState.Idle
+        repo.books.value.firstOrNull { it.id == bookId }?.takeIf { it.reflowable }?.let(::startLoadChapters)
+    }
+
+    /**
+     * Persists the text reading position as a character offset. The repository maps it back to the
+     * estimated shelf page, handles debounced persistence and marks the book finished near the end.
+     */
+    fun updateTextProgress(offset: Long) {
+        repo.updateTextProgress(bookId, offset)
     }
 
     fun peekPage(index: Int, targetWidth: Int): Bitmap? {
@@ -281,6 +372,8 @@ class ReaderViewModel(
         prefetchJob = null
         prepareJob?.cancel()
         prepareJob = null
+        textJob?.cancel()
+        textJob = null
         runCatching { source?.close() }
         source = null
         cache.evictAll()

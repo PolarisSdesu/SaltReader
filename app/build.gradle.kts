@@ -34,8 +34,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // Play 要求每次上传统递增且不可回退；仅在发布新版本时 +1。
-        versionCode = 4
-        versionName = "1.2.1"
+        versionCode = 6
+        versionName = "1.4.0"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -93,20 +93,6 @@ kotlin {
     }
 }
 
-configurations.configureEach {
-    // epub4j pulls an old `xmlpull:xmlpull` artifact that duplicates the platform
-    // XML pull parser and breaks packaging. Android provides org.xmlpull.v1 itself.
-    exclude(group = "xmlpull", module = "xmlpull")
-}
-
-// kxml2 ships org.xmlpull.v1/org.kxml2 as program classes, which collides with the
-// platform's android.content.res.XmlResourceParser during R8. Keep it on the compile
-// classpath (vendored parsers may reference it) but exclude it from the runtime classpath:
-// Android's framework provides these classes at runtime.
-configurations.matching { it.name.endsWith("RuntimeClasspath") }.configureEach {
-    exclude(group = "net.sf.kxml", module = "kxml2")
-}
-
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui.base)
@@ -125,7 +111,6 @@ dependencies {
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.documentfile)
     implementation(libs.androidx.exifinterface)
-    implementation(libs.io.documentnode.epub4j.core)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
 

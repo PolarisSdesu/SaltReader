@@ -10,23 +10,29 @@ class BookLogicTest {
 
     private fun book(
         id: String = "b",
+        kind: BookKind = BookKind.ARCHIVE,
         pageCount: Int = 10,
         currentPage: Int = 0,
         finished: Boolean = false,
-        converted: Boolean = true,
+        reflowable: Boolean = false,
+        progressOffset: Long = 0L,
+        charCount: Long = 0L,
+        documentPath: String = "book-$id.cbz",
         author: String? = null,
     ) = ComicBook(
         id = id,
         title = "Book $id",
         author = author,
-        kind = BookKind.ARCHIVE,
+        kind = kind,
         treeUri = "content://com.android.externalstorage.documents/tree/primary%3AComics",
-        documentPath = "book-$id.cbz",
+        documentPath = documentPath,
         pageCount = pageCount,
         addedAt = 0L,
         currentPage = currentPage,
         finished = finished,
-        converted = converted,
+        reflowable = reflowable,
+        progressOffset = progressOffset,
+        charCount = charCount,
     )
 
     @Test
@@ -51,18 +57,47 @@ class BookLogicTest {
     }
 
     @Test
-    fun `page label reports the pending conversion of an e-book`() {
-        assertEquals("待转换", book(converted = false).pageLabel)
-        // Conversion state wins over the reading state.
-        assertEquals("待转换", book(converted = false, currentPage = 3).pageLabel)
-        assertEquals("待转换", book(converted = false, finished = true).pageLabel)
+    fun `page label reflects the reading state of an image book`() {
+        assertEquals("尚未开始", book(currentPage = 0).pageLabel)
+        assertEquals("读到第 3 页", book(currentPage = 2).pageLabel)
+        assertEquals("已读完", book(finished = true).pageLabel)
     }
 
     @Test
-    fun `page label reflects the reading state of a converted book`() {
-        assertEquals("尚未开始", book(converted = true, currentPage = 0).pageLabel)
-        assertEquals("读到第 3 页", book(converted = true, currentPage = 2).pageLabel)
-        assertEquals("已读完", book(converted = true, finished = true).pageLabel)
+    fun `reflowable EPUB page label is a percentage instead of a page number`() {
+        val textBook = book(
+            kind = BookKind.TEXT,
+            reflowable = true,
+            pageCount = 4,
+            currentPage = 1,
+            progressOffset = 250L,
+            charCount = 1000L,
+        )
+
+        assertEquals("读至 25%", textBook.pageLabel)
+        assertEquals(0.25f, textBook.progress, 1e-6f)
+    }
+
+    @Test
+    fun `reflowable EPUB before any progress shows the normal start label`() {
+        val started = book(kind = BookKind.TEXT, reflowable = true, pageCount = 4, currentPage = 0, progressOffset = 0L)
+
+        assertEquals("尚未开始", started.pageLabel)
+    }
+
+    @Test
+    fun `reflowable EPUB finished label wins over the percentage`() {
+        val finished = book(
+            kind = BookKind.TEXT,
+            reflowable = true,
+            pageCount = 4,
+            currentPage = 3,
+            finished = true,
+            progressOffset = 990L,
+            charCount = 1000L,
+        )
+
+        assertEquals("已读完", finished.pageLabel)
     }
 
     @Test
@@ -73,9 +108,13 @@ class BookLogicTest {
     }
 
     @Test
-    fun `all indexed books are SAF references`() {
+    fun `all indexed books are SAF references and text books have their own label`() {
         assertTrue(book().treeUri.isNotBlank())
         assertEquals("book-b.cbz", book().documentPath)
+        assertEquals("EPUB 电子书", book(kind = BookKind.TEXT, documentPath = "novel.epub").kindLabel)
+        assertEquals("MOBI 电子书", book(kind = BookKind.TEXT, documentPath = "novel.mobi").kindLabel)
+        assertEquals("压缩包", book(kind = BookKind.ARCHIVE, documentPath = "book.cbz").kindLabel)
+        assertEquals("EPUB 电子书", book(kind = BookKind.ARCHIVE, documentPath = "images.epub").kindLabel)
     }
 
     @Test

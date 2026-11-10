@@ -16,27 +16,20 @@ import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
-import java.io.IOException
 import java.io.InputStream
-import java.util.zip.ZipEntry
-import java.util.zip.ZipFile
 import kotlin.math.min
 import kotlin.math.sqrt
 
 /**
- * 页面源接口（契约收敛）：
- * - [pageCount] 直接取索引阶段算好的 `book.pageCount`，source 不做页面枚举 I/O；
- * - [loadPage] 可能做阻塞 I/O（复制缓存、打开 zip/pdf），调用方在 IO 线程调用；
- *   内部也统一切到 Dispatchers.IO，避免误在主线程调用时 ANR；
+ * 页面源接口（契约）：
+ * - [pageCount] 取索引阶段算好的 `book.pageCount`，source 不做页面枚举 I/O；
+ * - [prepare] 首次打开前调用（IO 线程）：可枚举真实页数/建立映射，默认返回 [pageCount]；
+ * - [loadPage] 可能做阻塞 I/O，内部统一切到 Dispatchers.IO；
  * - [close] 释放文件句柄/渲染器。
  */
 interface ComicPageSource : Closeable {
     val pageCount: Int
 
-    /**
-     * 首次打开前调用（IO 线程）：电子书可在此生成拍平缓存并返回真实页数；
-     * 其余 source 默认直接返回索引阶段算好的 [pageCount]。
-     */
     suspend fun prepare(): Int = pageCount
 
     suspend fun loadPage(index: Int, targetWidth: Int): Bitmap?
@@ -53,123 +46,124 @@ private abstract class LazyPageSource(override val pageCount: Int) : ComicPageSo
         withContext(Dispatchers.IO) { loadBlocking(index, targetWidth) }
 }
 
-/** 书元数据无效（既不是 SAF 也没有旧副本）时返回空源，保证 pageSource() 不抛异常。 */
+/** 书元数据无效（或文字型书没有页图）时返回空源，保证 pageSource() 不抛异常。 */
 private class EmptyPageSource(override val pageCount: Int) : ComicPageSource {
     override suspend fun loadPage(index: Int, targetWidth: Int): Bitmap? = null
     override fun close() = Unit
 }
 
-/** 页面源工厂：同步构造、零 I/O；具体打开动作推迟到第一次 loadPage。 */
+/** 页面源工厂：同步构造、零 I/O；具体打开动作推迟到第一次 prepare/loadPage。 */
 internal object ComicPageSourceFactory {
-    fun open(book: ComicBook, context: Context, cacheDir: File, ebookCacheDir: File): ComicPageSource {
+    fun open(book: ComicBook, context: Context): ComicPageSource {
         if (book.pageCount <= 0) return EmptyPageSource(book.pageCount)
         return when (book.kind) {
             BookKind.FOLDER -> SafFolderPageSource(book, context)
             BookKind.PDF -> SafPdfPageSource(book, context)
+            // 文字型书由原生文字阅读器渲染章节，不经过页面源。
+            BookKind.TEXT -> EmptyPageSource(book.pageCount)
             BookKind.ARCHIVE ->
-                if (isEbookBook(book)) EbookCachePageSource(book, context, ebookCacheDir)
-                else SafArchivePageSource(book, context, cacheDir)
+                if (isEpubArchive(book)) EpubImagePageSource(book, context)
+                else RemoteZipArchivePageSource(book, context)
         }
     }
 }
 
-/** 外部 EPUB/MOBI 的派生缓存：`cacheDir/ebooks/<id>.cbz`，缺失时按需重建。 */
-private class EbookCachePageSource(
+/**
+ * 普通 ZIP/CBZ：用 [RemoteZipReader] 直接从 SAF 文档随机读图片条目。
+ * 不再把整包复制到应用缓存；prepare() 惰性枚举中央目录并返回真实页数。
+ */
+private class RemoteZipArchivePageSource(
     private val book: ComicBook,
     private val context: Context,
-    private val ebookCacheDir: File,
 ) : LazyPageSource(book.pageCount) {
     private val lock = Any()
-    private var delegate: FileArchivePageSource? = null
+    private var reader: RemoteZipReader? = null
+    private var pages: List<String>? = null
     private var closed = false
 
-    /** 缓存缺失时在单飞锁内重建（复用 rebuildCache），返回缓存里的真实页数。 */
     override suspend fun prepare(): Int = withContext(Dispatchers.IO) {
-        val source = ensureOpen() ?: return@withContext pageCount
-        source.actualPageCount() ?: pageCount
+        ensureParsed()?.size ?: pageCount
+    }
+
+    private fun ensureParsed(): List<String>? = synchronized(lock) {
+        if (closed) return null
+        pages?.let { return it }
+        val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
+        val opened = RemoteZipReader.open(context, uri) ?: return null
+        val list = runCatching { opened.imageEntries().map { it.name } }.getOrNull().orEmpty()
+        if (list.isEmpty()) {
+            opened.close()
+            return null
+        }
+        reader = opened
+        pages = list
+        list
     }
 
     override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
-        val source = ensureOpen() ?: return null
-        return source.loadBlocking(index, targetWidth)
-    }
-
-    private fun ensureOpen(): FileArchivePageSource? = synchronized(lock) {
-        if (closed) return null
-        delegate?.let { return it }
-        val cache = File(ebookCacheDir, "${book.id}.cbz")
-        if (!cache.exists() || cache.length() == 0L) {
-            if (!rebuildCache(cache)) return null
-        }
-        val source = FileArchivePageSource(cache, pageCount)
-        delegate = source
-        source
-    }
-
-    private fun rebuildCache(cache: File): Boolean {
-        val ext = ebookExtensionOf(book) ?: return false
-        val tree = runCatching { SafTree(context, Uri.parse(book.treeUri)) }.getOrNull() ?: return false
-        val entry = tree.find(book.documentPath) ?: return false
-        if (entry.isDirectory) return false
-        val tempDir = File(context.cacheDir, "tmp").apply { mkdirs() }
-        val temp = runCatching { File.createTempFile("ebook-", ".$ext", tempDir) }.getOrNull() ?: return false
-        cache.parentFile?.mkdirs()
-        return try {
-            context.contentResolver.openInputStream(entry.uri)?.use { input ->
-                temp.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
-            } ?: return false
-            FormatConverters.toCbz(temp, cache, ext) > 0
-        } catch (e: Exception) {
-            false
-        } finally {
-            temp.delete()
-        }
+        val list = ensureParsed() ?: return null
+        val opened = reader ?: return null
+        val entry = list.getOrNull(index) ?: return null
+        val bytes = runCatching { opened.readEntry(entry, PageIndexing.MAX_PAGE_BYTES) }.getOrNull() ?: return null
+        return decodePage(bytes, targetWidth)
     }
 
     override fun close() {
         synchronized(lock) {
             closed = true
-            runCatching { delegate?.close() }
-            delegate = null
+            runCatching { reader?.close() }
+            reader = null
+            pages = null
         }
     }
 }
 
-/** SAF 压缩包：首次读取时把文档流式复制到缓存，再用 ZipFile 随机访问。 */
-private class SafArchivePageSource(
+/**
+ * 图片型 EPUB：同样用 RemoteZipReader 直读自身 ZIP，但页序/页数来自 spine→图片条目映射
+ * （不是 ZIP 里的全部图片）。[prepare] 惰性解析映射并返回真实页数。
+ */
+private class EpubImagePageSource(
     private val book: ComicBook,
     private val context: Context,
-    private val cacheDir: File,
 ) : LazyPageSource(book.pageCount) {
     private val lock = Any()
-    private var delegate: FileArchivePageSource? = null
+    private var reader: RemoteZipReader? = null
+    private var pages: List<String>? = null
     private var closed = false
 
-    private fun ensureOpen(): FileArchivePageSource? = synchronized(lock) {
+    override suspend fun prepare(): Int = withContext(Dispatchers.IO) {
+        ensureParsed()?.size ?: pageCount
+    }
+
+    private fun ensureParsed(): List<String>? = synchronized(lock) {
         if (closed) return null
-        delegate?.let { return it }
-        val tree = runCatching { SafTree(context, Uri.parse(book.treeUri)) }.getOrNull() ?: return null
-        val entry = tree.find(book.documentPath) ?: return null
-        if (entry.isDirectory) return null
-        val target = bookCacheFile(book, cacheDir)
-        if (!target.exists() || target.length() == 0L) {
-            if (!copyDocumentToCache(context, entry.uri, target)) return null
+        pages?.let { return it }
+        val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
+        val opened = RemoteZipReader.open(context, uri) ?: return null
+        val mapping = runCatching { EpubIndexer.imagePageEntries(opened) }.getOrNull().orEmpty()
+        if (mapping.isEmpty()) {
+            opened.close()
+            return null
         }
-        val source = FileArchivePageSource(target, pageCount)
-        delegate = source
-        source
+        reader = opened
+        pages = mapping
+        mapping
     }
 
     override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
-        val source = ensureOpen() ?: return null
-        return source.loadBlocking(index, targetWidth)
+        val mapping = ensureParsed() ?: return null
+        val opened = reader ?: return null
+        val entry = mapping.getOrNull(index) ?: return null
+        val bytes = runCatching { opened.readEntry(entry, PageIndexing.MAX_PAGE_BYTES) }.getOrNull() ?: return null
+        return decodePage(bytes, targetWidth)
     }
 
     override fun close() {
         synchronized(lock) {
             closed = true
-            runCatching { delegate?.close() }
-            delegate = null
+            runCatching { reader?.close() }
+            reader = null
+            pages = null
         }
     }
 }
@@ -228,10 +222,8 @@ private class SafPdfPageSource(
     private fun ensureOpen(): PdfRenderer? = synchronized(lock) {
         if (closed) return null
         renderer?.let { return it }
-        val tree = runCatching { SafTree(context, Uri.parse(book.treeUri)) }.getOrNull() ?: return null
-        val entry = tree.find(book.documentPath) ?: return null
-        if (entry.isDirectory) return null
-        val fd = runCatching { context.contentResolver.openFileDescriptor(entry.uri, "r") }.getOrNull() ?: return null
+        val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
+        val fd = runCatching { context.contentResolver.openFileDescriptor(uri, "r") }.getOrNull() ?: return null
         val pdf = try {
             PdfRenderer(fd)
         } catch (t: Exception) {
@@ -259,111 +251,13 @@ private class SafPdfPageSource(
     }
 }
 
-/** 本地压缩包（ZIP 随机读缓存 / 电子书拍平缓存）：惰性打开 ZipFile。 */
-private class FileArchivePageSource(
-    private val file: File,
-    override val pageCount: Int,
-) : LazyPageSource(pageCount) {
-    private val lock = Any()
-    private var zip: ZipFile? = null
-    private var entries: List<ZipEntry>? = null
-    private var closed = false
-
-    private fun ensureOpen(): Pair<ZipFile, List<ZipEntry>>? = synchronized(lock) {
-        if (closed) return null
-        val openedZip = zip
-        val openedEntries = entries
-        if (openedZip != null && openedEntries != null) return openedZip to openedEntries
-        val newZip = try {
-            ZipFile(file)
-        } catch (t: Exception) {
-            return null
-        }
-        val newEntries = try {
-            newZip.imageEntries()
-        } catch (t: Exception) {
-            runCatching { newZip.close() }
-            return null
-        }
-        zip = newZip
-        entries = newEntries
-        newZip to newEntries
-    }
-
-    /** 打开后返回实际图片条目数（= 真实页数）；尚未打开时返回 null。 */
-    fun actualPageCount(): Int? = ensureOpen()?.second?.size
-
-    override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
-        val (zipFile, pageEntries) = ensureOpen() ?: return null
-        val entry = pageEntries.getOrNull(index) ?: return null
-        if (entry.size > PageIndexing.MAX_PAGE_BYTES) return null
-        val bytes = try {
-            zipFile.getInputStream(entry).use { readBounded(it) }
-        } catch (t: Exception) {
-            null
-        } ?: return null
-        return decodePage(bytes, targetWidth)
-    }
-
-    override fun close() {
-        synchronized(lock) {
-            closed = true
-            runCatching { zip?.close() }
-            zip = null
-            entries = null
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // 共享工具
 // ---------------------------------------------------------------------------
 
-internal fun bookCacheFile(book: ComicBook, cacheDir: File): File {
-    val rawExt = book.documentPath.substringAfterLast('.', "").lowercase()
-    val ext = rawExt.filter { it.isLetterOrDigit() }.ifBlank { "zip" }
-    return File(cacheDir, "${book.id}_${book.modifiedAt}_${book.sizeBytes}.$ext")
-}
-
-internal val ebookExtensions: Set<String> = setOf("epub", "mobi", "azw", "azw3")
-
-internal fun ebookExtensionOf(book: ComicBook): String? {
-    val ext = book.documentPath.substringAfterLast('.', "").lowercase()
-    return ext.takeIf { it in ebookExtensions }
-}
-
-internal fun isEbookBook(book: ComicBook): Boolean = ebookExtensionOf(book) != null
-
-/** 直接从本地 CBZ 缓存解码第 0 页，索引阶段给电子书生成封面用。 */
-internal fun decodeArchiveFirstPage(file: File, targetWidth: Int): Bitmap? {
-    if (!file.exists() || file.length() == 0L) return null
-    val source = FileArchivePageSource(file, 1)
-    return try {
-        source.loadBlocking(0, targetWidth)
-    } finally {
-        source.close()
-    }
-}
-
-internal fun ZipFile.imageEntries(): List<ZipEntry> {
-    val all = entries().toList()
-    if (all.size > PageIndexing.MAX_ZIP_ENTRIES) throw IOException("压缩包条目过多")
-    return all
-        .filter { !it.isDirectory && PageIndexing.isComicImageName(it.name) }
-        .sortedWith(compareBy(PageNameComparator) { it.name })
-}
-
-/** 把 SAF 文档流式复制到本地缓存：先写 .tmp，成功后 rename。 */
-private fun copyDocumentToCache(context: Context, uri: Uri, target: File): Boolean = try {
-    writeFileAtomically(target) { out ->
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            input.copyTo(out, 64 * 1024)
-        } ?: throw IOException("无法读取文件")
-    }
-    true
-} catch (t: Exception) {
-    false
-}
+/** 图片型 EPUB：kind 仍是 ARCHIVE，但文档扩展名是 epub，页序由 spine 决定。 */
+internal fun isEpubArchive(book: ComicBook): Boolean =
+    book.kind == BookKind.ARCHIVE && book.extension == "epub"
 
 /** 有上限的流式读取；超过 [maxBytes] 返回 null（视为损坏/超限文件）。 */
 internal fun readBounded(

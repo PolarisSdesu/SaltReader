@@ -160,3 +160,81 @@ A 负责的实现：
 - 新增 `app/src/test`：`ComicBook` 序列化往返、`PageNameComparator` 排序、`ImportReport`/进度计算等纯 JVM 测试；
   添加 `.github/workflows/android.yml`（assembleDebug + testDebugUnitTest）。
 - README：Play-ready 说明、SAF 添加目录流程、不再复制导入、SDK 37、版本与签名说明。
+
+## 第三轮：EPUB 直读 + 原生文字阅读（替代拍平转换）
+
+目标：EPUB 不再需要转成 CBZ。图片型 EPUB 直接按 ZIP 读取；文字型 EPUB 走原生重排阅读器。
+不引入任何 `.so`：图片型 EPUB 用纯 Kotlin `RemoteZipReader`；文字型用 Android 内置 WebView
+做排版渲染（epub4j 仅抽取章节 HTML），全部是平台能力。
+
+### 模型（`data/Models.kt`，Lead 独占）
+
+- `BookKind` 新增 `EPUB_TEXT`。
+- `ComicBook` 新增：
+  - `reflowable: Boolean = false`：true = 文字型 EPUB，走文字阅读器；
+  - `progressOffset: Long = 0L`：文字阅读位置（字符偏移，唯一权威进度）；
+  - `charCount: Long = 0L`：估算字符数（由 spine 中 XHTML 的未压缩大小估算，不解析正文）；
+  - `pageCount`：文字书为估算页数（`max(1, charCount / 1500)`），仅用于书架进度显示；
+  - `converted`：仅 MOBI/AZW3 拍平缓存使用；EPUB 恒为 true。
+
+### 数据层契约（data-saf）
+
+1. **EPUB 索引分类**（通过 `RemoteZipReader`，零转换）：
+   - 解析 `META-INF/container.xml` → OPF → manifest + spine itemrefs。
+   - 判定图片型：spine 条目 media-type 为 `image/*`，或对应 XHTML 中存在唯一可解析的 `<img src>`；
+     满足比例 ≥ 80% 即按图片型处理。
+   - 图片型：`kind=ARCHIVE`、`converted=true`、`reflowable=false`、`pageCount=图片页数`，
+     封面取第一张图片条目；**不写任何派生缓存**。页序 = spine 顺序。
+   - 文字型：`kind=EPUB_TEXT`、`converted=true`、`reflowable=true`、
+     `charCount=Σ(spine XHTML uncompressedSize)*0.6`（下限 1）、`pageCount=max(1,charCount/1500)`；
+     不生成封面（UI 用默认占位），**不入转换队列**。
+   - MOBI/AZW3 仍然：`converted=false` + 后台 2 并发拍平（保持不变）。
+2. `ComicPageSourceFactory`：图片型 EPUB 返回 `EpubImagePageSource(RemoteZipReader)`；
+   `prepare()` 惰性解析 spine→image 条目映射并返回真实页数；`loadPage` 按 index inflate 单张图片，
+   复用 32MB 单页 / 16MP 解码上限；`close()` 关闭 PFD。
+3. 文字型 EPUB 文本提取：
+   ```kotlin
+   @Serializable data class EbookChapter(val title: String?, val html: String)
+   suspend fun loadEbookChapters(book: ComicBook): List<EbookChapter>
+   ```
+   - **不要用 epub4j**：直接用 `RemoteZipReader` 读 spine 顺序的 XHTML（单章上限 8MB）；
+     `title` 取章节内首个 h1/h2/title 或 null；
+   - `html` 为清洗后的正文 HTML（去掉 script/style/link，内联图片转为 data URI 或直接移除，体积上限保护）；
+   - 全程 IO 线程，失败返回空列表并记录失败。
+4. 进度回填：`fun updateTextProgress(bookId: String, offset: Long)`：
+   - 写 `progressOffset`，并按 `currentPage = (offset / charCount * pageCount)` 估算书架进度；
+   - 走统一 debounce 持久化；`finished` 在 offset ≥ charCount*0.99 时置 true。
+5. 删除 EPUB 的拍平相关分支（`FormatConverters.toCbz` 只保留 MOBI/AZW3；后台队列只处理 MOBI/AZW3）。
+
+### 阅读器契约（reader）
+
+1. `ReaderScreen`/`ReaderViewModel` 在 `book.reflowable == true` 时进入文字阅读分支
+   （新增 `TextReaderContent`），否则保持现有图像分页逻辑。
+2. 文字阅读器：
+   - 打开时在 IO 调 `repo.loadEbookChapters(book)`，Loading/Missing/Failed 状态与现有风格一致；
+   - 用 WebView 渲染：注入 CSS（`font-size: {readerFontSizeSp}px; line-height: 1.75; color/background`
+     跟随阅读背景与主题），PAGED 模式用 CSS 多栏 + 横向滚动翻页，VERTICAL 模式纵向滚动；
+   - 翻页/滚动由 Compose 外层手势处理：PAGED 左右 1/3 翻页（RTL 反转）、中间切工具栏；
+     VERTICAL 仅上下滚动 + 中间切工具栏；
+   - 进度：定期（settle/离开/暂停）通过 JS 取当前字符偏移，`repo.updateTextProgress`；
+     打开时按 `book.progressOffset` 恢复位置；
+   - 不支持双指缩放（文字书用字号设置）；音量键翻页在 PAGED 模式下生效；
+   - 无障碍：WebView 自带文本语义，另给翻页/工具栏提供 customActions。
+3. 图像 EPUB：无需阅读器改动（索引后 pageCount 即真实值，`prepare()` 返回真实页数）。
+
+### UI 契约（ui-saf）
+
+- `AppSettings` 新增 `readerFontSizeSp: Int = 18`（范围 14–28），在阅读设置面板「常规」里提供
+  字号滑杆（文字书生效；滑杆实现在 reader 的文件内，ui-saf 只负责添加字段与持久化）。
+- 书卡/搜索/操作面板：`BookKind.EPUB_TEXT` 显示「EPUB 电子书」；`reflowable` 书的进度行用
+  `pageLabel`（百分比），不显示“N 页”。
+- 存储页/导入提示：文案中“电子书会在后台转换”限定为 MOBI/AZW3；EPUB 显示“可直接阅读”。
+
+### 构建/测试契约（build-qa）
+
+- 版本提升到 `versionCode 5 / versionName 1.3.0`。
+- EPUB 不再使用 epub4j：确认全仓无 `io.documentnode.epub4j` 引用后，从版本目录/依赖/proguard keep
+  中移除 epub4j-core（及其 minilog/kxml2 传递依赖），并同步 README/THIRD_PARTY_NOTICES。
+- 新增纯 JVM 测试：书页/字符进度换算、`charCount`→`pageCount` 估算、EPUB spine 分类纯函数
+  （如拆成可测的 `EpubSpineClassifier`）、`pageLabel` 百分比。
+- README：EPUB 直读/原生文字阅读说明，删除“EPUB 会拍平转换”的旧描述。

@@ -23,20 +23,20 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.rr.mobi4java.MobiReader
 import java.io.File
 import java.util.UUID
-import java.util.zip.ZipFile
 import kotlin.coroutines.coroutineContext
 import kotlin.math.max
 
 /**
- * 书库仓库：所有书籍都通过持久化 SAF tree URI 就地索引，应用私有目录只放派生缓存
- * （封面、电子书拍平后的 CBZ、ZIP 随机读缓存）。
+ * 书库仓库：所有书籍都通过持久化 SAF tree URI 就地索引，应用私有目录只放派生数据
+ * （封面、文字书章节提取缓存）。不做任何文件复制/格式转换。
  *
  * 线程约定：
  * - 公开的 suspend 方法内部切到 Dispatchers.IO，并保证锁的临界区尽量短；
  * - `pageSource()`/`roots()` 同步返回，不做 I/O（roots 走内存缓存）；
- * - `updateProgress()`/`markOpened()` 只改内存并调度防抖落盘。
+ * - `updateProgress()`/`markOpened()`/`updateTextProgress()` 只改内存并调度防抖落盘。
  */
 class LibraryRepository(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -47,11 +47,14 @@ class LibraryRepository(private val context: Context) {
     private val coversDir = File(libraryDir, "covers")
     private val booksFile = File(libraryDir, "books.json")
 
-    /** ZIP 随机读缓存：cacheDir/books/<id>_<modifiedAt>_<size>.<ext> */
-    private val cacheRoot = File(context.cacheDir, "books")
+    /** 文字书章节提取缓存：cacheDir/text/<id>_<modifiedAt>_<size>.html */
+    private val textCacheDir = File(context.cacheDir, "text")
 
-    /** EPUB/MOBI 派生缓存：cacheDir/ebooks/<id>.cbz */
-    private val ebookCacheDir = File(context.cacheDir, "ebooks")
+    /** 旧版本拍平转换遗留目录，初始化/清缓存时清理掉。 */
+    private val obsoleteCacheDirs = listOf(
+        File(context.cacheDir, "books"),
+        File(context.cacheDir, "ebooks"),
+    )
 
     private val rootsStore = LibraryRootsStore(context)
 
@@ -64,18 +67,8 @@ class LibraryRepository(private val context: Context) {
     /** 进度变更的合并信号：CONFLATED 保证只保留“还有未落盘变更”这一事实。 */
     private val persistSignal = Channel<Unit>(Channel.CONFLATED)
 
-    /** 后台电子书转换：单一队列 + 2 个 worker（并发上限 2），Application 级 scope。 */
-    private val conversionQueue = Channel<String>(Channel.UNLIMITED)
-    private val conversionLock = Any()
-    private val scheduledConversions = HashSet<String>()
-    private val inProgressConversions = HashSet<String>()
-    private val conversionDispatcher = Dispatchers.IO.limitedParallelism(2)
-
     init {
         scope.launch { persistWorker() }
-        repeat(CONVERSION_WORKERS) {
-            scope.launch(conversionDispatcher) { conversionWorker() }
-        }
     }
 
     // -----------------------------------------------------------------------
@@ -83,7 +76,7 @@ class LibraryRepository(private val context: Context) {
     // -----------------------------------------------------------------------
 
     /**
-     * 启动初始化：加载索引 → 校验 SAF 持久化权限（失效条目丢弃）→ 生成缺失封面 → 清理 orphan 缓存。
+     * 启动初始化：加载索引 → 校验 SAF 持久化权限（失效条目丢弃）→ 生成缺失封面 → 清理旧缓存。
      * 不做任何旧版本数据迁移。
      */
     suspend fun initialize() = withContext(Dispatchers.IO) {
@@ -119,9 +112,8 @@ class LibraryRepository(private val context: Context) {
         // 权限失效的条目不留在书架上，其派生数据也一并清掉。
         dropped.forEach { removeDerivedFiles(it) }
         ensureCovers(kept)
-        pruneCaches(kept)
-        // 上次进程退出时没转换完的电子书重新入队（不阻塞启动）。
-        enqueuePendingConversions()
+        // 旧版本拍平转换留下的缓存目录不再使用。
+        obsoleteCacheDirs.forEach { dir -> if (dir.exists()) runCatching { dir.deleteRecursively() } }
         _ready.value = true
         Unit
     }
@@ -144,9 +136,7 @@ class LibraryRepository(private val context: Context) {
     // 索引 / 刷新
     // -----------------------------------------------------------------------
 
-    /**
-     * 就地索引一个 SAF 文件夹：不复制任何用户文件，只记录元数据并生成派生封面/缓存。
-     */
+    /** 就地索引一个 SAF 文件夹：不复制任何用户文件，只记录元数据并生成派生封面。 */
     suspend fun importLibraryTree(
         uri: Uri,
         onProgress: (Float, String) -> Unit = { _, _ -> },
@@ -173,15 +163,12 @@ class LibraryRepository(private val context: Context) {
         val persisted = mergeTreeResult(result)
         runCatching { rootsStore.add(LibraryRoot(uri.toString(), root.name)) }
             .onFailure { Log.e(TAG, "写入 roots.json 失败", it) }
-        pruneCaches(_books.value)
 
         val failures = result.failures.toMutableList()
         if (!persistable) {
             failures += ImportFailure(root.name, "无法持久保存该目录的访问权限，重启后需要重新添加")
         }
         if (!persisted) failures += ImportFailure(root.name, "索引已更新，但保存 books.json 失败")
-        // 索引立即返回，电子书拍平交给后台队列，不阻塞导入。
-        enqueuePendingConversions()
         if (result.scanned.isEmpty() && failures.isEmpty()) {
             failures += ImportFailure(root.name, "没有找到 CBZ、ZIP、PDF、EPUB、MOBI 或图片文件夹")
         }
@@ -229,8 +216,6 @@ class LibraryRepository(private val context: Context) {
                 failures += ImportFailure(rootInfo.displayName, "保存 books.json 失败")
             }
         }
-        pruneCaches(_books.value)
-        enqueuePendingConversions()
         onProgress(1f, "完成")
         ImportReport(emptyList(), failures)
     }
@@ -254,11 +239,14 @@ class LibraryRepository(private val context: Context) {
         val completed: Boolean,
     )
 
-    /** 索引阶段算出的页数/封面，以及电子书是否已完成拍平转换。 */
+    /** 索引阶段算出的页数/封面/书籍分类（EPUB/MOBI 可能是图片型 ARCHIVE 或文字型 TEXT）。 */
     private data class IndexedPages(
         val pageCount: Int,
         val cover: Bitmap?,
-        val converted: Boolean = true,
+        /** null = 沿用候选条目的 kind。 */
+        val kind: BookKind? = null,
+        val reflowable: Boolean = false,
+        val charCount: Long = 0L,
     )
 
     /**
@@ -382,27 +370,30 @@ class LibraryRepository(private val context: Context) {
         old: ComicBook?,
         failures: MutableList<ImportFailure>,
     ): ComicBook? {
+        val ext = candidate.name.substringAfterLast('.', "").lowercase()
+        val isEpub = candidate.kind == BookKind.ARCHIVE && ext == "epub"
+        val isMobi = candidate.kind == BookKind.ARCHIVE && ext in MOBI_EXTENSIONS
+        val textCandidate = isEpub || isMobi
+
         // 增量刷新：指纹未变且封面还在，直接复用旧记录，不重新打开文件。
-        if (old != null &&
-            old.kind == candidate.kind &&
-            old.modifiedAt == candidate.modifiedAt &&
-            old.sizeBytes == candidate.sizeBytes &&
-            old.pageCount > 0
+        // 文字书的 kind 是 TEXT，而扫描候选是 ARCHIVE，需要视为同一本书。
+        val kindMatches = old != null &&
+            (old.kind == candidate.kind || (textCandidate && old.kind == BookKind.TEXT))
+        if (kindMatches && old.modifiedAt == candidate.modifiedAt &&
+            old.sizeBytes == candidate.sizeBytes && old.pageCount > 0
         ) {
-            // 未转换电子书不能在前台触发转换，封面留给后台队列。
-            if (old.converted && !coverFile(old).exists()) writeCover(old)
+            if (!old.reflowable && !coverFile(old).exists()) writeCover(old)
             return old
         }
 
         val id = old?.id ?: stableBookId(treeUri, candidate.documentPath)
-        val isEbook = isEbookCandidate(candidate)
-        // 电子书文件变了：旧拍平缓存与封面已失效，先删掉，后续由后台重转。
-        if (isEbook && old != null) {
-            File(ebookCacheDir, "$id.cbz").delete()
+        // 文件变了：旧封面/文字缓存已失效，先删掉。
+        if (textCandidate && old != null) {
             coverFile(old).delete()
+            deleteTextCache(id)
         }
         val indexed = try {
-            indexPages(candidate, id)
+            indexPages(candidate)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -417,30 +408,43 @@ class LibraryRepository(private val context: Context) {
         }
 
         val title = titleFromName(candidate.name)
+        val type = indexed.kind ?: candidate.kind
+        val progressOffset = if (indexed.reflowable) {
+            (old?.progressOffset ?: 0L).coerceIn(0L, max(0L, indexed.charCount))
+        } else {
+            0L
+        }
+        val estimatedPage = if (indexed.reflowable && indexed.charCount > 0L) {
+            ((progressOffset.toDouble() / indexed.charCount) * pageCount).toInt()
+        } else {
+            old?.currentPage ?: 0
+        }
         val book = ComicBook(
             id = id,
             title = old?.title ?: title,
             author = old?.author,
             description = old?.description,
-            kind = candidate.kind,
+            kind = type,
             treeUri = treeUri,
             documentPath = candidate.documentPath,
             pageCount = pageCount,
             sizeBytes = candidate.sizeBytes,
             addedAt = old?.addedAt ?: System.currentTimeMillis(),
             lastReadAt = old?.lastReadAt,
-            currentPage = (old?.currentPage ?: 0).coerceIn(0, max(0, pageCount - 1)),
+            currentPage = estimatedPage.coerceIn(0, max(0, pageCount - 1)),
             finished = old?.finished ?: false,
             accent = old?.accent ?: accentFor(title),
             direction = old?.direction,
             modifiedAt = candidate.modifiedAt,
-            converted = indexed.converted,
+            reflowable = indexed.reflowable,
+            progressOffset = progressOffset,
+            charCount = indexed.charCount,
         )
-        // 未转换电子书先不生成封面（UI 占位），等后台转换完成后再补。
+        // 文字书没有固定页封面：EPUB 用占位；MOBI 的封面在章节解析时从文档内提取。
         if (!coverFile(book).exists()) {
             if (indexed.cover != null) {
                 writeCover(book, indexed.cover)
-            } else if (indexed.converted) {
+            } else if (!indexed.reflowable) {
                 writeCover(book)
             }
         } else {
@@ -449,42 +453,88 @@ class LibraryRepository(private val context: Context) {
         return book
     }
 
-    private fun isEbookCandidate(candidate: ScanCandidate): Boolean =
-        candidate.kind == BookKind.ARCHIVE &&
-            candidate.name.substringAfterLast('.', "").lowercase() in EBOOK_EXTENSIONS
-
     /**
-     * 索引阶段取页数与封面：
-     * - ZIP/CBZ：RemoteZipReader 只读中央目录统计图片条目，再按条目读第一张图当封面（不复制整包）；
+     * 索引阶段取页数与封面（零复制、零转换）：
+     * - ZIP/CBZ：RemoteZipReader 只读中央目录统计图片条目，再按条目读第一张图当封面；
      *   provider 不支持 seek 时回退到流式 ZipInputStream 统计。
-     * - EPUB：只读 container.xml → OPF 统计 itemref，converted=false，不前台转换。
-     * - MOBI/AZW3：体积估算页数，converted=false，不前台转换。
+     * - EPUB：RemoteZipReader 解析 container→OPF→spine，图片型按 Zip 直读，文字型只估算字符数/页数。
+     * - MOBI/AZW3：按文件大小估算字符数/页数，作为 TEXT 文字书直接阅读，不转换。
      */
-    private fun indexPages(candidate: ScanCandidate, id: String): IndexedPages = when (candidate.kind) {
+    private fun indexPages(candidate: ScanCandidate): IndexedPages = when (candidate.kind) {
         BookKind.FOLDER ->
             IndexedPages(candidate.imageCount, candidate.coverUri?.let(::readDocumentBitmap))
         BookKind.PDF ->
             IndexedPages(PageIndexing.pdfPageCount(context.contentResolver, candidate.uri), null)
+        BookKind.TEXT ->
+            mobileTextIndex(candidate.sizeBytes)
         BookKind.ARCHIVE -> {
             val ext = candidate.name.substringAfterLast('.', "").lowercase()
             when {
-                ext == "epub" -> {
-                    val pages = RemoteZipReader.open(context, candidate.uri)?.use { reader ->
-                        EbookIndexing.epubPageCount(reader)
-                    } ?: 1
-                    // 索引期不转换、不生成封面，入队后台转换。
-                    IndexedPages(pages.coerceAtLeast(1), null, converted = false)
-                }
-                ext in EBOOK_EXTENSIONS -> {
-                    IndexedPages(
-                        EbookIndexing.estimateMobiPageCount(candidate.sizeBytes),
-                        null,
-                        converted = false,
-                    )
-                }
+                ext == "epub" -> indexEpub(candidate)
+                ext in MOBI_EXTENSIONS -> mobileTextIndex(candidate.sizeBytes)
                 else -> indexZipFast(candidate)
             }
         }
+    }
+
+    /** MOBI/AZW3 按体积估算字符数：charCount = size * 0.6（下限 1），页数用于书架进度。 */
+    private fun mobileTextIndex(sizeBytes: Long): IndexedPages {
+        val charCount = EpubSpineClassifier.estimateCharCount(sizeBytes)
+        return IndexedPages(
+            pageCount = EpubSpineClassifier.estimatePageCount(charCount),
+            cover = null,
+            kind = BookKind.TEXT,
+            reflowable = true,
+            charCount = charCount,
+        )
+    }
+
+    /**
+     * EPUB 分类索引：图片型 → ARCHIVE（封面直接读第一张图，零派生缓存）；
+     * 文字型 → TEXT（charCount 由 spine XHTML 未压缩大小估算）。
+     * 解析失败时保守回退成文字型，保证仍可直接阅读。
+     */
+    private fun indexEpub(candidate: ScanCandidate): IndexedPages {
+        val reader = RemoteZipReader.open(context, candidate.uri)
+        if (reader != null) {
+            return reader.use { opened ->
+                val classification = runCatching { EpubIndexer.classify(opened) }.getOrNull()
+                if (classification == null) {
+                    epubTextFallback(candidate.sizeBytes)
+                } else if (classification.kind == BookKind.ARCHIVE) {
+                    val coverBytes = classification.imageEntries.firstOrNull()?.let { entry ->
+                        opened.readEntry(entry, PageIndexing.MAX_PAGE_BYTES)
+                    }
+                    IndexedPages(
+                        pageCount = classification.pageCount.coerceAtLeast(1),
+                        cover = coverBytes?.let { decodePage(it, COVER_WIDTH) },
+                        kind = BookKind.ARCHIVE,
+                        reflowable = false,
+                    )
+                } else {
+                    IndexedPages(
+                        pageCount = classification.pageCount,
+                        cover = null,
+                        kind = BookKind.TEXT,
+                        reflowable = true,
+                        charCount = classification.charCount,
+                    )
+                }
+            }
+        }
+        return epubTextFallback(candidate.sizeBytes)
+    }
+
+    /** EPUB 元数据解析失败时的保守回退：按文件大小粗估字符数，交给文字阅读器。 */
+    private fun epubTextFallback(sizeBytes: Long): IndexedPages {
+        val charCount = EpubSpineClassifier.estimateCharCount(if (sizeBytes > 0L) sizeBytes / 2 else 1L)
+        return IndexedPages(
+            pageCount = EpubSpineClassifier.estimatePageCount(charCount),
+            cover = null,
+            kind = BookKind.TEXT,
+            reflowable = true,
+            charCount = charCount,
+        )
     }
 
     /** CBZ：远程读中央目录（快），失败回退流式统计（慢但兼容）。 */
@@ -546,10 +596,7 @@ class LibraryRepository(private val context: Context) {
             }
             affected
         }
-        removed.forEach {
-            cancelConversion(it.id)
-            removeDerivedFiles(it)
-        }
+        removed.forEach { removeDerivedFiles(it) }
         runCatching { rootsStore.remove(treeUri) }
             .onFailure { Log.e(TAG, "写入 roots.json 失败", it) }
         runCatching { Uri.parse(treeUri) }.getOrNull()?.let { uri ->
@@ -560,13 +607,11 @@ class LibraryRepository(private val context: Context) {
                 )
             }
         }
-        pruneCaches(_books.value)
         Unit
     }
 
-    /** 只删除索引、封面与派生缓存；SAF 引用的用户文件绝不触碰。 */
+    /** 只删除索引、封面与文本缓存；SAF 引用的用户文件绝不触碰。 */
     suspend fun delete(book: ComicBook) = withContext(Dispatchers.IO) {
-        cancelConversion(book.id)
         mutex.withLock {
             _books.update { list -> list.filterNot { it.id == book.id } }
             try {
@@ -576,7 +621,6 @@ class LibraryRepository(private val context: Context) {
             }
         }
         removeDerivedFiles(book)
-        pruneCaches(_books.value)
         Unit
     }
 
@@ -667,6 +711,167 @@ class LibraryRepository(private val context: Context) {
         schedulePersist()
     }
 
+    /**
+     * 文字书解析后回填真实字符数/页数：charCount 是文字阅读进度的唯一权威分母，
+     * pageCount 仅用于书架进度显示。
+     */
+    fun updateTextStats(bookId: String, charCount: Long) {
+        if (charCount <= 0L) return
+        val current = _books.value.firstOrNull { it.id == bookId } ?: return
+        if (!current.reflowable || current.charCount == charCount) return
+        val pageCount = EpubSpineClassifier.estimatePageCount(charCount)
+        val offset = current.progressOffset.coerceIn(0L, charCount)
+        val page = ((offset.toDouble() / charCount) * pageCount)
+            .toInt()
+            .coerceIn(0, max(0, pageCount - 1))
+        val updated = current.copy(
+            charCount = charCount,
+            pageCount = pageCount,
+            progressOffset = offset,
+            currentPage = page,
+        )
+        _books.update { list -> list.map { if (it.id == bookId) updated else it } }
+        schedulePersist()
+    }
+
+    /**
+     * 文字阅读进度回填：progressOffset 是唯一权威位置，currentPage 仅用于书架进度显示。
+     * offset ≥ charCount * 99% 时置为已读完；写盘走统一 debounce。
+     */
+    fun updateTextProgress(bookId: String, offset: Long) {
+        val current = _books.value.firstOrNull { it.id == bookId } ?: return
+        if (!current.reflowable || current.charCount <= 0L) return
+        val safeOffset = offset.coerceIn(0L, current.charCount)
+        val finished = current.finished || safeOffset >= (current.charCount * 0.99).toLong()
+        if (current.progressOffset == safeOffset && current.finished == finished) return
+        val page = ((safeOffset.toDouble() / current.charCount) * current.pageCount)
+            .toInt()
+            .coerceIn(0, max(0, current.pageCount - 1))
+        val updated = current.copy(
+            progressOffset = safeOffset,
+            currentPage = page,
+            finished = finished,
+            lastReadAt = System.currentTimeMillis(),
+        )
+        _books.update { list -> list.map { if (it.id == bookId) updated else it } }
+        schedulePersist()
+    }
+
+    // -----------------------------------------------------------------------
+    // 文字书章节提取（EPUB 直接读 ZIP；MOBI/AZW3 解析一次后缓存 HTML）
+    // -----------------------------------------------------------------------
+
+    /**
+     * 文字书章节提取（IO 线程）：
+     * - EPUB：RemoteZipReader 按 spine 顺序提取并清洗 XHTML；
+     * - MOBI/AZW3：SAF 文档复制到临时文件 → MobiReader 解析 → 段落 HTML，结果缓存到
+     *   cacheDir/text/<id>_<mtime>_<size>.html，命中直接返回；同时提取内嵌封面并回填字符数。
+     * 失败返回空列表并记录日志。
+     */
+    suspend fun loadEbookChapters(book: ComicBook): List<EbookChapter> = withContext(Dispatchers.IO) {
+        if (!book.reflowable) return@withContext emptyList()
+        try {
+            when (book.extension) {
+                "epub" -> loadEpubChapters(book)
+                "mobi", "azw", "azw3" -> loadMobiChapters(book)
+                else -> emptyList()
+            }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "提取文字书章节失败：${book.title}", e)
+            emptyList()
+        }
+    }
+
+    private fun loadEpubChapters(book: ComicBook): List<EbookChapter> {
+        val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return emptyList()
+        val reader = RemoteZipReader.open(context, uri) ?: return emptyList()
+        return reader.use { opened -> EpubIndexer.loadChapters(opened) }
+    }
+
+    private suspend fun loadMobiChapters(book: ComicBook): List<EbookChapter> {
+        val cache = textCacheFile(book)
+        if (cache.exists() && cache.length() > 0L) {
+            val cached = runCatching { cache.readText(Charsets.UTF_8) }.getOrNull()
+            if (!cached.isNullOrBlank()) {
+                return listOf(EbookChapter(book.title, cached))
+            }
+        }
+        val temp = try {
+            File.createTempFile("mobi-", ".${book.extension}", context.cacheDir)
+        } catch (e: Exception) {
+            Log.w(TAG, "无法创建 MOBI 解析临时文件：${book.title}", e)
+            return emptyList()
+        }
+        return try {
+            if (!copyDocumentToTemp(book, temp)) return emptyList()
+            val document = MobiReader().read(temp)
+            val plainText = document.textContent ?: ""
+            val html = mobiTextToHtml(plainText)
+            if (!coverFile(book).exists()) {
+                document.cover?.let { coverBytes ->
+                    decodePage(coverBytes, COVER_WIDTH)?.let { bitmap -> writeCover(book, bitmap) }
+                }
+            }
+            textCacheDir.mkdirs()
+            runCatching {
+                writeFileAtomically(cache) { out -> out.write(html.toByteArray(Charsets.UTF_8)) }
+            }.onFailure { Log.w(TAG, "写入文字缓存失败：${book.title}", it) }
+            updateTextStats(book.id, plainText.length.toLong().coerceAtLeast(1L))
+            val title = document.fullName?.takeIf { it.isNotBlank() } ?: book.title
+            listOf(EbookChapter(title, html))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "解析 MOBI 失败：${book.title}", e)
+            emptyList()
+        } finally {
+            temp.delete()
+        }
+    }
+
+    /** MOBI 纯文本 → 简单 HTML：按行包 <p> 并转义。 */
+    private fun mobiTextToHtml(text: String): String {
+        val builder = StringBuilder(text.length + text.length / 8 + 32)
+        for (line in text.split('\n')) {
+            val trimmed = line.trim('\r', ' ', '\t')
+            if (trimmed.isEmpty()) continue
+            builder.append("<p>").append(escapeHtml(trimmed)).append("</p>\n")
+        }
+        if (builder.isEmpty()) builder.append("<p></p>")
+        return builder.toString()
+    }
+
+    private fun escapeHtml(text: String): String = buildString(text.length + 16) {
+        for (ch in text) {
+            when (ch) {
+                '&' -> append("&amp;")
+                '<' -> append("&lt;")
+                '>' -> append("&gt;")
+                '"' -> append("&quot;")
+                else -> append(ch)
+            }
+        }
+    }
+
+    private fun textCacheFile(book: ComicBook): File =
+        File(textCacheDir, "${book.id}_${book.modifiedAt}_${book.sizeBytes}.html")
+
+    private fun deleteTextCache(bookId: String) {
+        textCacheDir.listFiles { file -> file.name.startsWith("${bookId}_") }?.forEach { it.delete() }
+    }
+
+    private fun copyDocumentToTemp(book: ComicBook, temp: File): Boolean = try {
+        val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return false
+        context.contentResolver.openInputStream(uri)?.use { input ->
+            temp.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
+        } != null
+    } catch (e: Exception) {
+        Log.w(TAG, "读取文字书失败：${book.title}", e)
+        false
+    }
+
     private fun schedulePersist() {
         persistSignal.trySend(Unit)
     }
@@ -688,174 +893,28 @@ class LibraryRepository(private val context: Context) {
     }
 
     // -----------------------------------------------------------------------
-    // 后台电子书转换（单一队列 + 2 worker）
-    // -----------------------------------------------------------------------
-
-    /** 把所有待转换电子书放进队列（幂等：已排队/转换中的跳过）。 */
-    private fun enqueuePendingConversions() {
-        _books.value
-            .filter { !it.converted && isEbookBook(it) }
-            .forEach { enqueueConversion(it.id) }
-    }
-
-    private fun enqueueConversion(bookId: String) {
-        synchronized(conversionLock) {
-            if (bookId in scheduledConversions || bookId in inProgressConversions) return
-            scheduledConversions += bookId
-        }
-        conversionQueue.trySend(bookId)
-    }
-
-    /**
-     * 协作式取消：把排队中的任务移除；已在执行的阻塞 IO 无法强行中断，
-     * 但转换结束时会检查“书是否还在/指纹是否变了”，不匹配就丢弃结果并删缓存。
-     */
-    private fun cancelConversion(bookId: String) {
-        synchronized(conversionLock) { scheduledConversions.remove(bookId) }
-    }
-
-    private suspend fun conversionWorker() {
-        for (bookId in conversionQueue) {
-            synchronized(conversionLock) {
-                scheduledConversions.remove(bookId)
-                inProgressConversions.add(bookId)
-            }
-            try {
-                convertBook(bookId)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "后台转换失败：$bookId", e)
-            } finally {
-                synchronized(conversionLock) { inProgressConversions.remove(bookId) }
-            }
-        }
-    }
-
-    /** 逐个把 converted=false 的电子书拍平成 cacheDir/ebooks/<id>.cbz，并回填真实页数/封面。 */
-    private suspend fun convertBook(bookId: String) {
-        val snapshot = _books.value.firstOrNull { it.id == bookId } ?: return
-        if (snapshot.converted || !isEbookBook(snapshot)) return
-        val ext = ebookExtensionOf(snapshot) ?: return
-        ebookCacheDir.mkdirs()
-        val target = File(ebookCacheDir, "$bookId.cbz")
-        val ok = if (target.exists() && target.length() > 0L) {
-            // 阅读器 prepare() 已按需生成过缓存，直接复用，不重复转换。
-            true
-        } else {
-            Log.i(TAG, "后台转换开始：${snapshot.title}")
-            target.delete()
-            val temp = try {
-                File.createTempFile("ebook-", ".$ext.tmp", ebookCacheDir)
-            } catch (e: Exception) {
-                Log.w(TAG, "无法创建转换临时文件：${snapshot.title}", e)
-                return
-            }
-            try {
-                copyDocumentToTemp(snapshot, temp) && FormatConverters.toCbz(temp, target, ext) > 0
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "电子书转换失败：${snapshot.title}", e)
-                false
-            } finally {
-                temp.delete()
-            }
-        }
-        if (!ok) {
-            target.delete()
-            return
-        }
-        val realPageCount = countArchivePages(target)
-        if (realPageCount <= 0) {
-            target.delete()
-            return
-        }
-        // 转换期间书被删除/重新索引（指纹变化）：丢弃本次结果，等下一轮。
-        if (!isStillCurrent(snapshot)) {
-            target.delete()
-            return
-        }
-        val current = _books.value.firstOrNull { it.id == bookId } ?: run {
-            target.delete()
-            return
-        }
-        val cover = decodeArchiveFirstPage(target, COVER_WIDTH)
-        writeCover(current.copy(pageCount = realPageCount, converted = true), cover)
-        mutex.withLock {
-            _books.update { list ->
-                list.map { book ->
-                    if (book.id == bookId && !book.converted &&
-                        book.modifiedAt == snapshot.modifiedAt &&
-                        book.sizeBytes == snapshot.sizeBytes
-                    ) {
-                        book.copy(
-                            pageCount = realPageCount,
-                            converted = true,
-                            currentPage = book.currentPage.coerceIn(0, max(0, realPageCount - 1)),
-                        )
-                    } else {
-                        book
-                    }
-                }
-            }
-        }
-        schedulePersist()
-        Log.i(TAG, "后台转换完成：${snapshot.title}（$realPageCount 页）")
-    }
-
-    private fun isStillCurrent(snapshot: ComicBook): Boolean {
-        val current = _books.value.firstOrNull { it.id == snapshot.id } ?: return false
-        return current.modifiedAt == snapshot.modifiedAt && current.sizeBytes == snapshot.sizeBytes
-    }
-
-    private fun copyDocumentToTemp(book: ComicBook, temp: File): Boolean = try {
-        val tree = runCatching { SafTree(context, Uri.parse(book.treeUri)) }.getOrNull() ?: return false
-        val entry = tree.find(book.documentPath) ?: return false
-        if (entry.isDirectory) return false
-        context.contentResolver.openInputStream(entry.uri)?.use { input ->
-            temp.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
-        } != null
-    } catch (e: Exception) {
-        Log.w(TAG, "读取电子书失败：${book.title}", e)
-        false
-    }
-
-    private fun countArchivePages(file: File): Int = runCatching {
-        ZipFile(file).use { it.imageEntries().size }
-    }.getOrDefault(0)
-
-    // -----------------------------------------------------------------------
     // 派生数据
     // -----------------------------------------------------------------------
 
     fun coverFile(book: ComicBook): File = File(coversDir, "${book.id}.jpg")
 
-    /** 同步构造，绝不 I/O：具体打开动作延迟到第一次 loadPage。 */
+    /** 同步构造，绝不 I/O：具体打开动作延迟到第一次 prepare/loadPage。 */
     fun pageSource(book: ComicBook): ComicPageSource =
-        ComicPageSourceFactory.open(book, context, cacheRoot, ebookCacheDir)
+        ComicPageSourceFactory.open(book, context)
 
-    /** 封面 + 派生缓存占用；遍历目录，调用方应在 IO 线程调用。 */
-    fun appDataBytes(): Long =
-        dirSize(coversDir) +
-            dirSize(cacheRoot) +
-            dirSize(ebookCacheDir)
+    /** 封面 + 文字提取缓存占用；遍历目录，调用方应在 IO 线程调用。 */
+    fun appDataBytes(): Long = dirSize(coversDir) + dirSize(textCacheDir)
 
-    /**
-     * 只清 cacheDir/books 与 cacheDir/ebooks（保留封面与 books.json），返回释放字节数。
-     * 电子书的拍平缓存被清掉后置 converted=false 并重新入队后台转换。
-     */
+    /** 只清文字提取缓存（保留封面与 books.json），返回释放字节数；旧版拍平缓存目录一并清掉。 */
     suspend fun clearCaches(): Long = withContext(Dispatchers.IO) {
-        synchronized(conversionLock) { scheduledConversions.clear() }
-        val freed = wipeDirectory(cacheRoot) + wipeDirectory(ebookCacheDir)
-        mutex.withLock {
-            _books.update { list ->
-                list.map { book -> if (isEbookBook(book)) book.copy(converted = false) else book }
+        var freed = wipeDirectory(textCacheDir)
+        obsoleteCacheDirs.forEach { dir ->
+            if (dir.exists()) {
+                val size = dirSize(dir)
+                if (dir.deleteRecursively()) freed += size
             }
         }
-        schedulePersist()
         Log.i(TAG, "已清理派生缓存 $freed 字节")
-        enqueuePendingConversions()
         freed
     }
 
@@ -882,8 +941,8 @@ class LibraryRepository(private val context: Context) {
     private suspend fun ensureCovers(books: List<ComicBook>) {
         for (book in books) {
             coroutineContext.ensureActive()
-            // 未转换电子书还没有可读缓存，封面等后台转换完成后再生成（UI 先占位）。
-            if (!book.converted) continue
+            // 文字书没有固定页封面：EPUB 用默认占位，MOBI 的封面在解析章节时提取。
+            if (book.reflowable) continue
             val cover = coverFile(book)
             // 只补缺失封面，已在的不重复解码。
             if (cover.exists() && cover.length() > 512L) continue
@@ -924,29 +983,7 @@ class LibraryRepository(private val context: Context) {
 
     private fun removeDerivedFiles(book: ComicBook) {
         coverFile(book).delete()
-        File(ebookCacheDir, "${book.id}.cbz").delete()
-        cacheRoot.listFiles { file -> file.name.startsWith("${book.id}_") }?.forEach { it.delete() }
-    }
-
-    /** 清掉不再对应任何书籍的派生缓存（删书、重新索引、指纹变化、权限失效都会走到这里）。 */
-    private fun pruneCaches(books: List<ComicBook>) {
-        val expectedArchives = books.asSequence()
-            .filter { it.kind == BookKind.ARCHIVE && !isEbookBook(it) }
-            .map { bookCacheFile(it, cacheRoot).name }
-            .toSet()
-        cacheRoot.listFiles()?.forEach { file ->
-            // 跳过正在写入的临时缓存，避免删掉别的协程刚复制一半的文件。
-            if (file.name.endsWith(".tmp")) return@forEach
-            if (file.name !in expectedArchives) file.delete()
-        }
-        val expectedEbooks = books.asSequence()
-            .filter { isEbookBook(it) }
-            .map { "${it.id}.cbz" }
-            .toSet()
-        ebookCacheDir.listFiles()?.forEach { file ->
-            if (file.name.endsWith(".tmp")) return@forEach
-            if (file.name !in expectedEbooks) file.delete()
-        }
+        deleteTextCache(book.id)
     }
 
     // -----------------------------------------------------------------------
@@ -985,9 +1022,8 @@ class LibraryRepository(private val context: Context) {
         const val MAX_SCAN_DEPTH = 10
         const val PERSIST_DEBOUNCE_MS = 400L
         const val COVER_WIDTH = 480
-        const val CONVERSION_WORKERS = 2
 
         val BOOK_EXTENSIONS = setOf("cbz", "zip", "pdf", "epub", "mobi", "azw", "azw3")
-        val EBOOK_EXTENSIONS = setOf("epub", "mobi", "azw", "azw3")
+        val MOBI_EXTENSIONS = setOf("mobi", "azw", "azw3")
     }
 }

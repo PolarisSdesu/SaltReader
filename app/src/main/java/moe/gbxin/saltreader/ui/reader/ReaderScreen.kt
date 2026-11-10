@@ -118,6 +118,8 @@ import kotlin.math.roundToInt
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.AppSettings
 import moe.gbxin.saltreader.data.ComicBook
+import moe.gbxin.saltreader.data.READER_FONT_SIZE_MAX_SP
+import moe.gbxin.saltreader.data.READER_FONT_SIZE_MIN_SP
 import moe.gbxin.saltreader.data.ReaderBackground
 import moe.gbxin.saltreader.data.ReaderMode
 import moe.gbxin.saltreader.data.ReadingDirection
@@ -160,6 +162,25 @@ fun ReaderScreen(
                 modifier = modifier,
             )
         }
+
+        is ReaderUiState.TextLoading -> ReaderLoading(message = state.message, modifier = modifier)
+
+        ReaderUiState.TextFailed -> ReaderFailed(
+            onRetry = vm::retryLoadChapters,
+            onBack = onBack,
+            modifier = modifier,
+        )
+
+        is ReaderUiState.TextReady -> TextReaderContent(
+            vm = vm,
+            book = state.book,
+            chapters = state.chapters,
+            settings = settings,
+            onBack = onBack,
+            volumePageEvents = volumePageEvents,
+            modifier = modifier,
+            onSettingsChange = { transform -> app.settings.update(transform) },
+        )
 
         ReaderUiState.Failed -> ReaderFailed(
             onRetry = vm::retryPrepare,
@@ -275,8 +296,8 @@ private fun ReaderContent(
     modifier: Modifier = Modifier,
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
 ) {
-    // Real count reported by ComicPageSource.prepare(); for a freshly converted e-book this is the
-    // exact page count, unlike the estimate stored in the index.
+    // Real count reported by ComicPageSource.prepare(); this is the authoritative page count even
+    // when the index only stored an estimate (e.g. remote ZIP central-directory reads).
     val count = max(1, pageCount)
     val initialPage = remember { book.currentPage.coerceIn(0, count - 1) }
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { count })
@@ -595,7 +616,7 @@ private fun ReaderContent(
 }
 
 /** Blends [overlay] on top of the opaque [base] colour, returning an opaque result. */
-private fun blendOver(base: Color, overlay: Color): Color {
+internal fun blendOver(base: Color, overlay: Color): Color {
     val alpha = overlay.alpha.coerceIn(0f, 1f)
     return Color(
         red = overlay.red * alpha + base.red * (1f - alpha),
@@ -605,7 +626,7 @@ private fun blendOver(base: Color, overlay: Color): Color {
 }
 
 @Composable
-private fun ReaderTopBar(book: ComicBook, onBack: () -> Unit) {
+internal fun ReaderTopBar(book: ComicBook, onBack: () -> Unit) {
     Surface(
         color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
         contentColor = MaterialTheme.colorScheme.onSurface,
@@ -867,7 +888,7 @@ private fun ZoomablePage(
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun ReaderControlsSheet(
+internal fun ReaderControlsSheet(
     currentPage: Int,
     count: Int,
     settings: AppSettings,
@@ -877,6 +898,7 @@ private fun ReaderControlsSheet(
     onDismiss: () -> Unit,
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
     onCustomBackground: () -> Unit = {},
+    isTextBook: Boolean = false,
 ) {
     // Material3 1.5 replacement for the deprecated rememberModalBottomSheetState: restricting
     // enabledValues to Hidden/Expanded keeps the old skipPartiallyExpanded = true behaviour.
@@ -919,33 +941,39 @@ private fun ReaderControlsSheet(
         ) {
             Text("阅读设置", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(14.dp))
-            Slider(
-                state = sliderState,
-                onValueChange = { value ->
-                    // See ReaderBottomBar: with onValueChange supplied the state must be updated here.
-                    sliderState.value = value
-                    pendingJump = null
-                    val page = value.roundToInt().coerceIn(0, count - 1)
-                    if (page != lastTickPage) {
-                        lastTickPage = page
-                        haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                    }
-                },
-                onValueChangeFinished = {
-                    val target = sliderState.value.roundToInt().coerceIn(0, count - 1)
-                    pendingJump = target
-                    lastTickPage = target
-                    onGoToPage(target)
-                },
-                enabled = count > 1,
-                modifier = Modifier.fillMaxWidth(),
-            )
-            Text(
-                "第 ${sliderState.value.roundToInt().coerceIn(0, count - 1) + 1} / $count 页",
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Spacer(Modifier.height(18.dp))
+            // Text books have no meaningful page slider: their progress is a character offset and
+            // the real page count is decided by the WebView layout at the current font size.
+            if (!isTextBook) {
+                Slider(
+                    state = sliderState,
+                    onValueChange = { value ->
+                        // See ReaderBottomBar: with onValueChange supplied the state must be updated here.
+                        sliderState.value = value
+                        pendingJump = null
+                        val page = value.roundToInt().coerceIn(0, count - 1)
+                        if (page != lastTickPage) {
+                            lastTickPage = page
+                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                        }
+                    },
+                    onValueChangeFinished = {
+                        val target = sliderState.value.roundToInt().coerceIn(0, count - 1)
+                        pendingJump = target
+                        lastTickPage = target
+                        onGoToPage(target)
+                    },
+                    enabled = count > 1,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    "第 ${sliderState.value.roundToInt().coerceIn(0, count - 1) + 1} / $count 页",
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(18.dp))
+            } else {
+                Spacer(Modifier.height(6.dp))
+            }
             ReaderTabRow(
                 selectedTab = tab,
                 indicatorPosition = tabIndicator,
@@ -983,6 +1011,42 @@ private fun ReaderControlsSheet(
                         },
                     )
                     Spacer(Modifier.height(12.dp))
+                    if (isTextBook) {
+                        // Font size only affects the reflowable text reader; committed on release so
+                        // re-layout happens once per adjustment.
+                        val fontMin = READER_FONT_SIZE_MIN_SP.toFloat()
+                        val fontMax = READER_FONT_SIZE_MAX_SP.toFloat()
+                        val fontSliderState = rememberSliderState(
+                            value = settings.readerFontSizeSp.toFloat().coerceIn(fontMin, fontMax),
+                            steps = (READER_FONT_SIZE_MAX_SP - READER_FONT_SIZE_MIN_SP - 1).coerceAtLeast(0),
+                            trackRange = fontMin..fontMax,
+                        )
+                        LaunchedEffect(settings.readerFontSizeSp) {
+                            if (!fontSliderState.isDragging) {
+                                fontSliderState.value =
+                                    settings.readerFontSizeSp.toFloat().coerceIn(fontMin, fontMax)
+                            }
+                        }
+                        Text("字号", style = MaterialTheme.typography.titleSmall)
+                        Slider(
+                            state = fontSliderState,
+                            onValueChange = { value -> fontSliderState.value = value },
+                            onValueChangeFinished = {
+                                val sp = fontSliderState.value.roundToInt().coerceIn(
+                                    READER_FONT_SIZE_MIN_SP,
+                                    READER_FONT_SIZE_MAX_SP,
+                                )
+                                onSettingsChange { it.copy(readerFontSizeSp = sp) }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                        Text(
+                            "${fontSliderState.value.roundToInt().coerceIn(READER_FONT_SIZE_MIN_SP, READER_FONT_SIZE_MAX_SP)} sp",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
                     ToggleRow("显示页码", settings.showPageNumber) {
                         onSettingsChange { it.copy(showPageNumber = it.showPageNumber.not()) }
@@ -995,11 +1059,21 @@ private fun ReaderControlsSheet(
                     }
                 }
                 else -> {
-                    ToggleRow("灰度模式", settings.grayscale) {
-                        onSettingsChange { it.copy(grayscale = it.grayscale.not()) }
-                    }
-                    ToggleRow("反色", settings.invertColors) {
-                        onSettingsChange { it.copy(invertColors = it.invertColors.not()) }
+                    if (isTextBook) {
+                        // The text reader colours its content from the theme / reader background;
+                        // an image-style colour filter would invert the background too.
+                        Text(
+                            "文字阅读器使用主题与背景配色，灰度/反色仅对图片书生效。",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        ToggleRow("灰度模式", settings.grayscale) {
+                            onSettingsChange { it.copy(grayscale = it.grayscale.not()) }
+                        }
+                        ToggleRow("反色", settings.invertColors) {
+                            onSettingsChange { it.copy(invertColors = it.invertColors.not()) }
+                        }
                     }
                 }
             }

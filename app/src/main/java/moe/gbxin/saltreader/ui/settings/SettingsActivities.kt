@@ -444,7 +444,7 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                 reloadStorage()
                 snackbar.showSnackbar(
                     if (freed > 0) {
-                        "缓存已清理，释放 ${formatBytes(freed)}；电子书会重新转换"
+                        "已清理阅读缓存与临时文件，释放 ${formatBytes(freed)}"
                     } else {
                         "没有可清理的缓存"
                     },
@@ -472,8 +472,16 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                             Column(Modifier.weight(1f)) {
                                 Text("${books.size} 本书", style = MaterialTheme.typography.titleMedium)
                                 Spacer(Modifier.height(2.dp))
+                                // Reflowable text books only carry an estimated pageCount, so they
+                                // are counted as books instead of inflating the page total.
+                                val reflowableCount = books.count { it.reflowable }
+                                val indexedPageCount = books.filter { !it.reflowable }.sumOf { it.pageCount }
                                 Text(
-                                    "${books.sumOf { it.pageCount }} 页已索引 · 应用数据 ${formatBytes(appDataBytes)}",
+                                    buildString {
+                                        if (reflowableCount > 0) append("$reflowableCount 本文字书 · ")
+                                        append("$indexedPageCount 页已索引")
+                                        append(" · 应用数据 ${formatBytes(appDataBytes)}")
+                                    },
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -573,7 +581,7 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                         supporting = if (clearing) {
                             "正在清理…"
                         } else {
-                            "当前占用 ${formatBytes(appDataBytes)}；保留封面，不影响原文件"
+                            "当前占用 ${formatBytes(appDataBytes)}；只清理派生缓存，不删除原文件"
                         },
                         enabled = !clearing && !scanning,
                     ) { clearCaches() }

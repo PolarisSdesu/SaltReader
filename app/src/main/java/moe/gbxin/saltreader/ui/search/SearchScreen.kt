@@ -133,10 +133,15 @@ fun SearchScreen(onOpenBook: (ComicBook) -> Unit, onBack: () -> Unit) {
                             },
                             supportingContent = {
                                 Text(
-                                    if (book.converted) {
-                                        "${book.displayAuthor} · ${book.pageCount} 页"
-                                    } else {
-                                        "${book.displayAuthor} · 待转换"
+                                    when {
+                                        book.reflowable -> "${book.displayAuthor} · ${
+                                            if (book.finished || book.progressOffset > 0L) {
+                                                book.pageLabel
+                                            } else {
+                                                book.kindLabel
+                                            }
+                                        }"
+                                        else -> "${book.displayAuthor} · ${book.pageCount} 页"
                                     },
                                 )
                             },

@@ -31,8 +31,8 @@ import kotlin.math.min
  * - provider 不支持 seek、文件损坏、条目超过安全上限时 [open] 返回 null，
  *   调用方回退到"流式 ZipInputStream 统计"的慢路径。
  */
-internal class RemoteZipReader private constructor(
-    private val descriptor: ParcelFileDescriptor,
+internal class RemoteZipReader internal constructor(
+    private val descriptor: ParcelFileDescriptor?,
     private val channel: FileChannel,
 ) : Closeable {
     private val lock = Any()
@@ -92,7 +92,7 @@ internal class RemoteZipReader private constructor(
         synchronized(lock) {
             cachedEntries = null
             runCatching { channel.close() }
-            runCatching { descriptor.close() }
+            runCatching { descriptor?.close() }
         }
     }
 
@@ -294,43 +294,5 @@ internal class RemoteZipReader private constructor(
             }
             return value
         }
-    }
-}
-
-/**
- * 电子书索引辅助：不转换整本，只用 RemoteZipReader 读元数据估算页数。
- */
-internal object EbookIndexing {
-    private const val MAX_CONTAINER_BYTES = 1L * 1024L * 1024L
-    private const val MAX_OPF_BYTES = 16L * 1024L * 1024L
-    private const val MOBI_BYTES_PER_PAGE = 300L * 1024L
-    private const val MAX_ESTIMATED_PAGES = 5_000
-
-    /**
-     * EPUB 页数估算：container.xml → OPF → 统计 `<itemref>` 数量。
-     * 任一环节失败返回 1（保证书可打开，之后 prepare()/后台转换会回填真实页数）。
-     */
-    fun epubPageCount(reader: RemoteZipReader): Int {
-        val container = reader.readEntry("META-INF/container.xml", MAX_CONTAINER_BYTES) ?: return 1
-        val rootPath = findRootPath(container) ?: return 1
-        val opf = reader.readEntry(rootPath, MAX_OPF_BYTES)
-            ?: reader.readEntry(Uri.decode(rootPath), MAX_OPF_BYTES)
-            ?: return 1
-        val itemRefs = Regex("<itemref\\b", RegexOption.IGNORE_CASE).findAll(opf.toString(Charsets.UTF_8)).count()
-        return itemRefs.coerceIn(1, PageIndexing.MAX_ZIP_ENTRIES)
-    }
-
-    /** MOBI/AZW3 无中央目录可读，用体积粗略估算页数，仅用于索引期占位。 */
-    fun estimateMobiPageCount(sizeBytes: Long): Int {
-        if (sizeBytes <= 0L) return 1
-        return (sizeBytes / MOBI_BYTES_PER_PAGE).toInt().coerceIn(1, MAX_ESTIMATED_PAGES)
-    }
-
-    private fun findRootPath(containerXml: ByteArray): String? {
-        val text = containerXml.toString(Charsets.UTF_8)
-        val doubleQuoted = Regex("""full-path\s*=\s*"([^"]+)"""", RegexOption.IGNORE_CASE).find(text)
-        if (doubleQuoted != null) return doubleQuoted.groupValues[1]
-        val singleQuoted = Regex("""full-path\s*=\s*'([^']+)'""", RegexOption.IGNORE_CASE).find(text)
-        return singleQuoted?.groupValues?.get(1)
     }
 }

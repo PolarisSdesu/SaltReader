@@ -126,3 +126,9 @@ internal fun takePersistableReadPermission(context: Context, uri: Uri): Boolean 
     context.contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
     true
 }.getOrElse { false }
+
+/** 把「treeUri + 相对路径」解析成可打开的文件 Document URI；失败/目录返回 null。 */
+internal fun resolveDocumentUri(context: Context, treeUri: String, documentPath: String): Uri? = runCatching {
+    val tree = SafTree(context, Uri.parse(treeUri))
+    tree.find(documentPath)?.takeIf { !it.isDirectory }?.uri
+}.getOrNull()

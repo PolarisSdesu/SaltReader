@@ -35,12 +35,10 @@ class ComicBookSerializationTest {
         currentPage = 3,
         direction = ReadingDirection.RTL,
         accent = 0xFF3366CC,
-        // E-book awaiting its background EPUB/MOBI -> CBZ conversion.
-        converted = false,
     )
 
     @Test
-    fun `serialization round-trips SAF fields including converted`() {
+    fun `serialization round-trips SAF and text fields`() {
         val original = safBook()
         val restored = json.decodeFromString(ComicBook.serializer(), json.encodeToString(ComicBook.serializer(), original))
 
@@ -50,12 +48,11 @@ class ComicBookSerializationTest {
         assertEquals(original.modifiedAt, restored.modifiedAt)
         assertEquals(original.currentPage, restored.currentPage)
         assertEquals(ReadingDirection.RTL, restored.direction)
-        assertFalse(restored.converted)
         assertTrue(restored.treeUri.isNotBlank())
     }
 
     @Test
-    fun `optional SAF fields and converted default for a converted book`() {
+    fun `optional SAF and reflow fields take their defaults`() {
         val minimal = """
             {"id":"m","title":"Minimal","kind":"PDF","treeUri":"content://tree/1","pageCount":1,"addedAt":1}
         """.trimIndent()
@@ -67,8 +64,37 @@ class ComicBookSerializationTest {
         assertEquals(0L, book.modifiedAt)
         assertEquals(0, book.currentPage)
         assertFalse(book.finished)
-        assertTrue(book.converted)
+        assertFalse(book.reflowable)
+        assertEquals(0L, book.progressOffset)
+        assertEquals(0L, book.charCount)
         assertEquals("content://tree/1", book.treeUri)
+    }
+
+    @Test
+    fun `reflowable text book progress fields round-trip`() {
+        val original = ComicBook(
+            id = "text-1",
+            title = "Text EPUB",
+            kind = BookKind.TEXT,
+            treeUri = "content://com.android.externalstorage.documents/tree/primary%3ABooks",
+            documentPath = "novel.epub",
+            pageCount = 20,
+            sizeBytes = 900_000L,
+            addedAt = 1_700_000_000_000L,
+            currentPage = 10,
+            reflowable = true,
+            progressOffset = 15_000L,
+            charCount = 30_000L,
+        )
+
+        val restored = json.decodeFromString(ComicBook.serializer(), json.encodeToString(ComicBook.serializer(), original))
+
+        assertEquals(original, restored)
+        assertEquals(BookKind.TEXT, restored.kind)
+        assertTrue(restored.reflowable)
+        assertEquals(15_000L, restored.progressOffset)
+        assertEquals(30_000L, restored.charCount)
+        assertEquals("读至 50%", restored.pageLabel)
     }
 
     @Test

@@ -73,6 +73,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Slider
+import androidx.compose.material3.rememberSliderState
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -164,20 +165,11 @@ fun LibraryScreen(
                 is LibraryEvent.Message -> snackbar.showSnackbar(event.text)
                 is LibraryEvent.ImportFinished -> {
                     val report = event.report
-                    // E-books are indexed instantly and flattened in the background, so the
-                    // snackbar tells the user that conversion is still running.
-                    val pending = report.imported.count { !it.converted }
+                    // Every supported format is readable in place now; no conversion step remains.
                     val message = when {
-                        report.count > 0 && report.hasFailures -> buildString {
-                            append("已索引 ${report.count} 本")
-                            if (pending > 0) append("（${pending} 本电子书正在后台转换）")
-                            append("，${report.failures.size} 项失败：${report.failures.first().name}")
-                        }
-                        report.count > 0 -> if (pending > 0) {
-                            "已索引 ${report.count} 本，${pending} 本电子书正在后台转换"
-                        } else {
-                            "已导入 ${report.count} 本漫画"
-                        }
+                        report.count > 0 && report.hasFailures ->
+                            "已索引 ${report.count} 本；${report.failures.size} 项失败：${report.failures.first().name}"
+                        report.count > 0 -> "已索引 ${report.count} 本，EPUB/MOBI/AZW3 可直接阅读"
                         report.hasFailures -> "导入失败：${report.failures.first().reason}"
                         else -> "没有找到可导入的漫画"
                     }
@@ -225,7 +217,7 @@ fun LibraryScreen(
                     }
                 },
                 scrollBehavior = scrollBehavior,
-                colors = TopAppBarDefaults.largeTopAppBarColors(
+                colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.background,
                     scrolledContainerColor = MaterialTheme.colorScheme.surfaceContainer,
                 ),
@@ -458,10 +450,15 @@ private fun BookCard(
         lineHeight = (titleSizeSp + 6).sp,
     )
     val meta = when {
-        !book.converted -> "待转换 · ${formatBytes(book.sizeBytes)} · ${book.kindLabel}"
+        // Reflowable text books have no fixed pages: show the percentage or type + size.
+        book.reflowable -> if (book.finished || book.progressOffset > 0L) {
+            book.pageLabel
+        } else {
+            "${book.kindLabel} · ${formatBytes(book.sizeBytes)}"
+        }
         book.finished -> "已读完"
         book.currentPage > 0 -> "阅读至 ${book.currentPage + 1} 页"
-        else -> formatBytes(book.sizeBytes)
+        else -> "${book.kindLabel} · ${formatBytes(book.sizeBytes)}"
     }
     if (listMode) {
         Card(
@@ -489,7 +486,7 @@ private fun BookCard(
             ) {
                 Box(Modifier.fillMaxWidth().aspectRatio(0.68f)) {
                     ComicCover(book, coverFile, Modifier.fillMaxSize(), radius = 0)
-                    if (!book.finished && book.currentPage > 0) {
+                    if (!book.finished && (book.currentPage > 0 || book.progressOffset > 0L)) {
                         LinearProgressIndicator(
                             progress = { book.progress },
                             modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().height(3.dp),
@@ -530,6 +527,16 @@ private fun LayoutSheet(
     // not thrash SharedPreferences. Both are re-synced when the stored value changes elsewhere.
     var columnDraft by remember(settings.libraryColumns) { mutableFloatStateOf(settings.libraryColumns.toFloat()) }
     var titleSizeDraft by remember(settings.libraryTitleSizeSp) { mutableFloatStateOf(settings.libraryTitleSizeSp.toFloat()) }
+    // Material3 1.5 state-based Sliders: the state owns the thumb, the drafts are the persisted
+    // values committed in onValueChangeFinished. Follow external changes unless dragging.
+    val columnSlider = rememberSliderState(value = columnDraft, steps = 5, trackRange = 0f..6f)
+    val titleSizeSlider = rememberSliderState(value = titleSizeDraft, steps = 13, trackRange = 14f..28f)
+    LaunchedEffect(columnDraft) {
+        if (!columnSlider.isDragging && columnSlider.value != columnDraft) columnSlider.value = columnDraft
+    }
+    LaunchedEffect(titleSizeDraft) {
+        if (!titleSizeSlider.isDragging && titleSizeSlider.value != titleSizeDraft) titleSizeSlider.value = titleSizeDraft
+    }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
             Modifier.fillMaxWidth().navigationBarsPadding()
@@ -563,27 +570,29 @@ private fun LayoutSheet(
                 style = MaterialTheme.typography.titleSmall,
             )
             Slider(
-                value = columnDraft,
-                onValueChange = { columnDraft = it },
+                state = columnSlider,
+                onValueChange = { value ->
+                    columnDraft = value
+                    columnSlider.value = value
+                },
                 onValueChangeFinished = {
                     val value = columnDraft.roundToInt()
                     onSettingsChange { it.copy(libraryColumns = value) }
                 },
-                valueRange = 0f..6f,
-                steps = 5,
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(16.dp))
             Text("书名大小  ${titleSizeDraft.roundToInt()}sp", style = MaterialTheme.typography.titleSmall)
             Slider(
-                value = titleSizeDraft,
-                onValueChange = { titleSizeDraft = it },
+                state = titleSizeSlider,
+                onValueChange = { value ->
+                    titleSizeDraft = value
+                    titleSizeSlider.value = value
+                },
                 onValueChangeFinished = {
                     val value = titleSizeDraft.roundToInt()
                     onSettingsChange { it.copy(libraryTitleSizeSp = value) }
                 },
-                valueRange = 14f..28f,
-                steps = 13,
                 modifier = Modifier.fillMaxWidth(),
             )
         }
@@ -728,10 +737,10 @@ private fun BookActionsSheet(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        if (book.converted) {
-                            "${book.pageCount} 页 · ${formatBytes(book.sizeBytes)} · ${book.kindLabel}"
+                        if (book.reflowable) {
+                            "${book.kindLabel} · ${formatBytes(book.sizeBytes)}"
                         } else {
-                            "待转换 · ${formatBytes(book.sizeBytes)} · ${book.kindLabel}"
+                            "${book.pageCount} 页 · ${formatBytes(book.sizeBytes)} · ${book.kindLabel}"
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -741,7 +750,7 @@ private fun BookActionsSheet(
                 }
             }
 
-            if (book.currentPage > 0 || book.finished) {
+            if (book.currentPage > 0 || book.finished || book.progressOffset > 0L) {
                 Spacer(Modifier.height(18.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
@@ -769,18 +778,13 @@ private fun BookActionsSheet(
                 modifier = Modifier.fillMaxWidth().height(52.dp),
             ) {
                 Text(
-                    if (book.currentPage > 0) "继续阅读 · 第 ${book.currentPage + 1} 页" else "开始阅读",
+                    when {
+                        book.reflowable && (book.finished || book.progressOffset > 0L) ->
+                            "继续阅读 · ${book.pageLabel}"
+                        book.currentPage > 0 -> "继续阅读 · 第 ${book.currentPage + 1} 页"
+                        else -> "开始阅读"
+                    },
                     style = MaterialTheme.typography.titleMedium,
-                )
-            }
-
-            if (!book.converted) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    "首次打开会先转换，请稍候",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.fillMaxWidth(),
                 )
             }
 
