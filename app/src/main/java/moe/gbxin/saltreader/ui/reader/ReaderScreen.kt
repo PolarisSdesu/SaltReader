@@ -3,8 +3,10 @@ package moe.gbxin.saltreader.ui.reader
 import android.app.Activity
 import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -814,10 +816,17 @@ private fun PagedPage(
     onZoomChanged: (Boolean) -> Unit,
 ) {
     val state = rememberPageState(vm, index, targetWidth)
-    when (state) {
-        PageState.Loading -> PagePlaceholder(index)
-        PageState.Failed -> PageError(index)
-        is PageState.Ready -> ZoomablePage(state.image, index, colorFilter, resetToken, onZoomChanged)
+    // Short cross-fade instead of a hard cut when a decoded page replaces the placeholder.
+    Crossfade(
+        targetState = state,
+        animationSpec = tween(durationMillis = 120),
+        label = "paged-page",
+    ) { page ->
+        when (page) {
+            PageState.Loading -> PagePlaceholder(index)
+            PageState.Failed -> PageError(index)
+            is PageState.Ready -> ZoomablePage(page.image, index, colorFilter, resetToken, onZoomChanged)
+        }
     }
 }
 
@@ -831,17 +840,25 @@ private fun VerticalPage(
     onZoomChanged: (Boolean) -> Unit,
 ) {
     val state = rememberPageState(vm, index, targetWidth)
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        when (state) {
-            PageState.Loading -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.45f)) { PagePlaceholder(index) }
-            PageState.Failed -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.2f)) { PageError(index) }
-            is PageState.Ready -> ZoomableVerticalPage(
-                image = state.image,
-                index = index,
-                colorFilter = colorFilter,
-                resetToken = resetToken,
-                onZoomChanged = onZoomChanged,
-            )
+    BoxWithConstraints(
+        Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(durationMillis = 140)),
+    ) {
+        Crossfade(
+            targetState = state,
+            animationSpec = tween(durationMillis = 120),
+            label = "vertical-page",
+        ) { page ->
+            when (page) {
+                PageState.Loading -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.45f)) { PagePlaceholder(index) }
+                PageState.Failed -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.2f)) { PageError(index) }
+                is PageState.Ready -> ZoomableVerticalPage(
+                    image = page.image,
+                    index = index,
+                    colorFilter = colorFilter,
+                    resetToken = resetToken,
+                    onZoomChanged = onZoomChanged,
+                )
+            }
         }
     }
 }
@@ -927,15 +944,24 @@ private fun ZoomableVerticalPage(
 
 @Composable
 private fun PagePlaceholder(index: Int) {
+    // Show the spinner only if decoding actually takes a moment; a one-frame flash for pages that
+    // decode immediately is what made the reader look like it was flickering.
+    var showIndicator by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(90)
+        showIndicator = true
+    }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            SaltLoading(sizeDp = 32)
-            Spacer(Modifier.height(10.dp))
-            Text(
-                stringResource(R.string.reader_page_number, index + 1),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
-            )
+            if (showIndicator) SaltLoading(sizeDp = 32)
+            if (showIndicator) {
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    stringResource(R.string.reader_page_number, index + 1),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                )
+            }
         }
     }
 }
