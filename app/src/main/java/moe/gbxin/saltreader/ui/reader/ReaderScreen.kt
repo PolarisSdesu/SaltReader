@@ -40,7 +40,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.ArrowBack
+import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Swipe
 import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.ViewAgenda
@@ -54,11 +54,14 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.rememberBottomSheetState
+import androidx.compose.material3.rememberSliderState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -123,10 +126,11 @@ import moe.gbxin.saltreader.ui.components.SaltLoading
 import moe.gbxin.saltreader.ui.theme.pageBackgroundColor
 
 /**
- * Reader entry point. Renders one of three top-level states instead of assuming the book is
- * already in the library snapshot: [ReaderUiState.Loading] while the index is still publishing,
- * [ReaderUiState.Missing] only when the book is definitively gone, and the actual reader once the
- * book (and its pre-computed page count) is available.
+ * Reader entry point. Renders the top-level states instead of assuming the book is already usable:
+ * [ReaderUiState.Loading] while the index is publishing or the page source is being prepared
+ * (e-books may convert on demand, hence the dedicated message), [ReaderUiState.Missing] only when
+ * the book is definitively gone, [ReaderUiState.Failed] with a retry when opening the file failed,
+ * and the actual reader once ComicPageSource.prepare() reported the real page count.
  */
 @Composable
 fun ReaderScreen(
@@ -140,7 +144,7 @@ fun ReaderScreen(
     val uiState by vm.uiState.collectAsStateWithLifecycle()
 
     when (val state = uiState) {
-        ReaderUiState.Loading -> ReaderLoading(modifier)
+        is ReaderUiState.Loading -> ReaderLoading(message = state.message, modifier = modifier)
 
         ReaderUiState.Missing -> {
             // The book vanished from the index while the reader was open; show why, then return to
@@ -157,9 +161,15 @@ fun ReaderScreen(
             )
         }
 
+        ReaderUiState.Failed -> ReaderFailed(
+            onRetry = vm::retryPrepare,
+            onBack = onBack,
+            modifier = modifier,
+        )
+
         is ReaderUiState.Ready -> {
-            if (state.book.pageCount <= 0) {
-                // Indexed book with no readable pages: this is not "page 1 failed", there is simply
+            if (state.pageCount <= 0) {
+                // Prepared book with no readable pages: this is not "page 1 failed", there is simply
                 // nothing to display. Never render the pager with a fake single page.
                 ReaderMessage(
                     title = "没有可读的页面",
@@ -171,6 +181,7 @@ fun ReaderScreen(
                 ReaderContent(
                     vm = vm,
                     book = state.book,
+                    pageCount = state.pageCount,
                     settings = settings,
                     onBack = onBack,
                     volumePageEvents = volumePageEvents,
@@ -183,7 +194,7 @@ fun ReaderScreen(
 }
 
 @Composable
-private fun ReaderLoading(modifier: Modifier = Modifier) {
+private fun ReaderLoading(message: String, modifier: Modifier = Modifier) {
     Box(
         modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
         contentAlignment = Alignment.Center,
@@ -192,7 +203,7 @@ private fun ReaderLoading(modifier: Modifier = Modifier) {
             SaltLoading(sizeDp = 36)
             Spacer(Modifier.height(12.dp))
             Text(
-                "正在打开…",
+                message,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -225,19 +236,48 @@ private fun ReaderMessage(
     }
 }
 
+@Composable
+private fun ReaderFailed(
+    onRetry: () -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        contentAlignment = Alignment.Center,
+    ) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Text("无法打开这本书", style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "文件可能已损坏、格式不受支持，或转换没有完成。",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.height(20.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FilledTonalButton(onClick = onRetry) { Text("重试") }
+                TextButton(onClick = onBack) { Text("回到书架") }
+            }
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 private fun ReaderContent(
     vm: ReaderViewModel,
     book: ComicBook,
+    pageCount: Int,
     settings: AppSettings,
     onBack: () -> Unit,
     volumePageEvents: Flow<Int>?,
     modifier: Modifier = Modifier,
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
 ) {
-    // pageCount is pre-computed during indexing; the reader never enumerates pages itself.
-    val count = max(1, book.pageCount)
+    // Real count reported by ComicPageSource.prepare(); for a freshly converted e-book this is the
+    // exact page count, unlike the estimate stored in the index.
+    val count = max(1, pageCount)
     val initialPage = remember { book.currentPage.coerceIn(0, count - 1) }
     val pagerState = rememberPagerState(initialPage = initialPage, pageCount = { count })
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage)
@@ -285,6 +325,9 @@ private fun ReaderContent(
     val liveMode = rememberUpdatedState(settings.readerMode)
     val liveCount = rememberUpdatedState(count)
     val liveZoomed = rememberUpdatedState(zoomed)
+    // The decode width can change without the mode changing (multi-window resize), so the prefetch
+    // collector must read it live rather than capture the value from when the effect started.
+    val livePageTarget = rememberUpdatedState(pageTarget)
 
     // Only subscribe to the scroll state that is actually driving the current mode; the other one
     // is not being scrolled and would just burn a collector.
@@ -301,11 +344,22 @@ private fun ReaderContent(
         if (vertical) {
             snapshotFlow { listState.firstVisibleItemIndex }
                 .distinctUntilChanged()
-                .collect { vm.updateProgress(it) }
+                .collect { index ->
+                    vm.updateProgress(index)
+                    // Vertical reading only advances downwards: warm the next two pages.
+                    vm.prefetchPages(listOf(index + 1, index + 2), livePageTarget.value)
+                }
         } else {
             snapshotFlow { pagerState.settledPage }
                 .distinctUntilChanged()
-                .collect { vm.updateProgress(it) }
+                .collect { page ->
+                    vm.updateProgress(page)
+                    // Horizontal paging: warm both neighbours, nearest first (±1 before ±2).
+                    vm.prefetchPages(
+                        listOf(page - 1, page + 1, page - 2, page + 2),
+                        livePageTarget.value,
+                    )
+                }
         }
     }
 
@@ -561,7 +615,7 @@ private fun ReaderTopBar(book: ComicBook, onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Rounded.ArrowBack, contentDescription = "返回")
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
             }
             Text(
                 book.title,
@@ -584,16 +638,24 @@ private fun ReaderBottomBar(
     onToggleMode: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
-    var sliderValue by remember { mutableStateOf<Float?>(null) }
     var pendingJump by remember { mutableStateOf<Int?>(null) }
     var lastTickPage by remember { mutableStateOf(currentPage) }
     val haptics = LocalHapticFeedback.current
     val sliderMax = (count - 1).coerceAtLeast(1)
+    // Material3 1.5 state-based Slider: the state is the single source of truth for the thumb.
+    val sliderState = rememberSliderState(
+        value = currentPage.toFloat().coerceIn(0f, sliderMax.toFloat()),
+        trackRange = 0f..sliderMax.toFloat(),
+    )
+    // Follow page changes made elsewhere (swipe, volume keys, tap zones) unless the user is actively
+    // dragging or a slider jump is still animating.
     LaunchedEffect(currentPage, pendingJump) {
         if (pendingJump == currentPage) {
             pendingJump = null
-            sliderValue = null
             lastTickPage = currentPage
+        }
+        if (pendingJump == null && !sliderState.isDragging) {
+            sliderState.value = currentPage.toFloat().coerceIn(0f, sliderMax.toFloat())
         }
     }
     Box(
@@ -614,30 +676,30 @@ private fun ReaderBottomBar(
             }
             Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
                 Slider(
-                    value = (sliderValue ?: currentPage.toFloat()).coerceIn(0f, sliderMax.toFloat()),
-                    onValueChange = {
+                    state = sliderState,
+                    onValueChange = { value ->
+                        // The state-based overload leaves SliderState untouched when an
+                        // onValueChange callback is supplied, so update it explicitly.
+                        sliderState.value = value
                         pendingJump = null
-                        val page = it.roundToInt().coerceIn(0, count - 1)
+                        val page = value.roundToInt().coerceIn(0, count - 1)
                         if (page != lastTickPage) {
                             lastTickPage = page
                             haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                         }
-                        sliderValue = it
                     },
                     onValueChangeFinished = {
-                        val target = sliderValue?.roundToInt()?.coerceIn(0, count - 1)
-                        if (target != null) {
-                            pendingJump = target
-                            onGoToPage(target)
-                        }
+                        val target = sliderState.value.roundToInt().coerceIn(0, count - 1)
+                        pendingJump = target
+                        lastTickPage = target
+                        onGoToPage(target)
                     },
                     // A single-page book has no meaningful range; disable instead of a 0..1 slider.
                     enabled = count > 1,
-                    valueRange = 0f..sliderMax.toFloat(),
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    "${(sliderValue?.roundToInt() ?: currentPage).coerceIn(0, count - 1) + 1} / $count",
+                    "${sliderState.value.roundToInt().coerceIn(0, count - 1) + 1} / $count",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -816,13 +878,21 @@ private fun ReaderControlsSheet(
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
     onCustomBackground: () -> Unit = {},
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // Material3 1.5 replacement for the deprecated rememberModalBottomSheetState: restricting
+    // enabledValues to Hidden/Expanded keeps the old skipPartiallyExpanded = true behaviour.
+    val sheetState = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
     var tab by rememberSaveable { mutableIntStateOf(0) }
-    var sliderValue by remember { mutableStateOf<Float?>(null) }
     var pendingJump by remember { mutableStateOf<Int?>(null) }
     var lastTickPage by remember { mutableStateOf(currentPage) }
     val sliderMax = (count - 1).coerceAtLeast(1)
     val haptics = LocalHapticFeedback.current
+    val sliderState = rememberSliderState(
+        value = currentPage.toFloat().coerceIn(0f, sliderMax.toFloat()),
+        trackRange = 0f..sliderMax.toFloat(),
+    )
     val tabIndicator by androidx.compose.animation.core.animateFloatAsState(
         targetValue = tab.toFloat(),
         animationSpec = spring(dampingRatio = 0.86f, stiffness = 380f),
@@ -831,8 +901,10 @@ private fun ReaderControlsSheet(
     LaunchedEffect(currentPage, pendingJump) {
         if (pendingJump == currentPage) {
             pendingJump = null
-            sliderValue = null
             lastTickPage = currentPage
+        }
+        if (pendingJump == null && !sliderState.isDragging) {
+            sliderState.value = currentPage.toFloat().coerceIn(0f, sliderMax.toFloat())
         }
     }
 
@@ -848,29 +920,28 @@ private fun ReaderControlsSheet(
             Text("阅读设置", style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(14.dp))
             Slider(
-                value = (sliderValue ?: currentPage.toFloat()).coerceIn(0f, sliderMax.toFloat()),
-                onValueChange = {
+                state = sliderState,
+                onValueChange = { value ->
+                    // See ReaderBottomBar: with onValueChange supplied the state must be updated here.
+                    sliderState.value = value
                     pendingJump = null
-                    val page = it.roundToInt().coerceIn(0, count - 1)
+                    val page = value.roundToInt().coerceIn(0, count - 1)
                     if (page != lastTickPage) {
                         lastTickPage = page
                         haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
                     }
-                    sliderValue = it
                 },
                 onValueChangeFinished = {
-                    val target = sliderValue?.roundToInt()?.coerceIn(0, count - 1)
-                    if (target != null) {
-                        pendingJump = target
-                        onGoToPage(target)
-                    }
+                    val target = sliderState.value.roundToInt().coerceIn(0, count - 1)
+                    pendingJump = target
+                    lastTickPage = target
+                    onGoToPage(target)
                 },
                 enabled = count > 1,
-                valueRange = 0f..sliderMax.toFloat(),
                 modifier = Modifier.fillMaxWidth(),
             )
             Text(
-                "第 ${(sliderValue?.roundToInt() ?: currentPage).coerceIn(0, count - 1) + 1} / $count 页",
+                "第 ${sliderState.value.roundToInt().coerceIn(0, count - 1) + 1} / $count 页",
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )

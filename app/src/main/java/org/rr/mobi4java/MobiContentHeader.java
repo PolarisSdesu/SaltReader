@@ -1,6 +1,5 @@
 package org.rr.mobi4java;
 
-import static org.apache.commons.lang3.BooleanUtils.negate;
 import static org.rr.mobi4java.ByteUtils.getBytes;
 import static org.rr.mobi4java.ByteUtils.getInt;
 import static org.rr.mobi4java.ByteUtils.getString;
@@ -18,9 +17,8 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.io.output.TeeOutputStream;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.rr.mobi4java.util.TeeOutputStream;
+import org.rr.mobi4java.util.ToStringBuilder;
 
 public class MobiContentHeader extends MobiContent {
 	
@@ -132,7 +130,7 @@ public class MobiContentHeader extends MobiContent {
 		encryptionType = getInt(content, 12, 2);
 		unused1 = getInt(content, 14, 2);
 		String identifier = getString(content, 16, 4);
-		if (negate(StringUtils.equals(identifier, "MOBI"))) {
+		if (!"MOBI".equals(identifier)) {
 			throw new IOException("Expected to find EXTH header identifier EXTH but got '" + identifier + "' instead");
 		}
 		int headerLength = getInt(content, 20, 4);

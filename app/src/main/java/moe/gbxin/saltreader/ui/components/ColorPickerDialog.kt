@@ -13,8 +13,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSliderState
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -112,10 +114,19 @@ fun CustomColorPickerDialog(
 @Composable
 private fun RgbSlider(channel: String, value: Int, onChange: (Int) -> Unit) {
     Text("$channel  $value", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    // Material3 1.5 state-based Slider: state owns the thumb; follow external value changes
+    // (hex input updates R/G/B) unless the user is dragging.
+    val sliderState = rememberSliderState(value = value.toFloat(), trackRange = 0f..255f)
+    LaunchedEffect(value) {
+        if (!sliderState.isDragging) sliderState.value = value.toFloat()
+    }
     Slider(
-        value = value.toFloat(),
-        onValueChange = { onChange(it.roundToInt().coerceIn(0, 255)) },
-        valueRange = 0f..255f,
+        state = sliderState,
+        onValueChange = { raw ->
+            // With an onValueChange callback the state is not updated automatically.
+            sliderState.value = raw
+            onChange(raw.roundToInt().coerceIn(0, 255))
+        },
     )
 }
 

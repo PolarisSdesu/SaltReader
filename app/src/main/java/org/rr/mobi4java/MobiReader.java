@@ -3,6 +3,7 @@ package org.rr.mobi4java;
 import static org.rr.mobi4java.MobiContentRecordFactory.*;
 
 import java.io.BufferedInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -11,7 +12,6 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.commons.io.IOUtils;
 import org.rr.mobi4java.MobiContent.CONTENT_TYPE;
 
 public class MobiReader {
@@ -37,7 +37,7 @@ public class MobiReader {
 	 * @throws IOException
 	 */
 	public MobiDocument read(InputStream in) throws IOException {
-		byte[] mobiData = IOUtils.toByteArray(in);
+		byte[] mobiData = readAllBytes(in);
 		PDBHeader pdbHeader = readPDBHeader(mobiData);
 		MobiContentHeader mobiHeader = readMobiHeader(pdbHeader, mobiData);
 		List<MobiContent> mobiContent = readMobiContent(pdbHeader, mobiHeader, mobiData);
@@ -55,6 +55,16 @@ public class MobiReader {
 		} catch (IOException e) {
 			throw new RuntimeException("Failed to load template.", e);
 		}
+	}
+
+	private static byte[] readAllBytes(InputStream in) throws IOException {
+		ByteArrayOutputStream out = new ByteArrayOutputStream();
+		byte[] buffer = new byte[8192];
+		int read;
+		while ((read = in.read(buffer)) != -1) {
+			out.write(buffer, 0, read);
+		}
+		return out.toByteArray();
 	}
 
 	private PDBHeader readPDBHeader(byte[] mobiData) {

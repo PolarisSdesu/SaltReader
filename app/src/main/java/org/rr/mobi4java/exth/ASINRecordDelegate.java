@@ -1,13 +1,15 @@
 package org.rr.mobi4java.exth;
 
-import static org.apache.commons.lang3.CharEncoding.UTF_8;
-
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
 import org.rr.mobi4java.EXTHRecord;
 
 public class ASINRecordDelegate extends StringRecordDelegate implements RecordDelegate {
+
+	private static final String UTF_8 = StandardCharsets.UTF_8.name();
+
 
 	public ASINRecordDelegate(EXTHRecord record) {
 		super(record);

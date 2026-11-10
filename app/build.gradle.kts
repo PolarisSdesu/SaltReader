@@ -34,8 +34,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // Play 要求每次上传统递增且不可回退；仅在发布新版本时 +1。
-        versionCode = 2
-        versionName = "1.1.0"
+        versionCode = 3
+        versionName = "1.2.0"
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -126,9 +126,6 @@ dependencies {
     implementation(libs.androidx.documentfile)
     implementation(libs.androidx.exifinterface)
     implementation(libs.io.documentnode.epub4j.core)
-    implementation(libs.commons.io)
-    implementation(libs.commons.lang3)
-    implementation(libs.commons.collections4)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
 

@@ -5,7 +5,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-import org.apache.commons.lang3.StringUtils;
 import org.rr.mobi4java.EXTHRecord.RECORD_TYPE;
 import org.rr.mobi4java.MobiContent.CONTENT_TYPE;
 import org.rr.mobi4java.exth.DateRecordDelegate;
@@ -21,7 +20,7 @@ class MobiUtils {
 	 * @return The cleaned input string.
 	 */
 	static String removeUtfReplacementCharacter(String str) {
-		return StringUtils.remove(str, "\uFFFD");
+		return str == null ? null : str.replace("\uFFFD", "");
 	}
 	
 	/**

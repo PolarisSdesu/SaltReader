@@ -15,18 +15,18 @@
 ```kotlin
 @Serializable data class ComicBook(
     id, title, author, description, kind,
-    contentPath: String = "",      // 仅旧版本应用内副本（相对 filesDir），新书为空
-    treeUri: String? = null,       // SAF tree URI
-    documentPath: String? = null,  // 相对 tree root 的路径，"" = root 本身（图片文件夹）
+    treeUri: String,               // SAF tree URI（必填）
+    documentPath: String = "",     // 相对 tree root 的路径，"" = root 本身（图片文件夹）
     pageCount, sizeBytes, addedAt, lastReadAt, currentPage, finished, accent,
     direction: ReadingDirection? = null,
     modifiedAt: Long = 0L,         // 增量刷新指纹
-) { isLegacyCopy, isSaf, progress, displayAuthor, pageLabel, kindLabel }
+    converted: Boolean = true,     // false = 电子书拍平缓存待生成（pageCount 为估算值）
+) { progress, displayAuthor, pageLabel, kindLabel }
 ```
 
-旧 JSON 中的 `sourcePath` / `sourceUri` 字段会被 `ignoreUnknownKeys` 忽略。
-`initialize()` 必须丢弃「既没有 `treeUri` 也没有有效 `contentPath`」的条目。
-旧版本扫描出来的裸路径书（`sourcePath`）在 Play 版不可用，直接丢弃索引（不删用户文件）。
+**不做任何旧数据兼容**（测试期可直接卸载重装）：模型里不再有 `contentPath` / `isLegacyCopy` /
+`sourcePath` / `sourceUri`。`books.json` 解析失败时直接重置索引即可，不需要迁移逻辑。
+`initialize()` 只需：加载索引 → 校验 tree URI 的持久化权限（失效则丢弃该条目）→ 生成缺失封面。
 
 ## 依赖关系
 
@@ -58,7 +58,10 @@ class LibraryRepository(context: Context) {
 
     fun coverFile(book: ComicBook): File
     fun pageSource(book: ComicBook): ComicPageSource   // 同步构造，绝不 I/O；内部惰性解析
-    fun appDataBytes(): Long                           // 派生缓存 + 旧副本占用
+    fun updatePageCount(bookId: String, pageCount: Int) // 电子书转换完成后回填真实页数
+    fun appDataBytes(): Long                           // covers + 派生缓存占用
+    suspend fun clearCaches(): Long                    // 只清 cacheDir 派生缓存（books/ebooks），保留 covers，返回释放字节；
+                                                       // 电子书清缓存后 converted=false 并重新入队后台转换
 }
 ```
 
@@ -70,8 +73,7 @@ class LibraryRepository(context: Context) {
 - 每次扫描持有锁的时间要短：先局部收集，再在短临界区合并 `_books` 并写盘。
 - 写 `books.json` 原子化：临时文件 + `fd.sync()` + rename；失败向上抛/返回 Result，
   不要静默吞掉。持久化合并为单一协程（进度变更 debounce），删掉 `progressPending` 死代码。
-- `delete()` 必须校验 `contentPath.isNotBlank()` 且 canonicalPath 位于 app files 下，
-  禁止 `File(root, "")` 递归删除。
+- `delete()` 只删除索引、封面与派生缓存，绝不触碰用户文件（SAF 引用无需也不能删除原文件）。
 - `removeRoot(treeUri)` 删除该 root 下的书与派生缓存，但不碰用户文件。
 
 ### ComicPageSource 契约
@@ -79,9 +81,34 @@ class LibraryRepository(context: Context) {
 ```kotlin
 interface ComicPageSource : Closeable {
     val pageCount: Int
+    /** 首次打开前调用：电子书可在此生成拍平缓存并返回真实页数；默认返回 pageCount。 */
+    suspend fun prepare(): Int = pageCount
     suspend fun loadPage(index: Int, targetWidth: Int): Bitmap?
 }
 ```
+
+### 导入速度契约（第二轮追加，必须实现）
+
+目标：几十本 EPUB 导入应在秒级完成，绝不能在前台逐本转换。
+
+1. **索引阶段零整本转换**：
+   - ZIP/CBZ：用 SAF `openFileDescriptor` 得到的可 seek 文件描述符 + 轻量 ZIP 中央目录解析器
+     （`RemoteZipReader`：读尾部 EOCD/ZIP64 EOCD + central directory）只统计图片条目数，绝不解压整包。
+     该解析器同时提供按条目名 inflate 读取小文件的能力（EPUB 的 container.xml/OPF 用）。
+   - EPUB：`converted=false`，`pageCount` 用 RemoteZipReader 读 container.xml → OPF → 统计 `<itemref>` 数量
+     （失败则 1）；封面暂不生成（UI 显示占位），入队后台转换。
+   - MOBI/AZW3：`converted=false`，`pageCount` 用文件大小估算或 1；入队后台转换。
+   - PDF/文件夹：保持现有快速计数；封面生成保持（CBZ 封面改用 RemoteZipReader 读第一张图，避免把整包复制到缓存）。
+2. **后台转换队列**：Repo 内的单一队列 + 2 个并发 worker（`Dispatchers.IO.limitedParallelism(2)`），
+   逐个调用 `FormatConverters.toCbz`（SAF 流先落到临时文件）；成功后回填真实 `pageCount`、`converted=true`、
+   生成封面，并走 debounce 持久化；失败保留 `converted=false` 以便下次重试。`initialize()` 时把
+   `converted=false` 的书重新入队；`removeRoot/delete` 取消对应任务。
+3. **打开即转换**：`ComicPageSource.prepare()` 在电子书缓存缺失时同步转换（IO 线程、单飞锁），
+   返回真实页数；Reader 在进入 Ready 前调用 prepare，用返回页数并回填 `updatePageCount`。
+4. **转换本身加速**：`FormatConverters` 的 CBZ 写入对已经是压缩格式的页图（JPEG/PNG/WebP）使用
+   `ZipOutputStream.setMethod(STORED)`，避免无意义的二次压缩；EPUB 图片/文本分类只扫描一次 spine
+   （缓存每个 reference 的图片引用列表），避免二次 `resource.data` 解码与正则。
+5. **进度**：索引进度按“已索引 n/N”上报；后台转换不阻塞导入返回。
 
 A 负责的实现：
 - SAF 压缩包：首次 `loadPage` 时把文档流式复制到 `cacheDir/books/<id>_<modifiedAt>_<size>.<ext>`，
@@ -89,7 +116,7 @@ A 负责的实现：
 - SAF PDF：`ContentResolver.openFileDescriptor` → `PdfRenderer`，惰性打开，`close()` 释放；
   构造/渲染异常要关闭 fd，渲染前 clamp 宽高，避免超长页 OOM。
 - SAF 图片文件夹：惰性列举目录下图片（自然序）后按 index 读取 `openInputStream`。
-- 旧版本应用内副本（`isLegacyCopy`）：沿用现有 File 实现，只读兼容。
+- 不提供任何应用内副本读取路径；书页只来自 SAF。
 - 外部 EPUB/MOBI：索引时转换到 `cacheDir/ebooks/<id>.cbz`（派生缓存，不是副本），
   读取走该缓存；转换缓存写 `.tmp` 后 rename，避免半成品被当成有效缓存。
 - 解码安全：`inSampleSize` 同时约束总像素（≈16MP 上限）；单文件读取上限；
@@ -97,6 +124,8 @@ A 负责的实现：
 
 ## 阅读器契约（工作流 B）
 
+- 页数来源：Reader 在 Ready 之前调用 `source.prepare()`（IO），用返回真实页数渲染，
+  并调用 `repo.updatePageCount` 回填；不要直接用 `book.pageCount` 当最终页数（它可能是 EPUB 估算值）。
 - `ReaderViewModel`：`book: StateFlow<ComicBook?>` 驱动；暴露
   `ReaderUiState`（`Loading` / `Ready` / `Missing`），页数取 `book.pageCount`。
   source 在 `Dispatchers.IO` 惰性创建，主线程零 I/O；`onCleared` 关闭。

@@ -13,20 +13,20 @@ class BookLogicTest {
         pageCount: Int = 10,
         currentPage: Int = 0,
         finished: Boolean = false,
-        contentPath: String = "",
-        treeUri: String? = null,
+        converted: Boolean = true,
         author: String? = null,
     ) = ComicBook(
         id = id,
         title = "Book $id",
         author = author,
         kind = BookKind.ARCHIVE,
-        contentPath = contentPath,
-        treeUri = treeUri,
+        treeUri = "content://com.android.externalstorage.documents/tree/primary%3AComics",
+        documentPath = "book-$id.cbz",
         pageCount = pageCount,
         addedAt = 0L,
         currentPage = currentPage,
         finished = finished,
+        converted = converted,
     )
 
     @Test
@@ -51,16 +51,18 @@ class BookLogicTest {
     }
 
     @Test
-    fun `saf and legacy copy flags are mutually driven by the source fields`() {
-        assertTrue(book(treeUri = "content://tree/1").isSaf)
-        assertFalse(book(treeUri = "content://tree/1").isLegacyCopy)
+    fun `page label reports the pending conversion of an e-book`() {
+        assertEquals("待转换", book(converted = false).pageLabel)
+        // Conversion state wins over the reading state.
+        assertEquals("待转换", book(converted = false, currentPage = 3).pageLabel)
+        assertEquals("待转换", book(converted = false, finished = true).pageLabel)
+    }
 
-        assertTrue(book(contentPath = "library/content/a.cbz").isLegacyCopy)
-        assertFalse(book(contentPath = "library/content/a.cbz").isSaf)
-
-        val safAndLegacy = book(contentPath = "library/content/a.cbz", treeUri = "content://tree/1")
-        assertTrue(safAndLegacy.isSaf)
-        assertFalse(safAndLegacy.isLegacyCopy)
+    @Test
+    fun `page label reflects the reading state of a converted book`() {
+        assertEquals("尚未开始", book(converted = true, currentPage = 0).pageLabel)
+        assertEquals("读到第 3 页", book(converted = true, currentPage = 2).pageLabel)
+        assertEquals("已读完", book(converted = true, finished = true).pageLabel)
     }
 
     @Test
@@ -68,6 +70,12 @@ class BookLogicTest {
         assertEquals("本地藏书", book(author = null).displayAuthor)
         assertEquals("本地藏书", book(author = "  ").displayAuthor)
         assertEquals("Author", book(author = "Author").displayAuthor)
+    }
+
+    @Test
+    fun `all indexed books are SAF references`() {
+        assertTrue(book().treeUri.isNotBlank())
+        assertEquals("book-b.cbz", book().documentPath)
     }
 
     @Test

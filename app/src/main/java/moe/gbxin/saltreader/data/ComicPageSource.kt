@@ -33,6 +33,12 @@ import kotlin.math.sqrt
 interface ComicPageSource : Closeable {
     val pageCount: Int
 
+    /**
+     * 首次打开前调用（IO 线程）：电子书可在此生成拍平缓存并返回真实页数；
+     * 其余 source 默认直接返回索引阶段算好的 [pageCount]。
+     */
+    suspend fun prepare(): Int = pageCount
+
     suspend fun loadPage(index: Int, targetWidth: Int): Bitmap?
 }
 
@@ -57,15 +63,12 @@ private class EmptyPageSource(override val pageCount: Int) : ComicPageSource {
 internal object ComicPageSourceFactory {
     fun open(book: ComicBook, context: Context, cacheDir: File, ebookCacheDir: File): ComicPageSource {
         if (book.pageCount <= 0) return EmptyPageSource(book.pageCount)
-        return when {
-            book.isLegacyCopy -> LegacyCopyPageSource(book, context.filesDir)
-            book.isSaf -> when {
-                book.kind == BookKind.FOLDER -> SafFolderPageSource(book, context)
-                book.kind == BookKind.PDF -> SafPdfPageSource(book, context)
-                isEbookBook(book) -> EbookCachePageSource(book, context, ebookCacheDir)
-                else -> SafArchivePageSource(book, context, cacheDir)
-            }
-            else -> EmptyPageSource(book.pageCount)
+        return when (book.kind) {
+            BookKind.FOLDER -> SafFolderPageSource(book, context)
+            BookKind.PDF -> SafPdfPageSource(book, context)
+            BookKind.ARCHIVE ->
+                if (isEbookBook(book)) EbookCachePageSource(book, context, ebookCacheDir)
+                else SafArchivePageSource(book, context, cacheDir)
         }
     }
 }
@@ -79,6 +82,12 @@ private class EbookCachePageSource(
     private val lock = Any()
     private var delegate: FileArchivePageSource? = null
     private var closed = false
+
+    /** 缓存缺失时在单飞锁内重建（复用 rebuildCache），返回缓存里的真实页数。 */
+    override suspend fun prepare(): Int = withContext(Dispatchers.IO) {
+        val source = ensureOpen() ?: return@withContext pageCount
+        source.actualPageCount() ?: pageCount
+    }
 
     override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
         val source = ensureOpen() ?: return null
@@ -99,8 +108,7 @@ private class EbookCachePageSource(
 
     private fun rebuildCache(cache: File): Boolean {
         val ext = ebookExtensionOf(book) ?: return false
-        val treeUri = book.treeUri ?: return false
-        val tree = runCatching { SafTree(context, Uri.parse(treeUri)) }.getOrNull() ?: return false
+        val tree = runCatching { SafTree(context, Uri.parse(book.treeUri)) }.getOrNull() ?: return false
         val entry = tree.find(book.documentPath) ?: return false
         if (entry.isDirectory) return false
         val tempDir = File(context.cacheDir, "tmp").apply { mkdirs() }
@@ -140,8 +148,7 @@ private class SafArchivePageSource(
     private fun ensureOpen(): FileArchivePageSource? = synchronized(lock) {
         if (closed) return null
         delegate?.let { return it }
-        val treeUri = book.treeUri ?: return null
-        val tree = runCatching { SafTree(context, Uri.parse(treeUri)) }.getOrNull() ?: return null
+        val tree = runCatching { SafTree(context, Uri.parse(book.treeUri)) }.getOrNull() ?: return null
         val entry = tree.find(book.documentPath) ?: return null
         if (entry.isDirectory) return null
         val target = bookCacheFile(book, cacheDir)
@@ -179,8 +186,7 @@ private class SafFolderPageSource(
     private fun ensurePages(): List<Uri>? = synchronized(lock) {
         if (closed) return null
         pages?.let { return it }
-        val treeUri = book.treeUri ?: return null
-        val tree = runCatching { SafTree(context, Uri.parse(treeUri)) }.getOrNull() ?: return null
+        val tree = runCatching { SafTree(context, Uri.parse(book.treeUri)) }.getOrNull() ?: return null
         val folder = tree.find(book.documentPath) ?: return null
         if (!folder.isDirectory) return null
         val children = tree.children(folder.documentId, folder.documentPath) ?: return null
@@ -222,8 +228,7 @@ private class SafPdfPageSource(
     private fun ensureOpen(): PdfRenderer? = synchronized(lock) {
         if (closed) return null
         renderer?.let { return it }
-        val treeUri = book.treeUri ?: return null
-        val tree = runCatching { SafTree(context, Uri.parse(treeUri)) }.getOrNull() ?: return null
+        val tree = runCatching { SafTree(context, Uri.parse(book.treeUri)) }.getOrNull() ?: return null
         val entry = tree.find(book.documentPath) ?: return null
         if (entry.isDirectory) return null
         val fd = runCatching { context.contentResolver.openFileDescriptor(entry.uri, "r") }.getOrNull() ?: return null
@@ -254,27 +259,7 @@ private class SafPdfPageSource(
     }
 }
 
-/** 旧版本应用内副本（只读兼容）：内容位于 filesDir/library/content。 */
-private class LegacyCopyPageSource(
-    book: ComicBook,
-    filesDir: File,
-) : ComicPageSource {
-    override val pageCount: Int = book.pageCount
-    private val delegate: ComicPageSource = run {
-        val file = File(File(filesDir, "library"), book.contentPath)
-        when (book.kind) {
-            BookKind.FOLDER -> FileFolderPageSource(file, pageCount)
-            BookKind.PDF -> FilePdfPageSource(file, pageCount)
-            BookKind.ARCHIVE -> FileArchivePageSource(file, pageCount)
-        }
-    }
-
-    override suspend fun loadPage(index: Int, targetWidth: Int): Bitmap? = delegate.loadPage(index, targetWidth)
-
-    override fun close() = delegate.close()
-}
-
-/** 本地压缩包（旧副本/电子书派生缓存）：惰性打开 ZipFile。 */
+/** 本地压缩包（ZIP 随机读缓存 / 电子书拍平缓存）：惰性打开 ZipFile。 */
 private class FileArchivePageSource(
     private val file: File,
     override val pageCount: Int,
@@ -305,6 +290,9 @@ private class FileArchivePageSource(
         newZip to newEntries
     }
 
+    /** 打开后返回实际图片条目数（= 真实页数）；尚未打开时返回 null。 */
+    fun actualPageCount(): Int? = ensureOpen()?.second?.size
+
     override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
         val (zipFile, pageEntries) = ensureOpen() ?: return null
         val entry = pageEntries.getOrNull(index) ?: return null
@@ -327,93 +315,12 @@ private class FileArchivePageSource(
     }
 }
 
-/** 本地图片文件夹（旧副本）。 */
-private class FileFolderPageSource(
-    private val dir: File,
-    override val pageCount: Int,
-) : LazyPageSource(pageCount) {
-    private val lock = Any()
-    private var pages: List<File>? = null
-    private var closed = false
-
-    private fun ensurePages(): List<File>? = synchronized(lock) {
-        if (closed) return null
-        pages?.let { return it }
-        val list = dir.listFiles()
-            ?.filter { it.isComicImage() }
-            ?.sortedWith(Comparator { a, b -> PageNameComparator.compare(a.name, b.name) })
-            ?: return null
-        pages = list
-        list
-    }
-
-    override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
-        val list = ensurePages() ?: return null
-        val file = list.getOrNull(index) ?: return null
-        if (file.length() > PageIndexing.MAX_PAGE_BYTES) return null
-        val bytes = runCatching { file.inputStream().use { readBounded(it) } }.getOrNull() ?: return null
-        return decodePage(bytes, targetWidth)
-    }
-
-    override fun close() {
-        synchronized(lock) {
-            closed = true
-            pages = null
-        }
-    }
-}
-
-/** 本地 PDF（旧副本）。 */
-private class FilePdfPageSource(
-    private val file: File,
-    override val pageCount: Int,
-) : LazyPageSource(pageCount) {
-    private val lock = Any()
-    private var renderer: PdfRenderer? = null
-    private var descriptor: ParcelFileDescriptor? = null
-    private var closed = false
-
-    private fun ensureOpen(): PdfRenderer? = synchronized(lock) {
-        if (closed) return null
-        renderer?.let { return it }
-        val fd = try {
-            ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY)
-        } catch (t: Exception) {
-            return null
-        }
-        val pdf = try {
-            PdfRenderer(fd)
-        } catch (t: Exception) {
-            runCatching { fd.close() }
-            return null
-        }
-        descriptor = fd
-        renderer = pdf
-        pdf
-    }
-
-    override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
-        val pdf = ensureOpen() ?: return null
-        return renderPdfPage(pdf, index, targetWidth)
-    }
-
-    override fun close() {
-        synchronized(lock) {
-            closed = true
-            runCatching { renderer?.close() }
-            runCatching { descriptor?.close() }
-            renderer = null
-            descriptor = null
-        }
-    }
-}
-
 // ---------------------------------------------------------------------------
 // 共享工具
 // ---------------------------------------------------------------------------
 
 internal fun bookCacheFile(book: ComicBook, cacheDir: File): File {
-    val rawExt = book.documentPath?.substringAfterLast('.', "").orEmpty().lowercase()
+    val rawExt = book.documentPath.substringAfterLast('.', "").lowercase()
     val ext = rawExt.filter { it.isLetterOrDigit() }.ifBlank { "zip" }
     return File(cacheDir, "${book.id}_${book.modifiedAt}_${book.sizeBytes}.$ext")
 }
@@ -421,12 +328,22 @@ internal fun bookCacheFile(book: ComicBook, cacheDir: File): File {
 internal val ebookExtensions: Set<String> = setOf("epub", "mobi", "azw", "azw3")
 
 internal fun ebookExtensionOf(book: ComicBook): String? {
-    if (!book.isSaf) return null
-    val ext = book.documentPath?.substringAfterLast('.', "").orEmpty().lowercase()
+    val ext = book.documentPath.substringAfterLast('.', "").lowercase()
     return ext.takeIf { it in ebookExtensions }
 }
 
 internal fun isEbookBook(book: ComicBook): Boolean = ebookExtensionOf(book) != null
+
+/** 直接从本地 CBZ 缓存解码第 0 页，索引阶段给电子书生成封面用。 */
+internal fun decodeArchiveFirstPage(file: File, targetWidth: Int): Bitmap? {
+    if (!file.exists() || file.length() == 0L) return null
+    val source = FileArchivePageSource(file, 1)
+    return try {
+        source.loadBlocking(0, targetWidth)
+    } finally {
+        source.close()
+    }
+}
 
 internal fun ZipFile.imageEntries(): List<ZipEntry> {
     val all = entries().toList()
@@ -561,12 +478,6 @@ private fun renderPdfPage(renderer: PdfRenderer, index: Int, targetWidth: Int): 
 }
 
 internal val imageExtensions = setOf("jpg", "jpeg", "png", "webp", "bmp", "gif", "avif", "heic", "heif")
-
-fun File.isComicImage(): Boolean {
-    if (!isFile || isHidden) return false
-    if (!PageIndexing.isComicImageName(name)) return false
-    return !name.startsWith("._")
-}
 
 /**
  * 自然排序：目录优先按目录名比较，文件名中的数字按数值比较

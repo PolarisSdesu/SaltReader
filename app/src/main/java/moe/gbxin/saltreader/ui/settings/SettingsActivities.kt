@@ -53,6 +53,8 @@ import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -147,6 +149,7 @@ class AboutSettingsActivity : BaseSettingsActivity() {
 private fun SettingsScaffold(
     title: String,
     onBack: () -> Unit,
+    snackbarHost: @Composable () -> Unit = {},
     content: @Composable (PaddingValues) -> Unit,
 ) {
     val topBarState = rememberTopAppBarState()
@@ -154,6 +157,7 @@ private fun SettingsScaffold(
     Scaffold(
         modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.background,
+        snackbarHost = snackbarHost,
         topBar = {
             LargeFlexibleTopAppBar(
                 title = { Text(title) },
@@ -355,10 +359,12 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as SaltReaderApplication
     val scope = rememberCoroutineScope()
     val books by app.library.books.collectAsStateWithLifecycle()
+    val snackbar = remember { SnackbarHostState() }
     // Root list is loaded off the composition thread; the repository keeps it as a small cache.
     var roots by remember { mutableStateOf<List<LibraryRoot>>(emptyList()) }
     var appDataBytes by remember { mutableStateOf(0L) }
     var scanning by remember { mutableStateOf(false) }
+    var clearing by remember { mutableStateOf(false) }
     var scanProgress by remember { mutableFloatStateOf(0f) }
     var scanLabel by remember { mutableStateOf("") }
     var scanMessage by remember { mutableStateOf<String?>(null) }
@@ -428,7 +434,32 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
         }
     }
 
-    SettingsScaffold("存储", onBack) { innerPadding ->
+    fun clearCaches() {
+        if (clearing || scanning) return
+        scope.launch {
+            clearing = true
+            try {
+                // clearCaches walks the cache tree and deletes files, so it runs off the main thread.
+                val freed = withContext(Dispatchers.IO) { app.library.clearCaches() }
+                reloadStorage()
+                snackbar.showSnackbar(
+                    if (freed > 0) {
+                        "缓存已清理，释放 ${formatBytes(freed)}；电子书会重新转换"
+                    } else {
+                        "没有可清理的缓存"
+                    },
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                snackbar.showSnackbar("清理失败：${e.message ?: "未知错误"}")
+            } finally {
+                clearing = false
+            }
+        }
+    }
+
+    SettingsScaffold("存储", onBack, snackbarHost = { SnackbarHost(snackbar) }) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
@@ -531,6 +562,21 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
                     )
+                }
+            }
+            item { SettingsSectionLabel("缓存") }
+            item {
+                SettingsCard {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.Delete,
+                        title = "清理缓存",
+                        supporting = if (clearing) {
+                            "正在清理…"
+                        } else {
+                            "当前占用 ${formatBytes(appDataBytes)}；保留封面，不影响原文件"
+                        },
+                        enabled = !clearing && !scanning,
+                    ) { clearCaches() }
                 }
             }
         }
@@ -805,7 +851,6 @@ private fun ReadingDirection.label(): String = when (this) {
 }
 
 private fun ReaderBackground.label(): String = when (this) {
-    ReaderBackground.PAPER -> "暖纸"
     ReaderBackground.WHITE -> "纯白"
     ReaderBackground.INK -> "纯黑"
     ReaderBackground.CUSTOM -> "自定义"

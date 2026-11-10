@@ -12,7 +12,7 @@ enum class ReaderMode { PAGED, VERTICAL }
 enum class ReadingDirection { LTR, RTL }
 
 @Serializable
-enum class ReaderBackground { PAPER, WHITE, INK, CUSTOM }
+enum class ReaderBackground { WHITE, INK, CUSTOM }
 
 @Serializable
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
@@ -22,13 +22,11 @@ enum class LibraryFilter(val label: String) { ALL("全部"), READING("在读"), 
 enum class LibrarySort(val label: String) { RECENT("最近阅读"), ADDED("最近加入"), TITLE("书名"), PROGRESS("阅读进度") }
 
 /**
- * A book is always a reference to the user's own storage. The app never copies the book itself;
- * only derived data (covers, flattened e-book pages) is cached in app-private storage.
+ * A book is a reference to a document inside one of the user's SAF folder trees.
+ * The app never copies the book; only derived data (covers, flattened e-book pages) is cached.
  *
- * SAF books live under a persisted tree URI; [documentPath] is the path relative to that tree root
- * ("" means the tree root itself, i.e. an image-folder book). [contentPath] is only kept for books
- * that older versions copied into app-private storage; they are still readable and are not copied
- * again.
+ * [treeUri] is the persisted Storage Access Framework tree URI and [documentPath] is the path
+ * relative to that tree root ("" means the tree root itself, i.e. an image-folder book).
  */
 @Serializable
 data class ComicBook(
@@ -37,12 +35,10 @@ data class ComicBook(
     val author: String? = null,
     val description: String? = null,
     val kind: BookKind,
-    /** Legacy app-private copy, relative to filesDir. Empty for SAF-referenced books. */
-    val contentPath: String = "",
     /** SAF tree URI, e.g. content://com.android.externalstorage.documents/tree/primary%3AComics */
-    val treeUri: String? = null,
+    val treeUri: String,
     /** Document path relative to the tree root. "" = the tree root itself. */
-    val documentPath: String? = null,
+    val documentPath: String = "",
     val pageCount: Int,
     val sizeBytes: Long = 0L,
     val addedAt: Long,
@@ -53,15 +49,13 @@ data class ComicBook(
     val direction: ReadingDirection? = null,
     /** Document lastModified used for incremental refresh; 0 when the provider does not report it. */
     val modifiedAt: Long = 0L,
+    /**
+     * False while an e-book flattening cache (EPUB/MOBI -> CBZ) is still pending. Such books are
+     * indexed instantly with an estimated [pageCount]; a background worker fills in the real page
+     * count, and opening the book converts it on demand. Non-e-book books are always true.
+     */
+    val converted: Boolean = true,
 ) {
-    /** True for books that older app versions copied into app-private storage. */
-    val isLegacyCopy: Boolean
-        get() = treeUri == null && contentPath.isNotBlank()
-
-    /** True for books indexed in place through the Storage Access Framework. */
-    val isSaf: Boolean
-        get() = treeUri != null
-
     val progress: Float
         get() = if (pageCount <= 0) 0f else ((currentPage + if (finished) 1 else 0).toFloat() / pageCount).coerceIn(0f, 1f)
 
@@ -69,7 +63,12 @@ data class ComicBook(
         get() = author?.takeIf { it.isNotBlank() } ?: "本地藏书"
 
     val pageLabel: String
-        get() = if (finished) "已读完" else if (currentPage <= 0) "尚未开始" else "读到第 ${currentPage + 1} 页"
+        get() = when {
+            !converted -> "待转换"
+            finished -> "已读完"
+            currentPage <= 0 -> "尚未开始"
+            else -> "读到第 ${currentPage + 1} 页"
+        }
 
     /** Human-readable container type, used by the book actions sheet. */
     val kindLabel: String

@@ -13,16 +13,19 @@ distributed under the Apache License 2.0 unless noted otherwise.
 - Vendored source: `app/src/main/java/org/rr/mobi4java`
 - License: Apache License 2.0; full license text at `third_party/mobi-api4java-LICENSE.txt`
 - Project: https://github.com/Haoyi/mobi-api4java
-- The sources are vendored unmodified except for package placement. Copyright
-  remains with the original authors; Salt Reader does not claim ownership.
+- The sources are vendored and adapted for Salt Reader. Copyright remains with the
+  original authors; Salt Reader does not claim ownership.
+- Adaptation note: the Apache Commons (`commons-io`, `commons-lang3`,
+  `commons-collections4`) dependency was removed. Commons calls were replaced with
+  equivalent JDK/native implementations. Two small helper classes
+  (`org.rr.mobi4java.util.TeeOutputStream`, `org.rr.mobi4java.util.ToStringBuilder`)
+  were written for this project and are covered by the same Apache License 2.0.
 
-## Apache Commons
-- `commons-io:commons-io:2.17.0`
-- `org.apache.commons:commons-lang3:3.18.0`
-- `org.apache.commons:commons-collections4:4.5.0`
-- License: Apache License 2.0
-- Used by the vendored mobi-api4java code (IO helpers, string/date utilities,
-  collection transformers).
+## Apache Commons — no longer a dependency
+- Earlier builds depended on `commons-io`, `commons-lang3` and
+  `commons-collections4`. They have been removed completely (no runtime or
+  proguard references remain); the vendored mobi-api4java code now uses only the
+  JDK. No third-party Commons attribution is required anymore.
 
 ## AndroidX / Kotlin
 - Jetpack Compose, Material 3, AndroidX libraries, Kotlin and kotlinx

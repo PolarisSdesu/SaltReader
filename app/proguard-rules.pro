@@ -16,17 +16,15 @@
 -keep,includedescriptorclasses class moe.gbxin.saltreader.data.**$$serializer { *; }
 
 # --- Third-party parsers ---------------------------------------------------
-# epub4j / mobi4java / commons are reflection- and annotation-heavy (XML DOM,
-# record delegates, commons builders). Keeping these packages whole costs little
-# (they are a few hundred KB) and avoids NoSuchMethodError/ClassNotFoundError in
-# the EPUB/MOBI import path, which cannot be exercised by unit tests.
+# epub4j / mobi4java are reflection- and annotation-heavy (XML DOM, record
+# delegates). mobi4java is vendored in this repository and no longer depends on
+# Apache Commons: its commons-io/lang3/collections4 calls were replaced with JDK
+# equivalents, so no commons keep/dontwarn rules are needed anymore.
 -keep class io.documentnode.epub4j.** { *; }
 -keep class org.rr.mobi4java.** { *; }
--keep class org.apache.commons.** { *; }
 
 # Optional / platform-provided dependencies of those libraries.
 -dontwarn io.documentnode.epub4j.**
--dontwarn org.apache.commons.**
 -dontwarn org.xmlpull.**
 -dontwarn org.kxml2.**
 -dontwarn org.slf4j.**

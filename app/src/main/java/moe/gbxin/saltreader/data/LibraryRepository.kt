@@ -25,12 +25,13 @@ import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.util.UUID
+import java.util.zip.ZipFile
 import kotlin.coroutines.coroutineContext
 import kotlin.math.max
 
 /**
  * 书库仓库：所有书籍都通过持久化 SAF tree URI 就地索引，应用私有目录只放派生缓存
- * （封面、电子书拍平后的 CBZ、ZIP 随机读缓存、旧版本副本）。
+ * （封面、电子书拍平后的 CBZ、ZIP 随机读缓存）。
  *
  * 线程约定：
  * - 公开的 suspend 方法内部切到 Dispatchers.IO，并保证锁的临界区尽量短；
@@ -43,7 +44,6 @@ class LibraryRepository(private val context: Context) {
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; encodeDefaults = true }
 
     private val libraryDir = File(context.filesDir, "library")
-    private val legacyContentDir = File(libraryDir, "content")
     private val coversDir = File(libraryDir, "covers")
     private val booksFile = File(libraryDir, "books.json")
 
@@ -52,7 +52,6 @@ class LibraryRepository(private val context: Context) {
 
     /** EPUB/MOBI 派生缓存：cacheDir/ebooks/<id>.cbz */
     private val ebookCacheDir = File(context.cacheDir, "ebooks")
-    private val tempCacheDir = File(context.cacheDir, "tmp")
 
     private val rootsStore = LibraryRootsStore(context)
 
@@ -65,30 +64,46 @@ class LibraryRepository(private val context: Context) {
     /** 进度变更的合并信号：CONFLATED 保证只保留“还有未落盘变更”这一事实。 */
     private val persistSignal = Channel<Unit>(Channel.CONFLATED)
 
+    /** 后台电子书转换：单一队列 + 2 个 worker（并发上限 2），Application 级 scope。 */
+    private val conversionQueue = Channel<String>(Channel.UNLIMITED)
+    private val conversionLock = Any()
+    private val scheduledConversions = HashSet<String>()
+    private val inProgressConversions = HashSet<String>()
+    private val conversionDispatcher = Dispatchers.IO.limitedParallelism(2)
+
     init {
         scope.launch { persistWorker() }
+        repeat(CONVERSION_WORKERS) {
+            scope.launch(conversionDispatcher) { conversionWorker() }
+        }
     }
 
     // -----------------------------------------------------------------------
     // 启动
     // -----------------------------------------------------------------------
 
+    /**
+     * 启动初始化：加载索引 → 校验 SAF 持久化权限（失效条目丢弃）→ 生成缺失封面 → 清理 orphan 缓存。
+     * 不做任何旧版本数据迁移。
+     */
     suspend fun initialize() = withContext(Dispatchers.IO) {
         libraryDir.mkdirs()
         coversDir.mkdirs()
 
         val loaded = readBooksFromDisk()
-        // 只有旧副本缺失、或既不是 SAF 也没有 contentPath 的条目才丢弃；
-        // SAF 书籍即使当前 tree 暂不可达也保留索引。
-        val kept = loaded.filter {
-            (it.isSaf && !it.treeUri.isNullOrBlank()) || (it.isLegacyCopy && legacyFile(it).exists())
-        }
+        val persistedTrees = context.contentResolver.persistedUriPermissions
+            .mapTo(HashSet()) { it.uri.toString() }
+        val kept = loaded.filter { it.treeUri in persistedTrees }
         val keptIds = kept.mapTo(HashSet()) { it.id }
         val dropped = loaded.filterNot { it.id in keptIds }
 
-        // 预热 roots 缓存（之后 roots() 可在任意线程同步返回）。
+        // 预热 roots 缓存，并同步剔除丢失持久化权限的目录，避免刷新时反复报错。
         val roots = rootsStore.all()
-        if (roots.isEmpty()) migrateRoots(kept)
+        val keptRoots = roots.filter { it.treeUri in persistedTrees }
+        if (keptRoots.size != roots.size) {
+            runCatching { rootsStore.save(keptRoots) }
+                .onFailure { Log.e(TAG, "写入 roots.json 失败", it) }
+        }
 
         mutex.withLock {
             _books.value = sortBooks(kept)
@@ -101,9 +116,12 @@ class LibraryRepository(private val context: Context) {
             }
         }
 
-        ensureCovers(kept)
+        // 权限失效的条目不留在书架上，其派生数据也一并清掉。
         dropped.forEach { removeDerivedFiles(it) }
-        pruneCaches(_books.value)
+        ensureCovers(kept)
+        pruneCaches(kept)
+        // 上次进程退出时没转换完的电子书重新入队（不阻塞启动）。
+        enqueuePendingConversions()
         _ready.value = true
         Unit
     }
@@ -112,29 +130,14 @@ class LibraryRepository(private val context: Context) {
         if (!booksFile.exists()) emptyList()
         else json.decodeFromString<List<ComicBook>>(booksFile.readText(Charsets.UTF_8))
     }.getOrElse { error ->
-        Log.e(TAG, "books.json 解析失败，已备份为 books.corrupt.json", error)
-        runCatching { booksFile.renameTo(File(libraryDir, "books.corrupt.json")) }
-        emptyList()
-    }
-
-    /** 老版本只持久化了裸路径；升级后从 SAF 书籍反推 root 列表并写入 roots.json。 */
-    private fun migrateRoots(books: List<ComicBook>) {
-        val derived = books.asSequence()
-            .mapNotNull { it.treeUri }
-            .distinct()
-            .map { treeUri ->
-                val name = runCatching {
-                    val uri = Uri.parse(treeUri)
-                    if (!DocumentsContract.isTreeUri(uri)) return@runCatching null
-                    SafTree(context, uri).rootName()
-                }.getOrNull()
-                LibraryRoot(treeUri, name ?: treeUri)
-            }
-            .toList()
-        if (derived.isNotEmpty()) {
-            runCatching { rootsStore.save(derived) }
-                .onFailure { Log.e(TAG, "迁移 roots.json 失败", it) }
+        // 不做迁移：解析失败直接重置索引，保留一份 corrupt 备份便于排查。
+        Log.e(TAG, "books.json 解析失败，重置书库索引", error)
+        runCatching {
+            val backup = File(libraryDir, "books.corrupt.json")
+            backup.delete()
+            booksFile.renameTo(backup)
         }
+        emptyList()
     }
 
     // -----------------------------------------------------------------------
@@ -153,7 +156,7 @@ class LibraryRepository(private val context: Context) {
         }
         val tree = runCatching { SafTree(context, uri) }.getOrNull()
             ?: return@withContext ImportReport(failures = listOf(ImportFailure("目录", "无法访问该文件夹")))
-        takePersistableReadPermission(context, uri)
+        val persistable = takePersistableReadPermission(context, uri)
         val root = tree.rootEntry()
             ?: return@withContext ImportReport(failures = listOf(ImportFailure("目录", "无法读取该文件夹")))
 
@@ -173,7 +176,12 @@ class LibraryRepository(private val context: Context) {
         pruneCaches(_books.value)
 
         val failures = result.failures.toMutableList()
+        if (!persistable) {
+            failures += ImportFailure(root.name, "无法持久保存该目录的访问权限，重启后需要重新添加")
+        }
         if (!persisted) failures += ImportFailure(root.name, "索引已更新，但保存 books.json 失败")
+        // 索引立即返回，电子书拍平交给后台队列，不阻塞导入。
+        enqueuePendingConversions()
         if (result.scanned.isEmpty() && failures.isEmpty()) {
             failures += ImportFailure(root.name, "没有找到 CBZ、ZIP、PDF、EPUB、MOBI 或图片文件夹")
         }
@@ -222,6 +230,7 @@ class LibraryRepository(private val context: Context) {
             }
         }
         pruneCaches(_books.value)
+        enqueuePendingConversions()
         onProgress(1f, "完成")
         ImportReport(emptyList(), failures)
     }
@@ -234,6 +243,8 @@ class LibraryRepository(private val context: Context) {
         val modifiedAt: Long,
         val uri: Uri,
         val imageCount: Int,
+        /** 图片文件夹书自然序的第一页；索引阶段可直接用它生成封面。 */
+        val coverUri: Uri?,
     )
 
     private data class TreeScanResult(
@@ -241,6 +252,13 @@ class LibraryRepository(private val context: Context) {
         val scanned: List<ComicBook>,
         val failures: List<ImportFailure>,
         val completed: Boolean,
+    )
+
+    /** 索引阶段算出的页数/封面，以及电子书是否已完成拍平转换。 */
+    private data class IndexedPages(
+        val pageCount: Int,
+        val cover: Bitmap?,
+        val converted: Boolean = true,
     )
 
     /**
@@ -267,8 +285,8 @@ class LibraryRepository(private val context: Context) {
         }
 
         val existing = _books.value
-            .filter { it.isSaf && it.treeUri == treeUri }
-            .associateBy { it.documentPath ?: "" }
+            .filter { it.treeUri == treeUri }
+            .associateBy { it.documentPath }
 
         val scanned = ArrayList<ComicBook>(candidates.size)
         val total = candidates.size
@@ -277,7 +295,7 @@ class LibraryRepository(private val context: Context) {
             val fraction = if (total == 0) 1f else index.toFloat() / total
             onProgress(
                 progress.start + (progress.endInclusive - progress.start) * fraction,
-                "正在索引 ${candidate.name}",
+                "已索引 ${index + 1}/$total",
             )
             try {
                 val book = indexCandidate(treeUri, candidate, existing[candidate.documentPath], failures)
@@ -308,10 +326,8 @@ class LibraryRepository(private val context: Context) {
         }
 
         val bookFiles = ArrayList<SafTree.Entry>(4)
+        val imageFiles = ArrayList<SafTree.Entry>()
         var hasSubdirectory = false
-        var imageCount = 0
-        var imageBytes = 0L
-        var imageModified = 0L
 
         for (child in children) {
             coroutineContext.ensureActive()
@@ -325,9 +341,7 @@ class LibraryRepository(private val context: Context) {
                 if (ext in BOOK_EXTENSIONS) {
                     bookFiles += child
                 } else if (PageIndexing.isComicImageName(child.name)) {
-                    imageCount++
-                    imageBytes += child.sizeBytes
-                    if (child.lastModified > imageModified) imageModified = child.lastModified
+                    imageFiles += child
                 }
             }
         }
@@ -342,18 +356,21 @@ class LibraryRepository(private val context: Context) {
                 modifiedAt = file.lastModified,
                 uri = file.uri,
                 imageCount = 0,
+                coverUri = null,
             )
         }
         // 图片文件夹书：直接子级至少 3 张图片且没有子目录（沿用旧策略）。
-        if (imageCount >= 3 && !hasSubdirectory) {
+        if (imageFiles.size >= 3 && !hasSubdirectory) {
+            imageFiles.sortWith(compareBy(PageNameComparator) { it.name })
             out += ScanCandidate(
                 documentPath = dir.documentPath,
                 name = dir.name,
                 kind = BookKind.FOLDER,
-                sizeBytes = imageBytes,
-                modifiedAt = imageModified,
+                sizeBytes = imageFiles.sumOf { it.sizeBytes },
+                modifiedAt = imageFiles.maxOfOrNull { it.lastModified } ?: 0L,
                 uri = dir.uri,
-                imageCount = imageCount,
+                imageCount = imageFiles.size,
+                coverUri = imageFiles.first().uri,
             )
         }
         return true
@@ -372,20 +389,29 @@ class LibraryRepository(private val context: Context) {
             old.sizeBytes == candidate.sizeBytes &&
             old.pageCount > 0
         ) {
-            if (!coverFile(old).exists()) writeCover(old)
+            // 未转换电子书不能在前台触发转换，封面留给后台队列。
+            if (old.converted && !coverFile(old).exists()) writeCover(old)
             return old
         }
 
         val id = old?.id ?: stableBookId(treeUri, candidate.documentPath)
-        val pageCount = try {
-            countPages(candidate, id)
+        val isEbook = isEbookCandidate(candidate)
+        // 电子书文件变了：旧拍平缓存与封面已失效，先删掉，后续由后台重转。
+        if (isEbook && old != null) {
+            File(ebookCacheDir, "$id.cbz").delete()
+            coverFile(old).delete()
+        }
+        val indexed = try {
+            indexPages(candidate, id)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             failures += ImportFailure(candidate.name, e.message ?: "无法读取")
             return old
         }
+        val pageCount = indexed.pageCount
         if (pageCount <= 0) {
+            indexed.cover?.recycle()
             failures += ImportFailure(candidate.name, "没有找到可读页面")
             return old
         }
@@ -397,7 +423,6 @@ class LibraryRepository(private val context: Context) {
             author = old?.author,
             description = old?.description,
             kind = candidate.kind,
-            contentPath = "",
             treeUri = treeUri,
             documentPath = candidate.documentPath,
             pageCount = pageCount,
@@ -409,46 +434,88 @@ class LibraryRepository(private val context: Context) {
             accent = old?.accent ?: accentFor(title),
             direction = old?.direction,
             modifiedAt = candidate.modifiedAt,
+            converted = indexed.converted,
         )
-        if (!coverFile(book).exists()) writeCover(book)
+        // 未转换电子书先不生成封面（UI 占位），等后台转换完成后再补。
+        if (!coverFile(book).exists()) {
+            if (indexed.cover != null) {
+                writeCover(book, indexed.cover)
+            } else if (indexed.converted) {
+                writeCover(book)
+            }
+        } else {
+            indexed.cover?.recycle()
+        }
         return book
     }
 
-    private fun countPages(candidate: ScanCandidate, id: String): Int = when (candidate.kind) {
-        BookKind.FOLDER -> candidate.imageCount
-        BookKind.PDF -> PageIndexing.pdfPageCount(context.contentResolver, candidate.uri)
+    private fun isEbookCandidate(candidate: ScanCandidate): Boolean =
+        candidate.kind == BookKind.ARCHIVE &&
+            candidate.name.substringAfterLast('.', "").lowercase() in EBOOK_EXTENSIONS
+
+    /**
+     * 索引阶段取页数与封面：
+     * - ZIP/CBZ：RemoteZipReader 只读中央目录统计图片条目，再按条目读第一张图当封面（不复制整包）；
+     *   provider 不支持 seek 时回退到流式 ZipInputStream 统计。
+     * - EPUB：只读 container.xml → OPF 统计 itemref，converted=false，不前台转换。
+     * - MOBI/AZW3：体积估算页数，converted=false，不前台转换。
+     */
+    private fun indexPages(candidate: ScanCandidate, id: String): IndexedPages = when (candidate.kind) {
+        BookKind.FOLDER ->
+            IndexedPages(candidate.imageCount, candidate.coverUri?.let(::readDocumentBitmap))
+        BookKind.PDF ->
+            IndexedPages(PageIndexing.pdfPageCount(context.contentResolver, candidate.uri), null)
         BookKind.ARCHIVE -> {
             val ext = candidate.name.substringAfterLast('.', "").lowercase()
-            if (ext in EBOOK_EXTENSIONS) {
-                convertEbook(candidate, id, ext)
-            } else {
-                context.contentResolver.openInputStream(candidate.uri)?.use { input ->
-                    PageIndexing.countZipPages(input)
-                } ?: 0
+            when {
+                ext == "epub" -> {
+                    val pages = RemoteZipReader.open(context, candidate.uri)?.use { reader ->
+                        EbookIndexing.epubPageCount(reader)
+                    } ?: 1
+                    // 索引期不转换、不生成封面，入队后台转换。
+                    IndexedPages(pages.coerceAtLeast(1), null, converted = false)
+                }
+                ext in EBOOK_EXTENSIONS -> {
+                    IndexedPages(
+                        EbookIndexing.estimateMobiPageCount(candidate.sizeBytes),
+                        null,
+                        converted = false,
+                    )
+                }
+                else -> indexZipFast(candidate)
             }
         }
     }
 
-    /** EPUB/MOBI 在索引时拍平到派生缓存（先写 .tmp，成功后 rename，失败清理）。 */
-    private fun convertEbook(candidate: ScanCandidate, id: String, ext: String): Int {
-        ebookCacheDir.mkdirs()
-        val target = File(ebookCacheDir, "$id.cbz")
-        target.delete()
-        tempCacheDir.mkdirs()
-        val temp = File.createTempFile("ebook-", ".$ext", tempCacheDir)
-        return try {
-            context.contentResolver.openInputStream(candidate.uri)?.use { input ->
-                temp.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
-            } ?: return 0
-            FormatConverters.toCbz(temp, target, ext)
-        } finally {
-            temp.delete()
+    /** CBZ：远程读中央目录（快），失败回退流式统计（慢但兼容）。 */
+    private fun indexZipFast(candidate: ScanCandidate): IndexedPages {
+        val remote = RemoteZipReader.open(context, candidate.uri)
+        if (remote != null) {
+            return remote.use { reader ->
+                val images = reader.imageEntries()
+                val coverBytes = images.firstOrNull()?.let { entry ->
+                    reader.readEntry(entry.name, PageIndexing.MAX_PAGE_BYTES)
+                }
+                IndexedPages(images.size, coverBytes?.let { decodePage(it, COVER_WIDTH) })
+            }
         }
+        val index = context.contentResolver.openInputStream(candidate.uri)?.use { input ->
+            PageIndexing.indexZip(input)
+        } ?: PageIndexing.ZipIndex(0, null)
+        return IndexedPages(index.pageCount, index.coverBytes?.let { decodePage(it, COVER_WIDTH) })
+    }
+
+    private fun readDocumentBitmap(uri: Uri): Bitmap? = try {
+        context.contentResolver.openInputStream(uri)?.use { input -> readBounded(input) }
+            ?.let { decodePage(it, COVER_WIDTH) }
+    } catch (e: Exception) {
+        Log.w(TAG, "读取图片失败：$uri", e)
+        null
     }
 
     private suspend fun mergeTreeResult(result: TreeScanResult): Boolean {
         val merged = mutex.withLock {
-            val survivors = _books.value.filterNot { it.isSaf && it.treeUri == result.treeUri }
+            val survivors = _books.value.filterNot { it.treeUri == result.treeUri }
             val next = sortBooks(survivors + result.scanned)
             _books.value = next
             try {
@@ -470,8 +537,8 @@ class LibraryRepository(private val context: Context) {
 
     suspend fun removeRoot(treeUri: String) = withContext(Dispatchers.IO) {
         val removed = mutex.withLock {
-            val affected = _books.value.filter { it.isSaf && it.treeUri == treeUri }
-            _books.value = _books.value.filterNot { it.isSaf && it.treeUri == treeUri }
+            val affected = _books.value.filter { it.treeUri == treeUri }
+            _books.value = _books.value.filterNot { it.treeUri == treeUri }
             try {
                 persistBooksLocked(_books.value)
             } catch (e: Exception) {
@@ -479,7 +546,10 @@ class LibraryRepository(private val context: Context) {
             }
             affected
         }
-        removed.forEach { removeDerivedFiles(it) }
+        removed.forEach {
+            cancelConversion(it.id)
+            removeDerivedFiles(it)
+        }
         runCatching { rootsStore.remove(treeUri) }
             .onFailure { Log.e(TAG, "写入 roots.json 失败", it) }
         runCatching { Uri.parse(treeUri) }.getOrNull()?.let { uri ->
@@ -494,9 +564,9 @@ class LibraryRepository(private val context: Context) {
         Unit
     }
 
+    /** 只删除索引、封面与派生缓存；SAF 引用的用户文件绝不触碰。 */
     suspend fun delete(book: ComicBook) = withContext(Dispatchers.IO) {
-        // SAF 书只删派生数据，绝不碰用户文件；旧副本删除前做路径守卫。
-        if (book.isLegacyCopy) deleteLegacyCopy(book)
+        cancelConversion(book.id)
         mutex.withLock {
             _books.update { list -> list.filterNot { it.id == book.id } }
             try {
@@ -508,19 +578,6 @@ class LibraryRepository(private val context: Context) {
         removeDerivedFiles(book)
         pruneCaches(_books.value)
         Unit
-    }
-
-    private fun deleteLegacyCopy(book: ComicBook) {
-        val contentPath = book.contentPath
-        check(contentPath.isNotBlank()) { "旧副本缺少 contentPath，拒绝删除" }
-        val filesRoot = context.filesDir.canonicalFile
-        val target = legacyFile(book).canonicalFile
-        val insideFilesDir = target.path == filesRoot.path ||
-            target.path.startsWith(filesRoot.path + File.separator)
-        check(insideFilesDir) { "拒绝删除应用私有目录之外的文件：$target" }
-        if (target.exists() && !target.deleteRecursively()) {
-            Log.w(TAG, "删除旧副本失败：$target")
-        }
     }
 
     suspend fun rename(book: ComicBook, title: String): Boolean = withContext(Dispatchers.IO) {
@@ -597,6 +654,19 @@ class LibraryRepository(private val context: Context) {
         schedulePersist()
     }
 
+    /** 阅读器 prepare() 拿到真实页数后回填（只改内存并调度防抖落盘）。 */
+    fun updatePageCount(bookId: String, pageCount: Int) {
+        if (pageCount <= 0) return
+        val current = _books.value.firstOrNull { it.id == bookId } ?: return
+        if (current.pageCount == pageCount) return
+        val updated = current.copy(
+            pageCount = pageCount,
+            currentPage = current.currentPage.coerceIn(0, max(0, pageCount - 1)),
+        )
+        _books.update { list -> list.map { if (it.id == bookId) updated else it } }
+        schedulePersist()
+    }
+
     private fun schedulePersist() {
         persistSignal.trySend(Unit)
     }
@@ -618,6 +688,144 @@ class LibraryRepository(private val context: Context) {
     }
 
     // -----------------------------------------------------------------------
+    // 后台电子书转换（单一队列 + 2 worker）
+    // -----------------------------------------------------------------------
+
+    /** 把所有待转换电子书放进队列（幂等：已排队/转换中的跳过）。 */
+    private fun enqueuePendingConversions() {
+        _books.value
+            .filter { !it.converted && isEbookBook(it) }
+            .forEach { enqueueConversion(it.id) }
+    }
+
+    private fun enqueueConversion(bookId: String) {
+        synchronized(conversionLock) {
+            if (bookId in scheduledConversions || bookId in inProgressConversions) return
+            scheduledConversions += bookId
+        }
+        conversionQueue.trySend(bookId)
+    }
+
+    /**
+     * 协作式取消：把排队中的任务移除；已在执行的阻塞 IO 无法强行中断，
+     * 但转换结束时会检查“书是否还在/指纹是否变了”，不匹配就丢弃结果并删缓存。
+     */
+    private fun cancelConversion(bookId: String) {
+        synchronized(conversionLock) { scheduledConversions.remove(bookId) }
+    }
+
+    private suspend fun conversionWorker() {
+        for (bookId in conversionQueue) {
+            synchronized(conversionLock) {
+                scheduledConversions.remove(bookId)
+                inProgressConversions.add(bookId)
+            }
+            try {
+                convertBook(bookId)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "后台转换失败：$bookId", e)
+            } finally {
+                synchronized(conversionLock) { inProgressConversions.remove(bookId) }
+            }
+        }
+    }
+
+    /** 逐个把 converted=false 的电子书拍平成 cacheDir/ebooks/<id>.cbz，并回填真实页数/封面。 */
+    private suspend fun convertBook(bookId: String) {
+        val snapshot = _books.value.firstOrNull { it.id == bookId } ?: return
+        if (snapshot.converted || !isEbookBook(snapshot)) return
+        val ext = ebookExtensionOf(snapshot) ?: return
+        ebookCacheDir.mkdirs()
+        val target = File(ebookCacheDir, "$bookId.cbz")
+        val ok = if (target.exists() && target.length() > 0L) {
+            // 阅读器 prepare() 已按需生成过缓存，直接复用，不重复转换。
+            true
+        } else {
+            Log.i(TAG, "后台转换开始：${snapshot.title}")
+            target.delete()
+            val temp = try {
+                File.createTempFile("ebook-", ".$ext.tmp", ebookCacheDir)
+            } catch (e: Exception) {
+                Log.w(TAG, "无法创建转换临时文件：${snapshot.title}", e)
+                return
+            }
+            try {
+                copyDocumentToTemp(snapshot, temp) && FormatConverters.toCbz(temp, target, ext) > 0
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "电子书转换失败：${snapshot.title}", e)
+                false
+            } finally {
+                temp.delete()
+            }
+        }
+        if (!ok) {
+            target.delete()
+            return
+        }
+        val realPageCount = countArchivePages(target)
+        if (realPageCount <= 0) {
+            target.delete()
+            return
+        }
+        // 转换期间书被删除/重新索引（指纹变化）：丢弃本次结果，等下一轮。
+        if (!isStillCurrent(snapshot)) {
+            target.delete()
+            return
+        }
+        val current = _books.value.firstOrNull { it.id == bookId } ?: run {
+            target.delete()
+            return
+        }
+        val cover = decodeArchiveFirstPage(target, COVER_WIDTH)
+        writeCover(current.copy(pageCount = realPageCount, converted = true), cover)
+        mutex.withLock {
+            _books.update { list ->
+                list.map { book ->
+                    if (book.id == bookId && !book.converted &&
+                        book.modifiedAt == snapshot.modifiedAt &&
+                        book.sizeBytes == snapshot.sizeBytes
+                    ) {
+                        book.copy(
+                            pageCount = realPageCount,
+                            converted = true,
+                            currentPage = book.currentPage.coerceIn(0, max(0, realPageCount - 1)),
+                        )
+                    } else {
+                        book
+                    }
+                }
+            }
+        }
+        schedulePersist()
+        Log.i(TAG, "后台转换完成：${snapshot.title}（$realPageCount 页）")
+    }
+
+    private fun isStillCurrent(snapshot: ComicBook): Boolean {
+        val current = _books.value.firstOrNull { it.id == snapshot.id } ?: return false
+        return current.modifiedAt == snapshot.modifiedAt && current.sizeBytes == snapshot.sizeBytes
+    }
+
+    private fun copyDocumentToTemp(book: ComicBook, temp: File): Boolean = try {
+        val tree = runCatching { SafTree(context, Uri.parse(book.treeUri)) }.getOrNull() ?: return false
+        val entry = tree.find(book.documentPath) ?: return false
+        if (entry.isDirectory) return false
+        context.contentResolver.openInputStream(entry.uri)?.use { input ->
+            temp.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
+        } != null
+    } catch (e: Exception) {
+        Log.w(TAG, "读取电子书失败：${book.title}", e)
+        false
+    }
+
+    private fun countArchivePages(file: File): Int = runCatching {
+        ZipFile(file).use { it.imageEntries().size }
+    }.getOrDefault(0)
+
+    // -----------------------------------------------------------------------
     // 派生数据
     // -----------------------------------------------------------------------
 
@@ -627,13 +835,40 @@ class LibraryRepository(private val context: Context) {
     fun pageSource(book: ComicBook): ComicPageSource =
         ComicPageSourceFactory.open(book, context, cacheRoot, ebookCacheDir)
 
-    /** 派生缓存 + 旧副本占用；遍历目录，调用方应在 IO 线程调用。 */
+    /** 封面 + 派生缓存占用；遍历目录，调用方应在 IO 线程调用。 */
     fun appDataBytes(): Long =
         dirSize(coversDir) +
-            dirSize(ebookCacheDir) +
             dirSize(cacheRoot) +
-            dirSize(tempCacheDir) +
-            dirSize(legacyContentDir)
+            dirSize(ebookCacheDir)
+
+    /**
+     * 只清 cacheDir/books 与 cacheDir/ebooks（保留封面与 books.json），返回释放字节数。
+     * 电子书的拍平缓存被清掉后置 converted=false 并重新入队后台转换。
+     */
+    suspend fun clearCaches(): Long = withContext(Dispatchers.IO) {
+        synchronized(conversionLock) { scheduledConversions.clear() }
+        val freed = wipeDirectory(cacheRoot) + wipeDirectory(ebookCacheDir)
+        mutex.withLock {
+            _books.update { list ->
+                list.map { book -> if (isEbookBook(book)) book.copy(converted = false) else book }
+            }
+        }
+        schedulePersist()
+        Log.i(TAG, "已清理派生缓存 $freed 字节")
+        enqueuePendingConversions()
+        freed
+    }
+
+    private fun wipeDirectory(dir: File): Long {
+        val children = dir.listFiles() ?: return 0L
+        var freed = 0L
+        for (child in children) {
+            val size = if (child.isDirectory) dirSize(child) else child.length()
+            val deleted = if (child.isDirectory) child.deleteRecursively() else child.delete()
+            if (deleted) freed += size
+        }
+        return freed
+    }
 
     private fun dirSize(dir: File): Long {
         val children = dir.listFiles() ?: return 0L
@@ -647,33 +882,44 @@ class LibraryRepository(private val context: Context) {
     private suspend fun ensureCovers(books: List<ComicBook>) {
         for (book in books) {
             coroutineContext.ensureActive()
+            // 未转换电子书还没有可读缓存，封面等后台转换完成后再生成（UI 先占位）。
+            if (!book.converted) continue
             val cover = coverFile(book)
+            // 只补缺失封面，已在的不重复解码。
             if (cover.exists() && cover.length() > 512L) continue
             writeCover(book)
         }
     }
 
-    private suspend fun writeCover(book: ComicBook) {
-        val bitmap = try {
-            pageSource(book).use { it.loadPage(0, COVER_WIDTH) }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "生成封面失败：${book.title}", e)
-            null
-        } ?: return
-        try {
+    /**
+     * 写封面：优先复用索引阶段已解码好的 [provided] 位图，否则回退到 pageSource(0,480)。
+     * 无论哪条路径，位图都在这里回收。
+     */
+    private suspend fun writeCover(book: ComicBook, provided: Bitmap? = null): Boolean {
+        val bitmap = provided ?: generateCover(book) ?: return false
+        return try {
             coversDir.mkdirs()
             writeFileAtomically(coverFile(book)) { out ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 88, out)
             }
+            true
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "写入封面失败：${book.title}", e)
+            false
         } finally {
             if (!bitmap.isRecycled) bitmap.recycle()
         }
+    }
+
+    private suspend fun generateCover(book: ComicBook): Bitmap? = try {
+        pageSource(book).use { it.loadPage(0, COVER_WIDTH) }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "生成封面失败：${book.title}", e)
+        null
     }
 
     private fun removeDerivedFiles(book: ComicBook) {
@@ -682,10 +928,10 @@ class LibraryRepository(private val context: Context) {
         cacheRoot.listFiles { file -> file.name.startsWith("${book.id}_") }?.forEach { it.delete() }
     }
 
-    /** 清掉不再对应任何书籍的派生缓存（删书、重新索引、指纹变化都会走到这里）。 */
+    /** 清掉不再对应任何书籍的派生缓存（删书、重新索引、指纹变化、权限失效都会走到这里）。 */
     private fun pruneCaches(books: List<ComicBook>) {
         val expectedArchives = books.asSequence()
-            .filter { it.isSaf && it.kind == BookKind.ARCHIVE && !isEbookBook(it) }
+            .filter { it.kind == BookKind.ARCHIVE && !isEbookBook(it) }
             .map { bookCacheFile(it, cacheRoot).name }
             .toSet()
         cacheRoot.listFiles()?.forEach { file ->
@@ -694,10 +940,11 @@ class LibraryRepository(private val context: Context) {
             if (file.name !in expectedArchives) file.delete()
         }
         val expectedEbooks = books.asSequence()
-            .filter { it.isSaf && isEbookBook(it) }
+            .filter { isEbookBook(it) }
             .map { "${it.id}.cbz" }
             .toSet()
         ebookCacheDir.listFiles()?.forEach { file ->
+            if (file.name.endsWith(".tmp")) return@forEach
             if (file.name !in expectedEbooks) file.delete()
         }
     }
@@ -713,8 +960,6 @@ class LibraryRepository(private val context: Context) {
 
     private fun sortBooks(books: List<ComicBook>): List<ComicBook> =
         books.sortedByDescending { it.lastReadAt ?: it.addedAt }
-
-    private fun legacyFile(book: ComicBook): File = File(legacyContentDir, book.contentPath)
 
     private fun stableBookId(treeUri: String, documentPath: String): String =
         UUID.nameUUIDFromBytes("$treeUri|$documentPath".toByteArray(Charsets.UTF_8)).toString()
@@ -740,6 +985,7 @@ class LibraryRepository(private val context: Context) {
         const val MAX_SCAN_DEPTH = 10
         const val PERSIST_DEBOUNCE_MS = 400L
         const val COVER_WIDTH = 480
+        const val CONVERSION_WORKERS = 2
 
         val BOOK_EXTENSIONS = setOf("cbz", "zip", "pdf", "epub", "mobi", "azw", "azw3")
         val EBOOK_EXTENSIONS = setOf("epub", "mobi", "azw", "azw3")

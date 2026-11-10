@@ -1,6 +1,7 @@
 package moe.gbxin.saltreader.ui.search
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -12,7 +13,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
@@ -30,18 +31,20 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import kotlinx.coroutines.delay
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.ComicBook
 import moe.gbxin.saltreader.data.LibraryFilter
@@ -55,9 +58,14 @@ fun SearchScreen(onOpenBook: (ComicBook) -> Unit, onBack: () -> Unit) {
     val state by vm.uiState.collectAsStateWithLifecycle()
     val repo = (LocalContext.current.applicationContext as SaltReaderApplication).library
     val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
     LaunchedEffect(Unit) {
         vm.setFilter(LibraryFilter.ALL)
         focusRequester.requestFocus()
+        // Wait for the field to be laid out before asking the IME to appear, otherwise the
+        // keyboard request is swallowed on some devices.
+        delay(150)
+        keyboard?.show()
     }
     fun close() {
         vm.setQuery("")
@@ -82,33 +90,39 @@ fun SearchScreen(onOpenBook: (ComicBook) -> Unit, onBack: () -> Unit) {
                 value = state.query,
                 onValueChange = vm::setQuery,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).focusRequester(focusRequester),
-                placeholder = { Text("搜索") },
+                placeholder = { Text("搜索书名或作者") },
                 leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
                 trailingIcon = {
                     if (state.query.isNotEmpty()) {
                         IconButton(onClick = { vm.setQuery("") }) {
-                            Icon(Icons.Filled.Close, contentDescription = "清空")
+                            Icon(Icons.Filled.Close, contentDescription = "清空搜索")
                         }
                     }
                 },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
             )
 
             when {
                 !state.ready -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                     SaltLoading(sizeDp = 36)
                 }
-                state.query.isBlank() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("搜索本地书架", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                state.books.isEmpty() -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text("没有找到漫画", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
+                state.query.isBlank() -> SearchHint(
+                    title = if (state.total == 0) "书架还是空的" else "搜索本地书架",
+                    supporting = if (state.total == 0) {
+                        "回到书架，先添加一个漫画文件夹。"
+                    } else {
+                        "输入书名或作者开始搜索。"
+                    },
+                )
+                state.books.isEmpty() -> SearchHint(
+                    title = "没有找到「${state.query.trim()}」",
+                    supporting = "换个关键词试试，或清空搜索查看全部藏书。",
+                )
                 else -> LazyColumn(contentPadding = PaddingValues(bottom = 16.dp)) {
                     items(state.books, key = { it.id }) { book ->
                         ListItem(
-                            headlineContent = { Text(book.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                            supportingContent = { Text("${book.displayAuthor} · ${book.pageCount} 页") },
+                            modifier = Modifier.clickable { onOpenBook(book) },
                             leadingContent = {
                                 ComicCover(
                                     book = book,
@@ -117,7 +131,16 @@ fun SearchScreen(onOpenBook: (ComicBook) -> Unit, onBack: () -> Unit) {
                                     radius = 6,
                                 )
                             },
-                            modifier = Modifier.clickable { onOpenBook(book) },
+                            supportingContent = {
+                                Text(
+                                    if (book.converted) {
+                                        "${book.displayAuthor} · ${book.pageCount} 页"
+                                    } else {
+                                        "${book.displayAuthor} · 待转换"
+                                    },
+                                )
+                            },
+                            content = { Text(book.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
                         )
                         HorizontalDivider(
                             modifier = Modifier.padding(start = 80.dp),
@@ -127,5 +150,23 @@ fun SearchScreen(onOpenBook: (ComicBook) -> Unit, onBack: () -> Unit) {
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun SearchHint(title: String, supporting: String) {
+    Column(
+        Modifier.fillMaxSize().padding(horizontal = 32.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Text(title, style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+        Spacer(Modifier.height(8.dp))
+        Text(
+            supporting,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
     }
 }

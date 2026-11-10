@@ -29,6 +29,9 @@ internal object PageIndexing {
     /** 压缩包允许声明的最大解压体积。 */
     const val MAX_ZIP_UNCOMPRESSED: Long = 8L * 1024L * 1024L * 1024L
 
+    /** ZIP 流式索引结果；pageCount 为 -1 表示文件损坏或超出安全上限。 */
+    data class ZipIndex(val pageCount: Int, val coverBytes: ByteArray?)
+
     fun isComicImageName(name: String): Boolean {
         val base = name.substringAfterLast('/')
         if (base.isEmpty() || base.startsWith("._") || base.startsWith(".")) return false
@@ -37,29 +40,37 @@ internal object PageIndexing {
     }
 
     /**
-     * 用 ZipInputStream 流式统计图片页数，不做整包复制。
+     * 用 ZipInputStream 流式统计图片页数，顺便抓取第一张图片用于生成封面：
+     * 既不复制整包，也让索引阶段不必为封面再解析一次压缩包。
+     *
      * 成功返回页数（可能为 0），文件损坏或超出安全上限返回 -1。
      */
-    fun countZipPages(input: InputStream): Int {
+    fun indexZip(input: InputStream): ZipIndex {
         var entries = 0
         var images = 0
         var declaredUncompressed = 0L
+        var coverBytes: ByteArray? = null
         return try {
             ZipInputStream(BufferedInputStream(input, 64 * 1024)).use { zip ->
                 while (true) {
                     val entry = zip.nextEntry ?: break
                     entries++
-                    if (entries > MAX_ZIP_ENTRIES) return -1
+                    if (entries > MAX_ZIP_ENTRIES) return ZipIndex(-1, null)
                     if (!entry.isDirectory) {
                         if (entry.size > 0L) declaredUncompressed += entry.size
-                        if (declaredUncompressed > MAX_ZIP_UNCOMPRESSED) return -1
-                        if (isComicImageName(entry.name)) images++
+                        if (declaredUncompressed > MAX_ZIP_UNCOMPRESSED) return ZipIndex(-1, null)
+                        if (isComicImageName(entry.name)) {
+                            images++
+                            if (coverBytes == null && (entry.size <= 0L || entry.size <= MAX_PAGE_BYTES)) {
+                                coverBytes = readEntryBounded(zip, MAX_PAGE_BYTES)
+                            }
+                        }
                     }
                 }
-                images
+                ZipIndex(images, coverBytes)
             }
         } catch (e: IOException) {
-            -1
+            ZipIndex(-1, null)
         }
     }
 
@@ -76,5 +87,19 @@ internal object PageIndexing {
             runCatching { renderer?.close() }
             runCatching { descriptor.close() }
         }
+    }
+
+    private fun readEntryBounded(input: InputStream, maxBytes: Long): ByteArray? {
+        val output = java.io.ByteArrayOutputStream(64 * 1024)
+        val buffer = ByteArray(64 * 1024)
+        var total = 0L
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            total += read
+            if (total > maxBytes) return null
+            output.write(buffer, 0, read)
+        }
+        return output.toByteArray()
     }
 }

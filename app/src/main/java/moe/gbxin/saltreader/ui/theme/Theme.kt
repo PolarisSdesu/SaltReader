@@ -14,7 +14,6 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -133,15 +132,10 @@ fun SaltReaderTheme(
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {
+            // Edge-to-edge (enableEdgeToEdge in every Activity) already makes the system bars
+            // transparent, so only the icon contrast is set here; the deprecated
+            // statusBarColor / navigationBarColor / contrast-enforced APIs are not touched.
             val window = (view.context as? Activity)?.window ?: return@SideEffect
-            window.statusBarColor = Color.Transparent.toArgb()
-            window.navigationBarColor = Color.Transparent.toArgb()
-            // Immersive edge-to-edge: no system contrast scrim behind the status / gesture bar,
-            // content flows under the transparent bars instead of a tinted band.
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                window.isNavigationBarContrastEnforced = false
-                window.isStatusBarContrastEnforced = false
-            }
             val controller = WindowCompat.getInsetsController(window, view)
             controller.isAppearanceLightStatusBars = !dark
             controller.isAppearanceLightNavigationBars = !dark
@@ -174,7 +168,6 @@ fun pageBackgroundColor(
     background: moe.gbxin.saltreader.data.ReaderBackground,
     customColor: Long = 0xFFFDFCFF,
 ): Color = when (background) {
-    moe.gbxin.saltreader.data.ReaderBackground.PAPER -> androidx.compose.material3.MaterialTheme.colorScheme.surfaceContainerLow
     moe.gbxin.saltreader.data.ReaderBackground.WHITE -> Color.White
     moe.gbxin.saltreader.data.ReaderBackground.INK -> Color.Black
     moe.gbxin.saltreader.data.ReaderBackground.CUSTOM -> Color(customColor)

@@ -5,7 +5,7 @@ import static org.rr.mobi4java.ByteUtils.*;
 import java.io.IOException;
 import java.io.OutputStream;
 
-import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.rr.mobi4java.util.ToStringBuilder;
 
 public class PDBRecord {
 

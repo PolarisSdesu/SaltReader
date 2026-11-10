@@ -51,7 +51,7 @@ import androidx.compose.material.icons.filled.GridView
 import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Sort
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -71,6 +71,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -81,7 +82,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -163,10 +164,20 @@ fun LibraryScreen(
                 is LibraryEvent.Message -> snackbar.showSnackbar(event.text)
                 is LibraryEvent.ImportFinished -> {
                     val report = event.report
+                    // E-books are indexed instantly and flattened in the background, so the
+                    // snackbar tells the user that conversion is still running.
+                    val pending = report.imported.count { !it.converted }
                     val message = when {
-                        report.count > 0 && report.hasFailures ->
-                            "已导入 ${report.count} 本，${report.failures.size} 本失败：${report.failures.first().name}"
-                        report.count > 0 -> "已导入 ${report.count} 本漫画"
+                        report.count > 0 && report.hasFailures -> buildString {
+                            append("已索引 ${report.count} 本")
+                            if (pending > 0) append("（${pending} 本电子书正在后台转换）")
+                            append("，${report.failures.size} 项失败：${report.failures.first().name}")
+                        }
+                        report.count > 0 -> if (pending > 0) {
+                            "已索引 ${report.count} 本，${pending} 本电子书正在后台转换"
+                        } else {
+                            "已导入 ${report.count} 本漫画"
+                        }
                         report.hasFailures -> "导入失败：${report.failures.first().reason}"
                         else -> "没有找到可导入的漫画"
                     }
@@ -373,7 +384,7 @@ private fun ShelfHeader(
         }
         Box {
             IconButton(onClick = { sortOpen = true }) {
-                Icon(Icons.Filled.Sort, contentDescription = "排序")
+                Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "排序")
             }
             DropdownMenu(
                 expanded = sortOpen,
@@ -447,6 +458,7 @@ private fun BookCard(
         lineHeight = (titleSizeSp + 6).sp,
     )
     val meta = when {
+        !book.converted -> "待转换 · ${formatBytes(book.sizeBytes)} · ${book.kindLabel}"
         book.finished -> "已读完"
         book.currentPage > 0 -> "阅读至 ${book.currentPage + 1} 页"
         else -> formatBytes(book.sizeBytes)
@@ -509,7 +521,11 @@ private fun LayoutSheet(
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // New sheet-state API: skip the half-expanded stop by only enabling Hidden/Expanded.
+    val sheetState = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
     // Slider drafts: the settings store is only written on onValueChangeFinished so dragging does
     // not thrash SharedPreferences. Both are re-synced when the stored value changes elsewhere.
     var columnDraft by remember(settings.libraryColumns) { mutableFloatStateOf(settings.libraryColumns.toFloat()) }
@@ -679,7 +695,11 @@ private fun BookActionsSheet(
     onRename: (String) -> Unit,
     onDelete: () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    // New sheet-state API: skip the half-expanded stop by only enabling Hidden/Expanded.
+    val sheetState = rememberBottomSheetState(
+        initialValue = SheetValue.Hidden,
+        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
+    )
     var renameOpen by rememberSaveable { mutableStateOf(false) }
     var deleteOpen by rememberSaveable { mutableStateOf(false) }
     var draftTitle by rememberSaveable(book.id) { mutableStateOf(book.title) }
@@ -708,7 +728,11 @@ private fun BookActionsSheet(
                     )
                     Spacer(Modifier.height(4.dp))
                     Text(
-                        "${book.pageCount} 页 · ${formatBytes(book.sizeBytes)} · ${book.kindLabel}",
+                        if (book.converted) {
+                            "${book.pageCount} 页 · ${formatBytes(book.sizeBytes)} · ${book.kindLabel}"
+                        } else {
+                            "待转换 · ${formatBytes(book.sizeBytes)} · ${book.kindLabel}"
+                        },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
@@ -747,6 +771,16 @@ private fun BookActionsSheet(
                 Text(
                     if (book.currentPage > 0) "继续阅读 · 第 ${book.currentPage + 1} 页" else "开始阅读",
                     style = MaterialTheme.typography.titleMedium,
+                )
+            }
+
+            if (!book.converted) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "首次打开会先转换，请稍候",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
 

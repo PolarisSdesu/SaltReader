@@ -1,6 +1,5 @@
 package org.rr.mobi4java;
 
-import static org.apache.commons.collections4.CollectionUtils.collect;
 import static org.rr.mobi4java.ByteUtils.chunk;
 import static org.rr.mobi4java.MobiUtils.removeRandomBytes;
 import static org.rr.mobi4java.MobiUtils.removeUtfReplacementCharacter;
@@ -13,7 +12,6 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
-import org.apache.commons.collections4.Transformer;
 import org.rr.mobi4java.EXTHRecord.RECORD_TYPE;
 import org.rr.mobi4java.MobiContent.CONTENT_TYPE;
 import org.rr.mobi4java.MobiContentHeader.COMPRESSION_CODE;
@@ -270,13 +268,11 @@ public class MobiDocument {
   }
 
 	private Collection<MobiContent> wrapToMobiContent(Collection<byte[]> chunkedMobiText) {
-		return collect(chunkedMobiText, new Transformer<byte[], MobiContent>() {
-			
-			@Override
-			public MobiContent transform(byte[] content) {
-				return MobiContentRecordFactory.createContentRecord(content);
-			}
-		});
+		List<MobiContent> wrapped = new ArrayList<>(chunkedMobiText.size());
+		for (byte[] content : chunkedMobiText) {
+			wrapped.add(MobiContentRecordFactory.createContentRecord(content));
+		}
+		return wrapped;
 	}
   
   private void removeContent(int firstContentIndex, int lastContentIndex) {

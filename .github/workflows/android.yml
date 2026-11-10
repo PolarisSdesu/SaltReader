@@ -15,9 +15,9 @@ concurrency:
 
 jobs:
   build:
-    name: Build debug APK and run unit tests
+    name: Build debug/release APKs and run unit tests
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -31,15 +31,24 @@ jobs:
       - name: Set up Gradle with build cache
         uses: gradle/actions/setup-gradle@v4
 
-      # No keystore.properties is present on CI: release signing is optional and
-      # only assembleDebug + JVM unit tests are exercised here.
-      - name: Build and test
-        run: ./gradlew :app:assembleDebug :app:testDebugUnitTest --no-daemon --stacktrace
+      # No keystore.properties is present on CI: release signing is optional, so
+      # assembleRelease still runs R8/resource shrinking and produces an unsigned
+      # APK, which validates the proguard rules on every PR.
+      - name: Assemble debug + release and run unit tests
+        run: ./gradlew :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest --no-daemon --stacktrace
 
-      - name: Upload unit test reports
+      # Lint is advisory for now: the rules are still being triaged, so a lint
+      # finding must not block code review. Remove `continue-on-error` once clean.
+      - name: Lint (advisory)
+        continue-on-error: true
+        run: ./gradlew :app:lintDebug --no-daemon --stacktrace
+
+      - name: Upload test and lint reports
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: unit-test-reports
-          path: app/build/reports/tests/
+          name: build-reports
+          path: |
+            app/build/reports/tests/
+            app/build/reports/lint-results-debug.html
           if-no-files-found: ignore

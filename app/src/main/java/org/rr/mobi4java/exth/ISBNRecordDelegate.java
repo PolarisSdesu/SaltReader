@@ -1,14 +1,14 @@
 package org.rr.mobi4java.exth;
 
-import static org.apache.commons.lang3.CharEncoding.UTF_8;
-
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.util.regex.Pattern;
 
-import org.apache.commons.lang3.StringUtils;
 import org.rr.mobi4java.EXTHRecord;
 
 public class ISBNRecordDelegate extends StringRecordDelegate implements RecordDelegate {
+
+	private static final String UTF_8 = StandardCharsets.UTF_8.name();
 
 	private static final String ISBN13_PREFIX = "978";
 	
@@ -31,7 +31,7 @@ public class ISBNRecordDelegate extends StringRecordDelegate implements RecordDe
 	}
 	
 	public boolean isIsbn13() {
-		return StringUtils.startsWith(getIsbn(), ISBN13_PREFIX) && removeHyphen(getIsbn()).length() == 13;
+		return getIsbn().startsWith(ISBN13_PREFIX) && removeHyphen(getIsbn()).length() == 13;
 	}
 
 	public String getIsbn() {
@@ -70,7 +70,7 @@ public class ISBNRecordDelegate extends StringRecordDelegate implements RecordDe
 	}
 
 	private static String removeHyphen(String isbn) {
-		return StringUtils.remove(isbn, "-");
+		return isbn.replace("-", "");
 	}
 
 	/**

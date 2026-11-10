@@ -2,7 +2,7 @@ package org.rr.mobi4java.util;
 
 import java.io.UnsupportedEncodingException;
 
-import org.apache.commons.io.output.ByteArrayOutputStream;
+import java.io.ByteArrayOutputStream;
 
 public class MobiLz77 {
 

@@ -7,7 +7,6 @@ import static org.rr.mobi4java.ByteUtils.startsWith;
 import java.io.IOException;
 import java.util.List;
 
-import org.apache.commons.lang3.Range;
 import org.rr.mobi4java.EXTHRecord.RECORD_TYPE;
 import org.rr.mobi4java.MobiContent.CONTENT_TYPE;
 
@@ -78,7 +77,7 @@ class MobiContentRecordFactory {
 	}
 	
 	private static boolean isContentRecord(MobiContentHeader mobiHeader, int index) {
-		return Range.<Integer>between(1, mobiHeader.getRecordCount()).contains(index);
+		return index >= 1 && index <= mobiHeader.getRecordCount();
 	}
 
 	/**

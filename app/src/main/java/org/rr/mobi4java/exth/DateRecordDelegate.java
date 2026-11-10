@@ -1,16 +1,16 @@
 package org.rr.mobi4java.exth;
 
-import static org.apache.commons.lang3.CharEncoding.UTF_8;
-
 import java.io.UnsupportedEncodingException;
+import java.nio.charset.StandardCharsets;
 import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.util.Date;
-
-import org.apache.commons.lang3.time.DateFormatUtils;
-import org.apache.commons.lang3.time.DateUtils;
+import java.util.Locale;
 import org.rr.mobi4java.EXTHRecord;
 
 public class DateRecordDelegate extends StringRecordDelegate implements RecordDelegate {
+
+	private static final String UTF_8 = StandardCharsets.UTF_8.name();
 	
 	private static final String DEFAULT_DATE_FORMAT_PATTERN = "yyyy-MM-dd'T'HH:mm:ssZ";
 	
@@ -30,7 +30,17 @@ public class DateRecordDelegate extends StringRecordDelegate implements RecordDe
 	 * @throws ParseException 
 	 */
 	public Date getAsDate() throws ParseException {
-		return DateUtils.parseDate(getAsString(UTF_8), DATE_PATTERN);
+		String dateString = getAsString(UTF_8);
+		for (String pattern : DATE_PATTERN) {
+			SimpleDateFormat format = new SimpleDateFormat(pattern, Locale.US);
+			format.setLenient(false);
+			try {
+				return format.parse(dateString);
+			} catch (ParseException ignored) {
+				// try the next known date pattern
+			}
+		}
+		throw new ParseException("Unable to parse the date: " + dateString, 0);
 	}
 
 	/**
@@ -44,7 +54,7 @@ public class DateRecordDelegate extends StringRecordDelegate implements RecordDe
 			throw new IllegalArgumentException("Value must not be null.");
 		}
 		try {
-			setStringData(DateFormatUtils.format(date, DEFAULT_DATE_FORMAT_PATTERN), UTF_8);
+			setStringData(new SimpleDateFormat(DEFAULT_DATE_FORMAT_PATTERN, Locale.US).format(date), UTF_8);
 		} catch (UnsupportedEncodingException e) {
 			throw new RuntimeException("Failed to set date " + date, e);
 		}

@@ -6,8 +6,6 @@ import static org.rr.mobi4java.ByteUtils.getString;
 import java.io.IOException;
 import java.util.List;
 
-import org.apache.commons.io.IOUtils;
-import org.apache.commons.lang3.StringUtils;
 import org.rr.mobi4java.EXTHRecord;
 
 public class LanguageRecordDelegate implements RecordDelegate {
@@ -47,7 +45,7 @@ public class LanguageRecordDelegate implements RecordDelegate {
 		}
 		
 		for (String languageCode : languageCodes) {
-			if (StringUtils.equals(code, languageCode)) {
+			if (code.equals(languageCode)) {
 				record.setData(getBytes(languageCode));
 				return;
 			}

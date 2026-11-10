@@ -1,6 +1,5 @@
 package org.rr.mobi4java;
 
-import static org.apache.commons.lang3.BooleanUtils.negate;
 import static org.rr.mobi4java.ByteUtils.getInt;
 import static org.rr.mobi4java.ByteUtils.getBytes;
 import static org.rr.mobi4java.ByteUtils.getString;
@@ -12,8 +11,7 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.rr.mobi4java.util.ToStringBuilder;
 
 public class EXTHHeader {
 	
@@ -30,7 +28,7 @@ public class EXTHHeader {
 		String identifier = getString(getBytes(mobiHeader, getOffset(0), 4));
 		int recordCount = getInt(getBytes(mobiHeader, getOffset(8), 4));
 
-		if (negate(StringUtils.equals(identifier, "EXTH"))) {
+		if (!"EXTH".equals(identifier)) {
 			throw new IOException("Expected to find EXTH header identifier EXTH but got '" + identifier + "' instead");
 		}
 

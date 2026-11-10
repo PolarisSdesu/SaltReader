@@ -1,6 +1,5 @@
 package org.rr.mobi4java;
 
-import static org.apache.commons.lang3.BooleanUtils.negate;
 import static org.rr.mobi4java.ByteUtils.getInt;
 import static org.rr.mobi4java.ByteUtils.getString;
 import static org.rr.mobi4java.ByteUtils.writeInt;
@@ -10,9 +9,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 
-import org.apache.commons.io.output.TeeOutputStream;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.rr.mobi4java.util.TeeOutputStream;
+import org.rr.mobi4java.util.ToStringBuilder;
 
 public class MobiContentIdxt extends MobiContent {
 	
@@ -29,7 +27,7 @@ public class MobiContentIdxt extends MobiContent {
 
 	private void readMobiIdxt(int entriesCount) throws IOException {
 		String identifier = getString(content, 0, 4);
-		if (negate(StringUtils.equals(identifier, IDENTIFIER))) {
+		if (!IDENTIFIER.equals(identifier)) {
 			throw new IOException("Expected to find IDXT header identifier IDXT but got '" + identifier + "' instead");
 		}
 		

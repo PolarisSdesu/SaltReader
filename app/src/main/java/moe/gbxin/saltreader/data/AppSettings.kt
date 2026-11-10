@@ -39,8 +39,7 @@ class SettingsRepository(context: Context) {
         amoledBlack = prefs.getBoolean("amoled_black", false),
         readerMode = prefs.enum("reader_mode", ReaderMode.PAGED),
         readingDirection = prefs.enum("reading_direction", ReadingDirection.LTR),
-        readerBackground = prefs.enum("reader_background", ReaderBackground.WHITE)
-            .takeUnless { it == ReaderBackground.PAPER } ?: ReaderBackground.WHITE,
+        readerBackground = prefs.enum("reader_background", ReaderBackground.WHITE),
         customBackgroundColor = prefs.getLong("custom_background_color", 0xFFFDFCFF),
         keepScreenOn = prefs.getBoolean("keep_screen_on", true),
         showPageNumber = prefs.getBoolean("show_page_number", false),

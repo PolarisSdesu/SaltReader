@@ -1,6 +1,5 @@
 package org.rr.mobi4java.exth;
 
-import static org.apache.commons.lang3.StringUtils.defaultString;
 import static org.rr.mobi4java.ByteUtils.getBytes;
 import static org.rr.mobi4java.ByteUtils.getString;
 
@@ -40,7 +39,7 @@ public class StringRecordDelegate implements RecordDelegate {
 			throw new IllegalArgumentException("Value must not be null.");
 		}
 		
-		record.setData(getBytes(defaultString(str), encoding));
+		record.setData(getBytes(str == null ? "" : str, encoding));
 	}
 
 	@Override

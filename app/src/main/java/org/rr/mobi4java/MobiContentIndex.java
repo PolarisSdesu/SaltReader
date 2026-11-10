@@ -1,6 +1,5 @@
 package org.rr.mobi4java;
 
-import static org.apache.commons.lang3.BooleanUtils.negate;
 import static org.rr.mobi4java.ByteUtils.getBytes;
 import static org.rr.mobi4java.ByteUtils.getInt;
 import static org.rr.mobi4java.ByteUtils.getString;
@@ -15,9 +14,8 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.commons.io.output.TeeOutputStream;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.rr.mobi4java.util.TeeOutputStream;
+import org.rr.mobi4java.util.ToStringBuilder;
 
 public class MobiContentIndex extends MobiContent {
 	
@@ -89,7 +87,7 @@ public class MobiContentIndex extends MobiContent {
 	
 	private void readMobiIndex() throws IOException {
 		String identifier = getString(content, 0, 4);
-		if (negate(StringUtils.equals(identifier, IDENTIFIER))) {
+		if (!IDENTIFIER.equals(identifier)) {
 			throw new IOException("Expected to find index header identifier INDX but got '" + identifier + "' instead");
 		}
 		headerLength = getInt(content, 4, 4);

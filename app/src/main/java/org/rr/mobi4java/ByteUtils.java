@@ -1,6 +1,5 @@
 package org.rr.mobi4java;
 
-import static org.apache.commons.lang3.StringUtils.EMPTY;
 
 import java.io.IOException;
 import java.io.OutputStream;
@@ -63,7 +62,7 @@ public class ByteUtils {
 
 	public static String getString(byte[] buffer, String encoding) {
 		if(buffer == null || buffer.length == 0) {
-			return EMPTY;
+			return "";
 		}
 		
 		int len = buffer.length;

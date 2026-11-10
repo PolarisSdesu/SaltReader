@@ -15,10 +15,12 @@ import io.documentnode.epub4j.domain.Resources
 import io.documentnode.epub4j.epub.EpubReader
 import org.rr.mobi4java.MobiReader
 import java.io.BufferedOutputStream
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.IOException
+import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -31,6 +33,7 @@ import java.util.zip.ZipOutputStream
  */
 object FormatConverters {
     private const val CHUNK_CHARS = 20_000
+    private val STORED_IMAGE_EXTENSIONS = setOf("jpg", "jpeg", "png", "webp", "gif")
 
     fun toCbz(input: File, output: File, extension: String): Int {
         val ext = extension.lowercase()
@@ -38,7 +41,8 @@ object FormatConverters {
         val target = output.absoluteFile
         val dir = target.parentFile ?: throw IOException("缓存路径无效：$output")
         if (!dir.exists() && !dir.mkdirs()) throw IOException("无法创建缓存目录：$dir")
-        val tmp = File(dir, target.name + ".tmp")
+        // 唯一临时文件：prepare() 与后台 worker 可能同时转换同一本书。
+        val tmp = File.createTempFile(target.name + ".", ".tmp", dir)
         val count = try {
             when (ext) {
                 "epub" -> epubToCbz(input, tmp)
@@ -59,54 +63,58 @@ object FormatConverters {
         return count
     }
 
-    /** 第一遍只统计图片页，决定走「图片页」还是「文字排版」分支。 */
-    private fun epubToCbz(input: File, output: File): Int {
-        val book = FileInputStream(input).use { EpubReader().readEpub(it) }
-        val spine = book.spine.spineReferences
-        var imagePages = 0
-        for (reference in spine) {
-            val resource = reference.resource ?: continue
-            val html = runCatching { resource.data.toString(Charsets.UTF_8) }.getOrNull() ?: continue
-            val sources = imageSources(html)
-            if (sources.isEmpty()) continue
-            for (src in sources) {
-                if (resolveImage(book.resources, resource.href, src) != null) imagePages++
-            }
-        }
-        val useImages = imagePages >= 2 && imagePages >= spine.size / 2
-        return ZipOutputStream(BufferedOutputStream(FileOutputStream(output), 64 * 1024)).use { zip ->
-            if (useImages) writeEpubImages(zip, book) else writeEpubText(zip, book)
-        }
-    }
+    /** spine 页：html 与图片 src 列表只解析一次，图片/文本分支复用。 */
+    private class SpinePage(val resource: Resource, val html: String, val imageSources: List<String>)
 
-    private fun writeEpubImages(zip: ZipOutputStream, book: Book): Int {
-        var pages = 0
+    private fun collectSpinePages(book: Book): List<SpinePage> {
+        val pages = ArrayList<SpinePage>()
         for (reference in book.spine.spineReferences) {
             val resource = reference.resource ?: continue
             val html = runCatching { resource.data.toString(Charsets.UTF_8) }.getOrNull() ?: continue
-            for (src in imageSources(html)) {
-                val image = resolveImage(book.resources, resource.href, src) ?: continue
+            pages += SpinePage(resource, html, imageSources(html))
+        }
+        return pages
+    }
+
+    /** 只遍历 spine 一次收集信息，再根据图片占比决定拍图还是排版文字。 */
+    private fun epubToCbz(input: File, output: File): Int {
+        val book = FileInputStream(input).use { EpubReader().readEpub(it) }
+        val spineCount = book.spine.spineReferences.size
+        val spinePages = collectSpinePages(book)
+        var imagePages = 0
+        for (page in spinePages) {
+            for (src in page.imageSources) {
+                if (resolveImage(book.resources, page.resource.href, src) != null) imagePages++
+            }
+        }
+        val useImages = imagePages >= 2 && imagePages >= spineCount / 2
+        return ZipOutputStream(BufferedOutputStream(FileOutputStream(output), 64 * 1024)).use { zip ->
+            if (useImages) writeEpubImages(zip, book, spinePages) else writeEpubText(zip, book, spinePages)
+        }
+    }
+
+    private fun writeEpubImages(zip: ZipOutputStream, book: Book, spinePages: List<SpinePage>): Int {
+        var pages = 0
+        for (page in spinePages) {
+            for (src in page.imageSources) {
+                val image = resolveImage(book.resources, page.resource.href, src) ?: continue
                 if (image.isEmpty()) continue
                 pages++
                 if (pages > PageIndexing.MAX_ZIP_ENTRIES) throw IOException("电子书页数超出上限")
-                zip.putNextEntry(ZipEntry("%04d.%s".format(pages, imageExtension(image))))
-                zip.write(image)
-                zip.closeEntry()
+                writeImageEntry(zip, pages, image, imageExtension(image))
             }
         }
         return pages
     }
 
-    private fun writeEpubText(zip: ZipOutputStream, book: Book): Int {
+    private fun writeEpubText(zip: ZipOutputStream, book: Book, spinePages: List<SpinePage>): Int {
         val writer = TextPageWriter(zip)
         try {
             writer.writeCover(book.coverImage?.data)
             val pending = StringBuilder()
-            for (reference in book.spine.spineReferences) {
-                val resource = reference.resource ?: continue
-                val html = runCatching { resource.data.toString(Charsets.UTF_8) }.getOrNull() ?: continue
-                if (imageSources(html).isNotEmpty()) continue
-                pending.append(Html.fromHtml(html, Html.FROM_HTML_MODE_LEGACY).toString()).append('\n')
+            for (page in spinePages) {
+                if (page.imageSources.isNotEmpty()) continue
+                pending.append(Html.fromHtml(page.html, Html.FROM_HTML_MODE_LEGACY).toString()).append('\n')
                 while (pending.length >= CHUNK_CHARS) {
                     val cut = findChunkCut(pending, CHUNK_CHARS)
                     writer.append(pending.substring(0, cut))
@@ -172,6 +180,22 @@ object FormatConverters {
             if (text[index - 1] == '\n') return index
         }
         return target
+    }
+
+    /** 已经是压缩格式的页图直接 STORED 写入，避免二次压缩；其余用默认 DEFLATE。 */
+    private fun writeImageEntry(zip: ZipOutputStream, index: Int, bytes: ByteArray, extension: String) {
+        val ext = extension.lowercase()
+        val entry = ZipEntry("%04d.%s".format(index, ext))
+        if (ext in STORED_IMAGE_EXTENSIONS && bytes.isNotEmpty()) {
+            val crc = CRC32().apply { update(bytes) }
+            entry.method = ZipEntry.STORED
+            entry.size = bytes.size.toLong()
+            entry.compressedSize = bytes.size.toLong()
+            entry.crc = crc.value
+        }
+        zip.putNextEntry(entry)
+        zip.write(bytes)
+        zip.closeEntry()
     }
 
     private fun imageExtension(bytes: ByteArray): String = when {
@@ -269,10 +293,19 @@ private class TextPageWriter(private val zip: ZipOutputStream) {
     }
 
     private fun writeBitmap(bitmap: Bitmap) {
+        val buffer = ByteArrayOutputStream(256 * 1024)
+        bitmap.compress(Bitmap.CompressFormat.JPEG, 88, buffer)
         pages++
         if (pages > PageIndexing.MAX_ZIP_ENTRIES) throw IOException("电子书页数超出上限")
-        zip.putNextEntry(ZipEntry("%04d.jpg".format(pages)))
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 88, zip)
+        val bytes = buffer.toByteArray()
+        val entry = ZipEntry("%04d.jpg".format(pages))
+        val crc = CRC32().apply { update(bytes) }
+        entry.method = ZipEntry.STORED
+        entry.size = bytes.size.toLong()
+        entry.compressedSize = bytes.size.toLong()
+        entry.crc = crc.value
+        zip.putNextEntry(entry)
+        zip.write(bytes)
         zip.closeEntry()
     }
 

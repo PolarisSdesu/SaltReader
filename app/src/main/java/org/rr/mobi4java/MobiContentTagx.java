@@ -1,6 +1,5 @@
 package org.rr.mobi4java;
 
-import static org.apache.commons.lang3.BooleanUtils.negate;
 import static org.rr.mobi4java.ByteUtils.getBytes;
 import static org.rr.mobi4java.ByteUtils.getInt;
 import static org.rr.mobi4java.ByteUtils.getString;
@@ -13,9 +12,8 @@ import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.commons.io.output.TeeOutputStream;
-import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.builder.ToStringBuilder;
+import org.rr.mobi4java.util.TeeOutputStream;
+import org.rr.mobi4java.util.ToStringBuilder;
 
 public class MobiContentTagx extends MobiContent {
 	
@@ -36,7 +34,7 @@ public class MobiContentTagx extends MobiContent {
 
 	private void readMobiTagx() throws IOException {
 		String identifier = getString(content, 0, 4);
-		if (negate(StringUtils.equals(identifier, IDENTIFIER))) {
+		if (!IDENTIFIER.equals(identifier)) {
 			throw new IOException("Expected to find TAGX header identifier TAGX but got '" + identifier + "' instead");
 		}
 		headerLength = getInt(content, 4, 4);
