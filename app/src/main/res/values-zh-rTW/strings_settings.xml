@@ -109,7 +109,7 @@
     <string name="settings_language_zh_tw">繁體中文</string>
     <string name="settings_language_en">English</string>
     <string name="settings_language_ja">日本語</string>
-    <string name="settings_about_tagline">本機優先的漫畫與電子書閱讀器。</string>
+    <string name="settings_about_tagline">本機優先的漫畫與電子書閱讀器</string>
     <string name="settings_about_build">建置</string>
     <string name="settings_about_maintenance">維護</string>
     <string name="settings_about_clear_cache">清除快取</string>

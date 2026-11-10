@@ -44,6 +44,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.Contrast
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Delete
+import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FilterBAndW
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Info
@@ -252,6 +253,10 @@ private fun SettingsHomePage(onBack: () -> Unit) {
             item { SettingsSectionLabel(stringResource(R.string.settings_home_section_about)) }
             item {
                 SettingsCard {
+                    SettingsNavigateRow(
+                        icon = Icons.Outlined.Description,
+                        title = stringResource(R.string.settings_licenses_title),
+                    ) { context.startActivity(Intent(context, LicensesSettingsActivity::class.java)) }
                     SettingsNavigateRow(
                         icon = Icons.Outlined.Info,
                         title = stringResource(R.string.settings_home_about),
@@ -1011,14 +1016,6 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                     modifier = Modifier.padding(start = 16.dp),
                 )
                 SettingsInfoRow(stringResource(R.string.settings_about_build), BuildConfig.BUILD_TYPE)
-            }
-            // Directly under the app identity block, before maintenance actions.
-            SettingsCard {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Info,
-                    title = stringResource(R.string.settings_licenses_title),
-                    enabled = true,
-                ) { context.startActivity(Intent(context, LicensesSettingsActivity::class.java)) }
             }
             SettingsSectionLabel(stringResource(R.string.settings_about_section_maintenance))
             SettingsCard {
