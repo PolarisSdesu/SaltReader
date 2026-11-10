@@ -522,14 +522,10 @@ private fun ReaderContent(
                         if (liveZoomed.value) return@detectTapGestures
                         val third = size.width / 3f
                         when {
-                            // Vertical scrolling: a tap while the page is zoomed resets the zoom;
-                            // the side thirds are otherwise inert and only the middle toggles chrome.
+                            // Vertical scrolling: side thirds are inert, the middle toggles chrome.
+                            // A single tap never resets the zoom; only pinching back to 1x does.
                             settings.readerMode == ReaderMode.VERTICAL -> {
-                                if (liveVerticalZoomed.value) {
-                                    verticalScale = 1f
-                                    verticalOffset = Offset.Zero
-                                    verticalZoomed = false
-                                } else if (offset.x >= third && offset.x <= size.width - third) {
+                                if (offset.x >= third && offset.x <= size.width - third) {
                                     chromeVisible = !chromeVisible
                                 }
                             }
@@ -583,7 +579,56 @@ private fun ReaderContent(
             } else {
                 // One graphics layer over the whole lazy list: scaling the viewport keeps the list
                 // virtualized, so every visible page zooms together with a single GPU transform.
-                Box(Modifier.fillMaxSize().clipToBounds()) {
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .clipToBounds()
+                        .pointerInput(settings.readerMode) {
+                            awaitEachGesture {
+                                awaitFirstDown(requireUnconsumed = false)
+                                var dragged = 0f
+                                var event = awaitPointerEvent()
+                                while (event.changes.any { it.pressed }) {
+                                    val pressed = event.changes.count { it.pressed }
+                                    if (pressed > 1) {
+                                        val nextScale = (verticalScale * (1f + (event.calculateZoom() - 1f) * ZOOM_SCALE_GAIN))
+                                            .coerceIn(1f, 4f)
+                                        if (nextScale <= 1.01f) {
+                                            verticalScale = 1f
+                                            verticalOffset = Offset.Zero
+                                            verticalZoomed = false
+                                        } else {
+                                            val pan = event.calculatePan() * ZOOM_PAN_GAIN
+                                            verticalScale = nextScale
+                                            verticalZoomed = true
+                                            val maxX = size.width * (nextScale - 1f) / 2f
+                                            val maxY = size.height * (nextScale - 1f) / 2f
+                                            verticalOffset = Offset(
+                                                (verticalOffset.x + pan.x).coerceIn(-maxX, maxX),
+                                                (verticalOffset.y + pan.y).coerceIn(-maxY, maxY),
+                                            )
+                                        }
+                                        event.changes.forEach { it.consume() }
+                                    } else if (verticalZoomed && pressed == 1) {
+                                        // Pan the zoomed viewport; small taps are left to the
+                                        // tap detector so they can toggle the chrome.
+                                        val pan = event.calculatePan() * ZOOM_PAN_GAIN
+                                        dragged += pan.getDistance()
+                                        if (dragged > viewConfiguration.touchSlop * 0.6f) {
+                                            val maxX = size.width * (verticalScale - 1f) / 2f
+                                            val maxY = size.height * (verticalScale - 1f) / 2f
+                                            verticalOffset = Offset(
+                                                (verticalOffset.x + pan.x).coerceIn(-maxX, maxX),
+                                                (verticalOffset.y + pan.y).coerceIn(-maxY, maxY),
+                                            )
+                                            event.changes.forEach { it.consume() }
+                                        }
+                                    }
+                                    event = awaitPointerEvent()
+                                }
+                            }
+                        },
+                ) {
                     Box(
                         Modifier
                             .fillMaxSize()
@@ -592,51 +637,6 @@ private fun ReaderContent(
                                 scaleY = verticalScale
                                 translationX = verticalOffset.x
                                 translationY = verticalOffset.y
-                            }
-                            .pointerInput(settings.readerMode) {
-                                awaitEachGesture {
-                                    awaitFirstDown(requireUnconsumed = false)
-                                    var dragged = 0f
-                                    var event = awaitPointerEvent()
-                                    while (event.changes.any { it.pressed }) {
-                                        val pressed = event.changes.count { it.pressed }
-                                        if (pressed > 1) {
-                                            val nextScale = (verticalScale * (1f + (event.calculateZoom() - 1f) * ZOOM_SCALE_GAIN))
-                                                .coerceIn(1f, 4f)
-                                            if (nextScale <= 1.01f) {
-                                                verticalScale = 1f
-                                                verticalOffset = Offset.Zero
-                                                verticalZoomed = false
-                                            } else {
-                                                val pan = event.calculatePan() * ZOOM_PAN_GAIN
-                                                verticalScale = nextScale
-                                                verticalZoomed = true
-                                                val maxX = size.width * (nextScale - 1f) / 2f
-                                                val maxY = size.height * (nextScale - 1f) / 2f
-                                                verticalOffset = Offset(
-                                                    (verticalOffset.x + pan.x).coerceIn(-maxX, maxX),
-                                                    (verticalOffset.y + pan.y).coerceIn(-maxY, maxY),
-                                                )
-                                            }
-                                            event.changes.forEach { it.consume() }
-                                        } else if (verticalZoomed && pressed == 1) {
-                                            // Pan the zoomed viewport; small taps are left to the
-                                            // tap detector so they can reset the zoom.
-                                            val pan = event.calculatePan() * ZOOM_PAN_GAIN
-                                            dragged += pan.getDistance()
-                                            if (dragged > viewConfiguration.touchSlop * 0.6f) {
-                                                val maxX = size.width * (verticalScale - 1f) / 2f
-                                                val maxY = size.height * (verticalScale - 1f) / 2f
-                                                verticalOffset = Offset(
-                                                    (verticalOffset.x + pan.x).coerceIn(-maxX, maxX),
-                                                    (verticalOffset.y + pan.y).coerceIn(-maxY, maxY),
-                                                )
-                                                event.changes.forEach { it.consume() }
-                                            }
-                                        }
-                                        event = awaitPointerEvent()
-                                    }
-                                }
                             },
                     ) {
                         LazyColumn(
@@ -1009,7 +1009,8 @@ private fun ZoomablePage(
                     if (pointerCount > 1 || scale > 1.01f) {
                         val zoomChange = event.calculateZoom()
                         val panChange = event.calculatePan()
-                        val nextScale = (scale * zoomChange).coerceIn(1f, 5f)
+                        val nextScale = (scale * (1f + (zoomChange - 1f) * ZOOM_SCALE_GAIN))
+                            .coerceIn(1f, 4f)
                         if (nextScale <= 1.01f) {
                             scale = 1f
                             offset = Offset.Zero
@@ -1018,8 +1019,8 @@ private fun ZoomablePage(
                             val maxX = containerSize.width * (nextScale - 1f) / 2f
                             val maxY = containerSize.height * (nextScale - 1f) / 2f
                             offset = Offset(
-                                (offset.x + panChange.x).coerceIn(-maxX, maxX),
-                                (offset.y + panChange.y).coerceIn(-maxY, maxY),
+                                (offset.x + panChange.x * ZOOM_PAN_GAIN).coerceIn(-maxX, maxX),
+                                (offset.y + panChange.y * ZOOM_PAN_GAIN).coerceIn(-maxY, maxY),
                             )
                         }
                         event.changes.forEach { it.consume() }
