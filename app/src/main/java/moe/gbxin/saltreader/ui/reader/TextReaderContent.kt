@@ -318,6 +318,7 @@ internal fun TextReaderContent(
     Box(
         modifier
             .fillMaxSize()
+            .navigationBarsPadding()
             .background(readerBackground)
             .semantics {
                 contentDescription = readingAreaLabel

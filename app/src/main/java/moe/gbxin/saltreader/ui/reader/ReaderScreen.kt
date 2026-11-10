@@ -29,6 +29,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -515,6 +516,7 @@ private fun ReaderContent(
         Box(
             Modifier
                 .fillMaxSize()
+                .navigationBarsPadding()
                 .pointerInput(settings.readerMode, direction, verticalZoomed) {
                     detectTapGestures { offset ->
                         // A zoomed page consumes drags; taps must not turn the page underneath it.
@@ -600,13 +602,14 @@ private fun ReaderContent(
                                     while (event.changes.any { it.pressed }) {
                                         val pressed = event.changes.count { it.pressed }
                                         if (pressed > 1) {
-                                            val nextScale = (verticalScale * event.calculateZoom()).coerceIn(1f, 4f)
+                                            val nextScale = (verticalScale * (1f + (event.calculateZoom() - 1f) * ZOOM_SCALE_GAIN))
+                                                .coerceIn(1f, 4f)
                                             if (nextScale <= 1.01f) {
                                                 verticalScale = 1f
                                                 verticalOffset = Offset.Zero
                                                 verticalZoomed = false
                                             } else {
-                                                val pan = event.calculatePan()
+                                                val pan = event.calculatePan() * ZOOM_PAN_GAIN
                                                 verticalScale = nextScale
                                                 verticalZoomed = true
                                                 val maxX = size.width * (nextScale - 1f) / 2f
@@ -620,9 +623,9 @@ private fun ReaderContent(
                                         } else if (verticalZoomed && pressed == 1) {
                                             // Pan the zoomed viewport; small taps are left to the
                                             // tap detector so they can reset the zoom.
-                                            val pan = event.calculatePan()
+                                            val pan = event.calculatePan() * ZOOM_PAN_GAIN
                                             dragged += pan.getDistance()
-                                            if (dragged > viewConfiguration.touchSlop) {
+                                            if (dragged > viewConfiguration.touchSlop * 0.6f) {
                                                 val maxX = size.width * (verticalScale - 1f) / 2f
                                                 val maxY = size.height * (verticalScale - 1f) / 2f
                                                 verticalOffset = Offset(
@@ -1150,7 +1153,6 @@ internal fun ReaderControlsSheet(
                 ),
                 onSelect = { mode -> onSettingsChange { it.copy(readerMode = mode) } },
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             ReaderMenuRow(
                 title = stringResource(R.string.reader_section_direction),
                 selected = direction,
@@ -1160,7 +1162,6 @@ internal fun ReaderControlsSheet(
                 ),
                 onSelect = onDirection,
             )
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             ReaderMenuRow(
                 title = stringResource(R.string.reader_section_background),
                 selected = settings.readerBackground,
@@ -1176,7 +1177,7 @@ internal fun ReaderControlsSheet(
                 },
             )
             if (isTextBook) {
-                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                Spacer(Modifier.height(10.dp))
                 // Font size only affects the reflowable text reader; committed on release so
                 // re-layout happens once per adjustment.
                 val fontMin = READER_FONT_SIZE_MIN_SP.toFloat()
@@ -1216,7 +1217,7 @@ internal fun ReaderControlsSheet(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(10.dp))
             ToggleRow(stringResource(R.string.reader_show_page_number), settings.showPageNumber) {
                 onSettingsChange { it.copy(showPageNumber = it.showPageNumber.not()) }
             }
@@ -1226,9 +1227,8 @@ internal fun ReaderControlsSheet(
             ToggleRow(stringResource(R.string.reader_volume_keys), settings.volumeKeyPaging) {
                 onSettingsChange { it.copy(volumeKeyPaging = it.volumeKeyPaging.not()) }
             }
-            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            Spacer(Modifier.height(10.dp))
             if (isTextBook) {
-                Spacer(Modifier.height(8.dp))
                 Text(
                     stringResource(R.string.reader_text_filters_note),
                     style = MaterialTheme.typography.bodyMedium,
@@ -1257,7 +1257,11 @@ private fun <T> ReaderMenuRow(
     var expanded by remember { mutableStateOf(false) }
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         Row(
-            Modifier.fillMaxWidth().clickable { expanded = true }.padding(vertical = 14.dp),
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .clickable { expanded = true }
+                .padding(vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
@@ -1369,7 +1373,7 @@ private fun <T> ChoiceGroup(
 @Composable
 private fun ToggleRow(title: String, checked: Boolean, onToggle: () -> Unit) {
     Row(
-        Modifier.fillMaxWidth().padding(vertical = 12.dp),
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
@@ -1395,3 +1399,7 @@ private fun readerColorFilter(grayscale: Boolean, invert: Boolean): ColorFilter?
         )
     )
 }
+
+// Shared zoom feel for the image reader (both paged and continuous modes).
+private const val ZOOM_SCALE_GAIN = 1.08f
+private const val ZOOM_PAN_GAIN = 1.15f

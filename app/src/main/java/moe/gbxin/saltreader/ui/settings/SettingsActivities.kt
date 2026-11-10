@@ -408,30 +408,33 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
         ) {
             SettingsSectionLabel(stringResource(R.string.settings_reader_section_layout))
             SettingsCard {
-                SettingsChoiceGroup(
+                SettingsMenuRow(
+                    icon = Icons.AutoMirrored.Outlined.MenuBook,
                     title = stringResource(R.string.settings_reader_reading_mode),
-                    options = ReaderMode.entries.toList(),
                     selected = settings.readerMode,
+                    options = ReaderMode.entries.toList(),
                     labelRes = { it.labelRes() },
                 ) { mode -> app.settings.update { it.copy(readerMode = mode) } }
-                SettingsChoiceGroup(
+                SettingsMenuRow(
+                    icon = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                     title = stringResource(R.string.settings_reader_paging_direction),
-                    options = ReadingDirection.entries.toList(),
                     selected = settings.readingDirection,
+                    options = ReadingDirection.entries.toList(),
                     labelRes = { it.labelRes() },
                 ) { direction -> app.settings.update { it.copy(readingDirection = direction) } }
             }
             SettingsSectionLabel(stringResource(R.string.settings_reader_section_display))
             SettingsCard {
-                SettingsChoiceGroup(
+                SettingsMenuRow(
+                    icon = Icons.Outlined.Palette,
                     title = stringResource(R.string.settings_reader_paper_color),
+                    selected = settings.readerBackground,
                     options = listOf(
                         ReaderBackground.AUTO,
                         ReaderBackground.WHITE,
                         ReaderBackground.INK,
                         ReaderBackground.CUSTOM,
                     ),
-                    selected = settings.readerBackground,
                     labelRes = { it.labelRes() },
                 ) { background ->
                     if (background == ReaderBackground.CUSTOM) {
@@ -1214,6 +1217,65 @@ private fun SettingsInfoRow(label: String, value: String) {
             textAlign = TextAlign.End,
             modifier = Modifier.weight(1f, fill = false),
         )
+    }
+}
+
+/** Menu-style setting row: title + current value + right-aligned dropdown. */
+@Composable
+private fun <T> SettingsMenuRow(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    title: String,
+    selected: T,
+    options: List<T>,
+    labelRes: (T) -> Int,
+    onSelect: (T) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = 56.dp)
+                .clickable { expanded = true }
+                .padding(horizontal = 16.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SettingsIcon(icon)
+            Spacer(Modifier.width(16.dp))
+            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Text(
+                stringResource(labelRes(selected)),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Icon(
+                Icons.Filled.ArrowDropDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        val menuWidth = 220.dp
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            offset = DpOffset(x = (maxWidth - menuWidth).coerceAtLeast(0.dp), y = 0.dp),
+            modifier = Modifier.width(menuWidth),
+        ) {
+            options.forEach { option ->
+                DropdownMenuItem(
+                    text = { Text(stringResource(labelRes(option))) },
+                    leadingIcon = if (option == selected) {
+                        { Icon(Icons.Filled.Check, contentDescription = null) }
+                    } else {
+                        null
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelect(option)
+                    },
+                )
+            }
+        }
     }
 }
 
