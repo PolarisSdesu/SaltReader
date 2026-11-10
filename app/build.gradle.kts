@@ -34,8 +34,8 @@ android {
         minSdk = 26
         targetSdk = 36
         // Play 要求每次上传统递增且不可回退；仅在发布新版本时 +1。
-        versionCode = 3
-        versionName = "1.2.0"
+        versionCode = 4
+        versionName = "1.2.1"
         vectorDrawables.useSupportLibrary = true
     }
 

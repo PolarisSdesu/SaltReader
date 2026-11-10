@@ -9,7 +9,7 @@
 - **不做导入副本**：应用私有目录只保存派生缓存（封面、EPUB/MOBI 拍平后的 CBZ、压缩包随机读临时缓存）。
 - **备份仅设置**：云备份 / 设备迁移只包含 `saltreader_settings`，书库索引与派生缓存永不备份。
 - **release 开启 R8**：`isMinifyEnabled` + `isShrinkResources`，未使用的 Material 图标会被裁掉。
-- `compileSdk 37` / `targetSdk 36` / `minSdk 26`，`versionCode 3` / `versionName 1.2.0`。
+- `compileSdk 37` / `targetSdk 36` / `minSdk 26`，`versionCode 4` / `versionName 1.2.1`。
 
 ## 功能
 
@@ -74,7 +74,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ```
 
 - **R8**：release 已开启 `isMinifyEnabled=true` + `isShrinkResources=true`，使用 `proguard-android-optimize.txt`；`app/proguard-rules.pro` 中保留了 kotlinx.serialization、epub4j、mobi4java 的保守 keep 规则（Apache Commons 已完全移除，不再需要相关规则），未使用的 Material 图标会被裁掉。构建完成后可直接比较 `app/build/outputs/apk/release/` 下 APK 体积（R8 后通常显著小于 debug 包）。
-- **版本规则**：`versionCode` 在每次向 Play 上传新版本时递增且不可回退（当前为 `3`）；`versionName` 采用语义化版本（当前 `1.2.0`）。两者都在 `app/build.gradle.kts` 的 `defaultConfig` 中维护。
+- **版本规则**：`versionCode` 在每次向 Play 上传新版本时递增且不可回退（当前为 `4`）；`versionName` 采用语义化版本（当前 `1.2.1`）。两者都在 `app/build.gradle.kts` 的 `defaultConfig` 中维护。
 - **签名材料**：默认读取根目录下被 `.gitignore` 排除的 `keystore.properties`（`storeFile` / `storePassword` / `keyAlias` / `keyPassword`）；也可以改用环境变量 `SALTREADER_KEYSTORE`、`SALTREADER_STORE_PASSWORD`、`SALTREADER_KEY_ALIAS`、`SALTREADER_KEY_PASSWORD`。两者都不存在时 release 产物为**未签名** APK，配置阶段不会失败（CI 会构建 debug/release 并跑单测，release 未签名但 R8 规则会被真实执行）。
 - **keystore 治理**：`keystore/` 与 `keystore.properties` 已被 `.gitignore` 排除，请离线备份密钥库；不要把口令写进仓库或 CI 日志。建议启用 Play App Signing，由 Google 保管分发密钥，本地上传密钥仅用于上传。
 - **TODO（上架前）**：把所有口令迁移到 CI secret / 本地环境变量，并在 Play Console 完成 App Signing 与内部测试轨道验证。
