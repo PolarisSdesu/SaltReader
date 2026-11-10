@@ -3,8 +3,8 @@ package moe.gbxin.saltreader.ui.reader
 import android.app.Activity
 import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.Crossfade
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -37,6 +37,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
@@ -335,10 +336,12 @@ private fun ReaderContent(
     // Zoom is transient: it is reset whenever the pager settles on a different page.
     var zoomed by remember { mutableStateOf(false) }
     var zoomResetToken by remember { mutableIntStateOf(0) }
-    // Vertical (continuous) mode pinch-to-zoom: zoom applies to the page under the fingers and the
-    // list scroll is paused while zoomed so single-finger drags can pan the image.
+    // Vertical (continuous) mode pinch-to-zoom: the whole scrolling viewport is scaled as one
+    // layer (a single GPU transform over the virtualized list), so all visible pages zoom together
+    // without per-page cost. List scrolling pauses while zoomed and one-finger drags pan.
     var verticalZoomed by remember { mutableStateOf(false) }
-    var verticalZoomResetToken by remember { mutableIntStateOf(0) }
+    var verticalScale by remember { mutableFloatStateOf(1f) }
+    var verticalOffset by remember { mutableStateOf(Offset.Zero) }
     val liveVerticalZoomed = rememberUpdatedState(verticalZoomed)
 
     val readerBackground = pageBackgroundColor(
@@ -479,7 +482,8 @@ private fun ReaderContent(
 
     LaunchedEffect(volumePageEvents) {
         volumePageEvents?.collect { delta ->
-            verticalZoomResetToken += 1
+            verticalScale = 1f
+            verticalOffset = Offset.Zero
             verticalZoomed = false
             step(delta)
         }
@@ -508,7 +512,9 @@ private fun ReaderContent(
                             // the side thirds are otherwise inert and only the middle toggles chrome.
                             settings.readerMode == ReaderMode.VERTICAL -> {
                                 if (liveVerticalZoomed.value) {
-                                    verticalZoomResetToken += 1
+                                    verticalScale = 1f
+                                    verticalOffset = Offset.Zero
+                                    verticalZoomed = false
                                 } else if (offset.x >= third && offset.x <= size.width - third) {
                                     chromeVisible = !chromeVisible
                                 }
@@ -560,21 +566,77 @@ private fun ReaderContent(
                     )
                 }
             } else {
-                LazyColumn(
-                    state = listState,
-                    modifier = Modifier.fillMaxSize(),
-                    // Pause list scrolling while a page is zoomed so one-finger drags pan the image.
-                    userScrollEnabled = !verticalZoomed,
-                ) {
-                    items(count) { index ->
-                        VerticalPage(
-                            vm = vm,
-                            index = index,
-                            targetWidth = pageTarget,
-                            colorFilter = pageFilter,
-                            resetToken = verticalZoomResetToken,
-                            onZoomChanged = { verticalZoomed = it },
-                        )
+                // One graphics layer over the whole lazy list: scaling the viewport keeps the list
+                // virtualized, so every visible page zooms together with a single GPU transform.
+                Box(Modifier.fillMaxSize().clipToBounds()) {
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .graphicsLayer {
+                                scaleX = verticalScale
+                                scaleY = verticalScale
+                                translationX = verticalOffset.x
+                                translationY = verticalOffset.y
+                            }
+                            .pointerInput(settings.readerMode) {
+                                awaitEachGesture {
+                                    awaitFirstDown(requireUnconsumed = false)
+                                    var dragged = 0f
+                                    var event = awaitPointerEvent()
+                                    while (event.changes.any { it.pressed }) {
+                                        val pressed = event.changes.count { it.pressed }
+                                        if (pressed > 1) {
+                                            val nextScale = (verticalScale * event.calculateZoom()).coerceIn(1f, 4f)
+                                            if (nextScale <= 1.01f) {
+                                                verticalScale = 1f
+                                                verticalOffset = Offset.Zero
+                                                verticalZoomed = false
+                                            } else {
+                                                val pan = event.calculatePan()
+                                                verticalScale = nextScale
+                                                verticalZoomed = true
+                                                val maxX = size.width * (nextScale - 1f) / 2f
+                                                val maxY = size.height * (nextScale - 1f) / 2f
+                                                verticalOffset = Offset(
+                                                    (verticalOffset.x + pan.x).coerceIn(-maxX, maxX),
+                                                    (verticalOffset.y + pan.y).coerceIn(-maxY, maxY),
+                                                )
+                                            }
+                                            event.changes.forEach { it.consume() }
+                                        } else if (verticalZoomed && pressed == 1) {
+                                            // Pan the zoomed viewport; small taps are left to the
+                                            // tap detector so they can reset the zoom.
+                                            val pan = event.calculatePan()
+                                            dragged += pan.getDistance()
+                                            if (dragged > viewConfiguration.touchSlop) {
+                                                val maxX = size.width * (verticalScale - 1f) / 2f
+                                                val maxY = size.height * (verticalScale - 1f) / 2f
+                                                verticalOffset = Offset(
+                                                    (verticalOffset.x + pan.x).coerceIn(-maxX, maxX),
+                                                    (verticalOffset.y + pan.y).coerceIn(-maxY, maxY),
+                                                )
+                                                event.changes.forEach { it.consume() }
+                                            }
+                                        }
+                                        event = awaitPointerEvent()
+                                    }
+                                }
+                            },
+                    ) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            userScrollEnabled = !verticalZoomed,
+                        ) {
+                            items(count) { index ->
+                                VerticalPage(
+                                    vm = vm,
+                                    index = index,
+                                    targetWidth = pageTarget,
+                                    colorFilter = pageFilter,
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -816,17 +878,10 @@ private fun PagedPage(
     onZoomChanged: (Boolean) -> Unit,
 ) {
     val state = rememberPageState(vm, index, targetWidth)
-    // Short cross-fade instead of a hard cut when a decoded page replaces the placeholder.
-    Crossfade(
-        targetState = state,
-        animationSpec = tween(durationMillis = 120),
-        label = "paged-page",
-    ) { page ->
-        when (page) {
-            PageState.Loading -> PagePlaceholder(index)
-            PageState.Failed -> PageError(index)
-            is PageState.Ready -> ZoomablePage(page.image, index, colorFilter, resetToken, onZoomChanged)
-        }
+    when (state) {
+        PageState.Loading -> PagePlaceholder(index)
+        PageState.Failed -> PageError(index)
+        is PageState.Ready -> ZoomablePage(state.image, index, colorFilter, resetToken, onZoomChanged)
     }
 }
 
@@ -836,110 +891,43 @@ private fun VerticalPage(
     index: Int,
     targetWidth: Int,
     colorFilter: ColorFilter?,
-    resetToken: Int,
-    onZoomChanged: (Boolean) -> Unit,
 ) {
     val state = rememberPageState(vm, index, targetWidth)
     BoxWithConstraints(
         Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(durationMillis = 140)),
     ) {
-        Crossfade(
-            targetState = state,
-            animationSpec = tween(durationMillis = 120),
-            label = "vertical-page",
-        ) { page ->
-            when (page) {
-                PageState.Loading -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.45f)) { PagePlaceholder(index) }
-                PageState.Failed -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.2f)) { PageError(index) }
-                is PageState.Ready -> ZoomableVerticalPage(
-                    image = page.image,
-                    index = index,
+        when (state) {
+            PageState.Loading -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.45f)) { PagePlaceholder(index) }
+            PageState.Failed -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.2f)) { PageError(index) }
+            is PageState.Ready -> {
+                val ratio = state.image.height.toFloat() / state.image.width.toFloat()
+                val appearAlpha = rememberPageAppearAlpha(index)
+                Image(
+                    bitmap = state.image,
+                    contentDescription = stringResource(R.string.reader_page_number, index + 1),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(maxWidth * ratio)
+                        .graphicsLayer(alpha = appearAlpha),
+                    contentScale = ContentScale.FillWidth,
                     colorFilter = colorFilter,
-                    resetToken = resetToken,
-                    onZoomChanged = onZoomChanged,
                 )
             }
         }
     }
 }
 
-/**
- * Continuous-mode page with two-finger pinch zoom and one-finger panning while zoomed.
- * The list scroll is paused by the caller, so drags reach this surface; a tap on the reading
- * area (handled by the parent) resets the zoom.
- */
+/** Fades a freshly decoded page in over ~150ms; cached pages appear with the same subtle fade. */
 @Composable
-private fun ZoomableVerticalPage(
-    image: ImageBitmap,
-    index: Int,
-    colorFilter: ColorFilter?,
-    resetToken: Int,
-    onZoomChanged: (Boolean) -> Unit,
-) {
-    var scale by remember(index) { mutableFloatStateOf(1f) }
-    var offset by remember(index) { mutableStateOf(Offset.Zero) }
-    var containerSize by remember { mutableStateOf(IntSize.Zero) }
-    LaunchedEffect(resetToken) {
-        if (resetToken != 0) {
-            scale = 1f
-            offset = Offset.Zero
-            onZoomChanged(false)
-        }
-    }
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val ratio = image.height.toFloat() / image.width.toFloat()
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(maxWidth * ratio)
-                .clipToBounds()
-                .onSizeChanged { containerSize = it }
-                .pointerInput(index) {
-                    awaitEachGesture {
-                        awaitFirstDown(requireUnconsumed = false)
-                        var event = awaitPointerEvent()
-                        while (event.changes.any { it.pressed }) {
-                            val pointerCount = event.changes.count { it.pressed }
-                            if (pointerCount > 1 || scale > 1.01f) {
-                                val zoomChange = event.calculateZoom()
-                                val panChange = event.calculatePan()
-                                val nextScale = (scale * zoomChange).coerceIn(1f, 4f)
-                                if (nextScale <= 1.01f) {
-                                    scale = 1f
-                                    offset = Offset.Zero
-                                    onZoomChanged(false)
-                                } else {
-                                    scale = nextScale
-                                    val maxX = containerSize.width * (nextScale - 1f) / 2f
-                                    val maxY = containerSize.height * (nextScale - 1f) / 2f
-                                    offset = Offset(
-                                        (offset.x + panChange.x).coerceIn(-maxX, maxX),
-                                        (offset.y + panChange.y).coerceIn(-maxY, maxY),
-                                    )
-                                    onZoomChanged(true)
-                                }
-                                event.changes.forEach { it.consume() }
-                            }
-                            event = awaitPointerEvent()
-                        }
-                    }
-                },
-            contentAlignment = Alignment.Center,
-        ) {
-            Image(
-                bitmap = image,
-                contentDescription = stringResource(R.string.reader_page_number, index + 1),
-                modifier = Modifier.fillMaxSize().graphicsLayer(
-                    scaleX = scale,
-                    scaleY = scale,
-                    translationX = offset.x,
-                    translationY = offset.y,
-                ),
-                contentScale = ContentScale.FillWidth,
-                colorFilter = colorFilter,
-            )
-        }
-    }
+private fun rememberPageAppearAlpha(index: Int): Float {
+    var visible by remember(index) { mutableStateOf(false) }
+    LaunchedEffect(index) { visible = true }
+    val alpha by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = 150),
+        label = "page-fade-alpha",
+    )
+    return alpha
 }
 
 @Composable
@@ -988,6 +976,7 @@ private fun ZoomablePage(
     var scale by remember(index) { mutableFloatStateOf(1f) }
     var offset by remember(index) { mutableStateOf(Offset.Zero) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    val appearAlpha = rememberPageAppearAlpha(index)
     // Reset the transform when the pager settles on another page (or the mode changes), so a
     // retained page can never come back zoomed and keep horizontal paging disabled.
     LaunchedEffect(resetToken) {
@@ -1038,6 +1027,7 @@ private fun ZoomablePage(
             bitmap = image,
             contentDescription = stringResource(R.string.reader_page_number, index + 1),
             modifier = Modifier.fillMaxSize().graphicsLayer(
+                alpha = appearAlpha,
                 scaleX = scale,
                 scaleY = scale,
                 translationX = offset.x,
@@ -1319,7 +1309,10 @@ private fun <T> ChoiceGroup(
 ) {
     Text(title, style = MaterialTheme.typography.titleSmall)
     Spacer(Modifier.height(8.dp))
-    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    Row(
+        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
         options.forEach { (value, label) ->
             FilterChip(
                 selected = value == selected,

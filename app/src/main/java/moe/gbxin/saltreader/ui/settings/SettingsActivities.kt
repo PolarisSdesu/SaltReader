@@ -1,6 +1,5 @@
 package moe.gbxin.saltreader.ui.settings
 
-import android.widget.ImageView
 
 import android.content.Intent
 import android.os.Build
@@ -10,7 +9,11 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
+import androidx.compose.animation.Crossfade
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.material3.FilterChip
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
@@ -41,22 +44,27 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FilterBAndW
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Numbers
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
-import androidx.compose.material3.AlertDialog
+import androidx.compose.ui.res.painterResource
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material.icons.outlined.Language
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LinearWavyProgressIndicator
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -64,7 +72,6 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
@@ -88,12 +95,12 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.gbxin.saltreader.BuildConfig
@@ -158,6 +165,11 @@ class StorageSettingsActivity : BaseSettingsActivity() {
 class AboutSettingsActivity : BaseSettingsActivity() {
     @Composable
     override fun Content(onBack: () -> Unit) = AboutSettingsPage(onBack)
+}
+
+class LicensesSettingsActivity : BaseSettingsActivity() {
+    @Composable
+    override fun Content(onBack: () -> Unit) = LicensesSettingsPage(onBack)
 }
 
 /**
@@ -276,32 +288,51 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
                     checked = settings.amoledBlack,
                 ) { app.settings.update { it.copy(amoledBlack = it.amoledBlack.not()) } }
             }
-            SettingsSectionLabel(stringResource(R.string.settings_appearance_section_language))
             SettingsCard {
                 val context = LocalContext.current
-                var language by remember { mutableStateOf(currentAppLanguage(context)) }
-                Column(Modifier.fillMaxWidth().selectableGroup()) {
-                    SUPPORTED_APP_LANGUAGES.forEach { tag ->
-                        val selected = tag == language
-                        Row(
-                            Modifier
-                                .fillMaxWidth()
-                                .selectable(
-                                    selected = selected,
-                                    role = Role.RadioButton,
-                                    onClick = {
-                                        language = tag
-                                        setAppLanguage(context, tag)
-                                    },
-                                )
-                                .padding(horizontal = 16.dp, vertical = 10.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RadioButton(selected = selected, onClick = null)
-                            Spacer(Modifier.width(12.dp))
-                            Text(
-                                stringResource(languageLabelRes(tag)),
-                                style = MaterialTheme.typography.bodyLarge,
+                // Recomputed on every composition so a locale configuration change updates the
+                // summary without recreating the activity.
+                val language = currentAppLanguage(context)
+                var menuOpen by remember { mutableStateOf(false) }
+                Box(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { menuOpen = true }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SettingsIcon(Icons.Outlined.Language)
+                        Spacer(Modifier.width(16.dp))
+                        Text(
+                            stringResource(R.string.settings_appearance_section_language),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            stringResource(languageLabelRes(language)),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Icon(
+                            Icons.Filled.ArrowDropDown,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                        SUPPORTED_APP_LANGUAGES.forEach { tag ->
+                            DropdownMenuItem(
+                                text = { Text(stringResource(languageLabelRes(tag))) },
+                                leadingIcon = if (tag == language) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null) }
+                                } else {
+                                    null
+                                },
+                                onClick = {
+                                    menuOpen = false
+                                    setAppLanguage(context, tag)
+                                },
                             )
                         }
                     }
@@ -437,6 +468,7 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
 
     fun launchScan(scan: suspend ((Float, String) -> Unit) -> ImportReport) {
         if (scanning) return
+        val startedAt = System.currentTimeMillis()
         scanning = true
         scanProgress = 0f
         scanLabel = context.getString(R.string.settings_storage_scanning)
@@ -468,6 +500,9 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                 )
                 scanMessageIsError = true
             } finally {
+                // Keep the progress slot on screen for a moment so a fast refresh does not flicker.
+                val elapsed = System.currentTimeMillis() - startedAt
+                if (elapsed < 420) delay(420 - elapsed)
                 scanning = false
             }
         }
@@ -586,30 +621,52 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                                 )
                             }
                         }
-                        if (scanning) {
-                            Spacer(Modifier.height(16.dp))
-                            LinearWavyProgressIndicator(
-                                progress = { scanProgress },
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                scanLabel,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                        // Fixed-height status slot: scanning progress and the result message share the
+                        // same space, so the card never jumps when a refresh starts or finishes.
+                        Spacer(Modifier.height(10.dp))
+                        val status = when {
+                            scanning -> StorageScanStatus.PROGRESS
+                            scanMessage != null -> StorageScanStatus.MESSAGE
+                            else -> StorageScanStatus.IDLE
                         }
-                        scanMessage?.let { message ->
-                            Spacer(Modifier.height(10.dp))
-                            Text(
-                                message,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (scanMessageIsError) {
-                                    MaterialTheme.colorScheme.error
-                                } else {
-                                    MaterialTheme.colorScheme.primary
-                                },
-                            )
+                        Box(
+                            Modifier.fillMaxWidth().height(52.dp),
+                            contentAlignment = Alignment.CenterStart,
+                        ) {
+                            Crossfade(
+                                targetState = status,
+                                animationSpec = tween(durationMillis = 160),
+                                label = "storage-scan-status",
+                            ) { value ->
+                                when (value) {
+                                    StorageScanStatus.PROGRESS -> Column(Modifier.fillMaxWidth()) {
+                                        LinearWavyProgressIndicator(
+                                            progress = { scanProgress },
+                                            modifier = Modifier.fillMaxWidth(),
+                                        )
+                                        Spacer(Modifier.height(6.dp))
+                                        Text(
+                                            scanLabel,
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                        )
+                                    }
+                                    StorageScanStatus.MESSAGE -> Text(
+                                        scanMessage.orEmpty(),
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = if (scanMessageIsError) {
+                                            MaterialTheme.colorScheme.error
+                                        } else {
+                                            MaterialTheme.colorScheme.primary
+                                        },
+                                        maxLines = 2,
+                                        overflow = TextOverflow.Ellipsis,
+                                    )
+                                    StorageScanStatus.IDLE -> Spacer(Modifier.fillMaxSize())
+                                }
+                            }
                         }
                     }
                 }
@@ -677,14 +734,150 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
     }
 }
 
+private data class OpenSourceLibrary(val name: String, val license: String, val note: String? = null)
+
+private val runtimeLibraries = listOf(
+    OpenSourceLibrary("Kotlin", "Apache License 2.0"),
+    OpenSourceLibrary("Kotlin Coroutines", "Apache License 2.0"),
+    OpenSourceLibrary("Kotlin Serialization", "Apache License 2.0"),
+    OpenSourceLibrary("AndroidX Core", "Apache License 2.0"),
+    OpenSourceLibrary("AndroidX Activity", "Apache License 2.0"),
+    OpenSourceLibrary("AndroidX Lifecycle", "Apache License 2.0"),
+    OpenSourceLibrary("Jetpack Compose", "Apache License 2.0"),
+    OpenSourceLibrary("Material Components for Android / Material 3", "Apache License 2.0"),
+    OpenSourceLibrary("Material Icons", "Apache License 2.0"),
+    OpenSourceLibrary("AndroidX SplashScreen", "Apache License 2.0"),
+    OpenSourceLibrary("AndroidX DocumentFile", "Apache License 2.0"),
+    OpenSourceLibrary("AndroidX ExifInterface", "Apache License 2.0"),
+    OpenSourceLibrary(
+        "mobi-api4java",
+        "Apache License 2.0",
+        "MOBI/AZW3 text parsing, vendored and adapted (commons dependencies removed).",
+    ),
+    OpenSourceLibrary(
+        "Android platform components (WebView, PdfRenderer, ZIP)",
+        "Android Open Source Project licenses",
+        "System components shipped with the device.",
+    ),
+)
+
+private val testLibraries = listOf(
+    OpenSourceLibrary("JUnit 4", "Eclipse Public License 1.0"),
+    OpenSourceLibrary("Kotlin Test", "Apache License 2.0"),
+    OpenSourceLibrary("kotlinx-coroutines-test", "Apache License 2.0"),
+)
+
+@Composable
+private fun LicensesSettingsPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    var showApache by remember { mutableStateOf(false) }
+    SettingsScaffold(stringResource(R.string.settings_licenses_title), onBack) { innerPadding ->
+        LazyColumn(
+            Modifier.fillMaxSize().padding(innerPadding),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
+        ) {
+            item {
+                Text(
+                    stringResource(R.string.settings_licenses_intro),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(vertical = 8.dp),
+                )
+            }
+            item { SettingsSectionLabel(stringResource(R.string.settings_licenses_runtime)) }
+            item {
+                SettingsCard {
+                    runtimeLibraries.forEachIndexed { index, library ->
+                        if (index > 0) {
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                                modifier = Modifier.padding(start = 16.dp),
+                            )
+                        }
+                        LibraryRow(library)
+                    }
+                }
+            }
+            item { SettingsSectionLabel(stringResource(R.string.settings_licenses_test)) }
+            item {
+                SettingsCard {
+                    testLibraries.forEachIndexed { index, library ->
+                        if (index > 0) {
+                            HorizontalDivider(
+                                color = MaterialTheme.colorScheme.outlineVariant,
+                                modifier = Modifier.padding(start = 16.dp),
+                            )
+                        }
+                        LibraryRow(library)
+                    }
+                }
+            }
+            item { SettingsSectionLabel(stringResource(R.string.settings_licenses_apache)) }
+            item {
+                SettingsCard {
+                    SettingsActionRow(
+                        icon = Icons.Outlined.Info,
+                        title = stringResource(R.string.settings_licenses_apache_full),
+                        enabled = true,
+                    ) { showApache = true }
+                }
+            }
+        }
+    }
+    if (showApache) {
+        val apacheText = remember {
+            runCatching {
+                context.resources.openRawResource(R.raw.apache_license_2_0)
+                    .bufferedReader()
+                    .use { it.readText() }
+            }.getOrDefault("")
+        }
+        AlertDialog(
+            onDismissRequest = { showApache = false },
+            title = { Text("Apache License 2.0") },
+            text = {
+                Box(
+                    Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()),
+                ) {
+                    Text(apacheText, style = MaterialTheme.typography.bodySmall)
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showApache = false }) {
+                    Text(stringResource(R.string.settings_licenses_close))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun LibraryRow(library: OpenSourceLibrary) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp)) {
+        Text(library.name, style = MaterialTheme.typography.titleSmall)
+        Spacer(Modifier.height(2.dp))
+        Text(
+            library.license,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        library.note?.let { note ->
+            Spacer(Modifier.height(2.dp))
+            Text(
+                note,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
 @Composable
 private fun AboutSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current
     val app = context.applicationContext as SaltReaderApplication
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
-    var showLicenses by remember { mutableStateOf(false) }
-    var showPrivacy by remember { mutableStateOf(false) }
     var cacheBytes by remember { mutableStateOf(0L) }
     var clearing by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
@@ -729,15 +922,22 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                 Modifier.fillMaxWidth().padding(top = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                AndroidView(
-                    factory = { ctx ->
-                        ImageView(ctx).apply {
-                            setImageResource(R.mipmap.ic_launcher)
-                            scaleType = ImageView.ScaleType.FIT_CENTER
-                        }
-                    },
-                    modifier = Modifier.size(96.dp).clip(CircleShape),
-                )
+                // Vector mark tinted with theme roles: matches Android 13 monochrome/themed icons
+                // and follows light/dark/dynamic color automatically.
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(96.dp),
+                ) {
+                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                        Icon(
+                            painter = painterResource(R.drawable.ic_app_mark),
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onPrimaryContainer,
+                            modifier = Modifier.size(56.dp),
+                        )
+                    }
+                }
                 Spacer(Modifier.height(16.dp))
                 Text("Salt Reader", style = MaterialTheme.typography.headlineMedium)
                 Spacer(Modifier.height(4.dp))
@@ -760,28 +960,6 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                     modifier = Modifier.padding(start = 16.dp),
                 )
                 SettingsInfoRow(stringResource(R.string.settings_about_build), BuildConfig.BUILD_TYPE)
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    modifier = Modifier.padding(start = 16.dp),
-                )
-                SettingsInfoRow(stringResource(R.string.settings_about_package), BuildConfig.APPLICATION_ID)
-            }
-            SettingsSectionLabel(stringResource(R.string.settings_about_section_legal))
-            SettingsCard {
-                SettingsActionRow(
-                    icon = Icons.Outlined.Info,
-                    title = stringResource(R.string.settings_about_licenses),
-                    enabled = true,
-                ) { showLicenses = true }
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    modifier = Modifier.padding(start = 72.dp),
-                )
-                SettingsActionRow(
-                    icon = Icons.Outlined.Lock,
-                    title = stringResource(R.string.settings_about_privacy),
-                    enabled = true,
-                ) { showPrivacy = true }
             }
             SettingsSectionLabel(stringResource(R.string.settings_about_section_maintenance))
             SettingsCard {
@@ -795,6 +973,15 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                     },
                     enabled = !clearing,
                 ) { clearCache() }
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier.padding(start = 72.dp),
+                )
+                SettingsActionRow(
+                    icon = Icons.Outlined.Info,
+                    title = stringResource(R.string.settings_licenses_title),
+                    enabled = true,
+                ) { context.startActivity(Intent(context, LicensesSettingsActivity::class.java)) }
             }
             Spacer(Modifier.height(24.dp))
             Text(
@@ -807,31 +994,9 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
         }
     }
 
-    if (showLicenses) {
-        AlertDialog(
-            onDismissRequest = { showLicenses = false },
-            title = { Text(stringResource(R.string.settings_about_licenses)) },
-            text = { Text(stringResource(R.string.settings_about_licenses_body)) },
-            confirmButton = {
-                TextButton(onClick = { showLicenses = false }) {
-                    Text(stringResource(R.string.settings_about_close))
-                }
-            },
-        )
-    }
-    if (showPrivacy) {
-        AlertDialog(
-            onDismissRequest = { showPrivacy = false },
-            title = { Text(stringResource(R.string.settings_about_privacy)) },
-            text = { Text(stringResource(R.string.settings_about_privacy_body)) },
-            confirmButton = {
-                TextButton(onClick = { showPrivacy = false }) {
-                    Text(stringResource(R.string.settings_about_close))
-                }
-            },
-        )
-    }
 }
+
+private enum class StorageScanStatus { IDLE, PROGRESS, MESSAGE }
 
 @Composable
 private fun SettingsSectionLabel(text: String) {
@@ -916,7 +1081,7 @@ private fun SettingsSwitchRow(
                     supporting,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -951,7 +1116,7 @@ private fun SettingsActionRow(
                     supporting,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
+                    maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
                 )
             }
@@ -1013,7 +1178,7 @@ private fun SettingsInfoRow(label: String, value: String) {
             value,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
+            maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.End,
             modifier = Modifier.weight(1f, fill = false),
@@ -1032,10 +1197,13 @@ private fun <T> SettingsChoiceGroup(
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(10.dp))
-        // Equal-width segments with explicitly centered labels; ButtonGroup's checked item
-        // reserves asymmetric inner space, which pushes the label off center.
+        // Scrollable pills keep long translations (e.g. Japanese) readable instead of ellipsizing
+        // them inside equal-width segments.
         Row(
-            modifier = Modifier.fillMaxWidth().selectableGroup(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState())
+                .selectableGroup(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
             options.forEach { option ->
@@ -1047,7 +1215,6 @@ private fun <T> SettingsChoiceGroup(
                     } else {
                         MaterialTheme.colorScheme.surfaceContainerHigh
                     },
-                    modifier = Modifier.weight(1f),
                 ) {
                     Box(
                         Modifier
@@ -1056,15 +1223,13 @@ private fun <T> SettingsChoiceGroup(
                                 role = Role.RadioButton,
                                 onClick = { onSelect(option) },
                             )
-                            .padding(horizontal = 10.dp, vertical = 12.dp),
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
                             stringResource(labelRes(option)),
                             style = MaterialTheme.typography.labelLarge,
-                            textAlign = TextAlign.Center,
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
                         )
                     }
                 }
