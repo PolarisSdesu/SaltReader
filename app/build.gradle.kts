@@ -20,6 +20,24 @@ val keystoreProperties = Properties().apply {
 fun signingValue(property: String, env: String): String? =
     keystoreProperties.getProperty(property) ?: System.getenv(env)
 
+// Version single source of truth: version.properties (managed by scripts/bump_version.py).
+val versionProperties = Properties().apply {
+    val file = rootProject.file("version.properties")
+    if (file.exists()) file.inputStream().use { load(it) }
+}
+
+fun versionPart(key: String, fallback: String): String =
+    versionProperties.getProperty(key)?.trim()?.takeIf { it.isNotEmpty() } ?: fallback
+
+val appVersionName: String = buildString {
+    append(versionPart("versionMajor", "1")).append('.')
+    append(versionPart("versionMinor", "0")).append('.')
+    append(versionPart("versionPatch", "0"))
+    val stage = versionPart("versionStage", "stable")
+    if (stage != "stable") append('-').append(stage).append('.').append(versionPart("versionStageNumber", "1"))
+}
+val appVersionCode: Int = versionPart("versionCode", "1").toInt()
+
 val releaseStoreFile = signingValue("storeFile", "SALTREADER_KEYSTORE")
 val releaseStorePassword = signingValue("storePassword", "SALTREADER_STORE_PASSWORD")
 val releaseKeyAlias = signingValue("keyAlias", "SALTREADER_KEY_ALIAS")
@@ -33,9 +51,10 @@ android {
         applicationId = "moe.gbxin.saltreader"
         minSdk = 26
         targetSdk = 36
-        // Play 要求每次上传统递增且不可回退；仅在发布新版本时 +1。
-        versionCode = 11
-        versionName = "1.6.1"
+        // Both are read from version.properties; use scripts/bump_version.py (or
+        // `./gradlew bumpVersion -Paction=...`) instead of editing them by hand.
+        versionCode = appVersionCode
+        versionName = appVersionName
         vectorDrawables.useSupportLibrary = true
     }
 
@@ -91,6 +110,16 @@ kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
     }
+}
+
+tasks.register<Exec>("bumpVersion") {
+    group = "versioning"
+    description = "Bump version.properties (use -Paction=alpha|beta|rc|release|patch|minor|major)"
+    commandLine(
+        "python3",
+        rootProject.file("scripts/bump_version.py").absolutePath,
+        providers.gradleProperty("action").getOrElse("alpha"),
+    )
 }
 
 dependencies {
