@@ -1,22 +1,18 @@
 package moe.gbxin.saltreader.util
 
-import android.app.Activity
-import android.app.LocaleManager
 import android.content.Context
-import android.content.Intent
 import android.content.res.Configuration
-import android.os.Build
-import android.os.LocaleList
 import java.util.Locale
-import moe.gbxin.saltreader.MainActivity
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 /**
  * In-app language selection.
  *
- * Android 13+ uses the platform per-app locale (`LocaleManager`), so the system also shows the
- * choice in Settings > Apps > Salt Reader > Language. On older versions we persist the tag and
- * wrap each Activity/Application base context with the chosen configuration; changing the language
- * restarts the task so every screen re-attaches with the new locale.
+ * The chosen language is applied live in Compose: [moe.gbxin.saltreader.ui.theme.SaltReaderTheme]
+ * provides a localized Context/Configuration/Resources, so switching language recomposes the UI
+ * instead of recreating the Activity (which used to flash the screen).
  */
 
 const val SETTINGS_PREFS = "saltreader_settings"
@@ -37,64 +33,33 @@ fun readStoredAppLanguage(context: Context): String = normalizeAppLanguage(
     context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE).getString(KEY_APP_LANGUAGE, LANGUAGE_SYSTEM),
 )
 
-/** The language the UI is actually using right now (system per-app locale on Android 13+). */
-fun currentAppLanguage(context: Context): String {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        val manager = context.getSystemService(LocaleManager::class.java) ?: return LANGUAGE_SYSTEM
-        return normalizePlatformTag(manager.applicationLocales.toLanguageTags().substringBefore(',').trim())
-    }
-    return readStoredAppLanguage(context)
-}
+/** Process-wide source of truth observed by the theme; no Activity recreation is involved. */
+object AppLanguageStore {
+    private val _language = MutableStateFlow(LANGUAGE_SYSTEM)
+    val language: StateFlow<String> = _language.asStateFlow()
 
-/** Persists the choice and applies it. On Android 12 and below this restarts the app task. */
-fun setAppLanguage(context: Context, tag: String) {
-    val normalized = normalizeAppLanguage(tag)
-    context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
-        .edit()
-        .putString(KEY_APP_LANGUAGE, normalized)
-        .apply()
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-        val manager = context.getSystemService(LocaleManager::class.java) ?: return
-        manager.applicationLocales = if (normalized == LANGUAGE_SYSTEM) {
-            LocaleList.getEmptyLocaleList()
-        } else {
-            LocaleList.forLanguageTags(normalized)
-        }
-    } else {
-        restartTask(context)
+    fun init(context: Context) {
+        _language.value = readStoredAppLanguage(context)
+    }
+
+    fun set(context: Context, tag: String) {
+        val normalized = normalizeAppLanguage(tag)
+        context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY_APP_LANGUAGE, normalized)
+            .apply()
+        _language.value = normalized
     }
 }
 
-/**
- * Base-context wrapper used on Android 12 and below. On Android 13+ the framework applies the
- * per-app locale itself, so no wrapping is needed there.
- */
-fun localizedContext(base: Context): Context {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) return base
-    val tag = readStoredAppLanguage(base)
+fun currentAppLanguage(context: Context): String = AppLanguageStore.language.value
+
+fun setAppLanguage(context: Context, tag: String) = AppLanguageStore.set(context, tag)
+
+/** Configuration context for the chosen language; [LANGUAGE_SYSTEM] keeps the system locale. */
+fun localizedContext(base: Context, tag: String): Context {
     if (tag == LANGUAGE_SYSTEM) return base
     val configuration = Configuration(base.resources.configuration)
     configuration.setLocale(Locale.forLanguageTag(tag))
     return base.createConfigurationContext(configuration)
-}
-
-/** Maps a platform locale tag (e.g. zh-Hans-CN, zh-Hant-TW) onto our four supported choices. */
-private fun normalizePlatformTag(tag: String?): String {
-    if (tag.isNullOrBlank()) return LANGUAGE_SYSTEM
-    return when {
-        tag.startsWith("zh", ignoreCase = true) &&
-            (tag.contains("TW", true) || tag.contains("HK", true) || tag.contains("Hant", true)) -> LANGUAGE_ZH_TW
-        tag.startsWith("zh", ignoreCase = true) -> LANGUAGE_ZH_CN
-        tag.startsWith("ja", ignoreCase = true) -> LANGUAGE_JA
-        tag.startsWith("en", ignoreCase = true) -> LANGUAGE_EN
-        else -> LANGUAGE_SYSTEM
-    }
-}
-
-private fun restartTask(context: Context) {
-    val intent = Intent(context, MainActivity::class.java).apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK)
-    }
-    context.startActivity(intent)
-    (context as? Activity)?.finishAffinity()
 }

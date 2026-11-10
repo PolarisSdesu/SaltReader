@@ -159,22 +159,10 @@ fun SearchScreen(onOpenBook: (ComicBook) -> Unit, onBack: () -> Unit) {
                         SaltLoading(sizeDp = 36)
                     }
                     state.query.isBlank() -> when {
-                        state.total == 0 -> SearchEmpty(
-                            icon = Icons.Filled.AutoStories,
-                            title = stringResource(R.string.search_empty_title),
-                            message = stringResource(R.string.search_empty_body),
-                        )
-                        else -> SearchEmpty(
-                            icon = Icons.Filled.Search,
-                            title = stringResource(R.string.search_hint_title),
-                            message = stringResource(R.string.search_hint_body, state.total),
-                        )
+                        state.total == 0 -> SearchEmpty(message = stringResource(R.string.search_empty_body))
+                        else -> SearchEmpty(message = stringResource(R.string.search_hint_body, state.total))
                     }
-                    state.books.isEmpty() -> SearchEmpty(
-                        icon = Icons.Filled.SearchOff,
-                        title = stringResource(R.string.search_no_results_title, state.query.trim()),
-                        message = stringResource(R.string.search_no_results_body),
-                    )
+                    state.books.isEmpty() -> SearchEmpty(message = stringResource(R.string.search_no_results_body))
                     else -> LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
@@ -188,7 +176,7 @@ fun SearchScreen(onOpenBook: (ComicBook) -> Unit, onBack: () -> Unit) {
                                 metaTextSizeSp = settings.libraryMetaTextSizeSp,
                                 metaFields = settings.libraryMetaFields,
                                 onClick = { onOpenBook(book) },
-                                modifier = Modifier.animateItem(),
+                                modifier = Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null),
                             )
                         }
                     }
@@ -348,28 +336,15 @@ private fun SearchResultCard(
 }
 
 @Composable
-private fun SearchEmpty(icon: ImageVector, title: String, message: String) {
+private fun SearchEmpty(message: String) {
     Column(
-        Modifier.fillMaxSize().padding(horizontal = 32.dp),
+        Modifier.fillMaxSize().padding(horizontal = 40.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Surface(shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainerHighest) {
-            Box(Modifier.size(88.dp), contentAlignment = Alignment.Center) {
-                Icon(
-                    icon,
-                    contentDescription = null,
-                    modifier = Modifier.size(40.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-        Spacer(Modifier.height(20.dp))
-        Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = TextAlign.Center)
-        Spacer(Modifier.height(8.dp))
         Text(
             message,
-            style = MaterialTheme.typography.bodyMedium,
+            style = MaterialTheme.typography.bodyLarge,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )

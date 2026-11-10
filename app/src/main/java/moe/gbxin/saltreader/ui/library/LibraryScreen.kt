@@ -316,7 +316,7 @@ fun LibraryScreen(
                                 metaFields = settings.libraryMetaFields,
                                 onClick = { onOpenBook(book) },
                                 onLongClick = { selectedBookId = book.id },
-                                modifier = Modifier.animateItem(),
+                                modifier = Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null),
                             )
                         }
                     }

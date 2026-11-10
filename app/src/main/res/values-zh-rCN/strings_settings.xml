@@ -71,7 +71,7 @@
     <plurals name="settings_storage_scan_indexed">
         <item quantity="other">已索引 %1$d 本</item>
     </plurals>
-    <string name="settings_storage_scan_no_comics">没有找到漫画</string>
+    <string name="settings_storage_scan_no_comics">没有找到新的书籍</string>
     <string name="settings_storage_scan_failed">扫描失败：%1$s</string>
     <string name="settings_unknown_error">未知错误</string>
     <string name="settings_storage_root_removed">已移除「%1$s」</string>
@@ -82,7 +82,7 @@
     <string name="settings_storage_section_folders">文件夹</string>
     <string name="settings_storage_add_folder">添加文件夹</string>
     <string name="settings_storage_no_folders">还没有添加文件夹</string>
-    <string name="settings_storage_remove_hint">只删除索引，不影响原文件。</string>
+    <string name="settings_storage_remove_hint">在此删除的索引目录不会在设备上删除。</string>
     <string name="settings_storage_section_cache">缓存</string>
     <string name="settings_storage_clear_cache">清理缓存</string>
     <string name="settings_storage_clearing">正在清理…</string>
@@ -118,14 +118,13 @@
     <string name="settings_about_cache_cleared">已清理缓存，释放 %1$s</string>
     <string name="settings_about_cache_empty">没有可清理的缓存</string>
     <string name="settings_about_cache_failed">清理失败：%1$s</string>
-    <string name="settings_about_copyright">© Salt Reader · 本地优先阅读</string>
     <string name="settings_about_section_maintenance">维护</string>
     <string name="settings_licenses_title">开源许可</string>
     <string name="settings_licenses_intro">Salt Reader 基于以下开源项目构建，感谢它们的维护者。</string>
     <string name="settings_licenses_runtime">运行时依赖</string>
     <string name="settings_licenses_test">构建与测试工具</string>
     <string name="settings_licenses_apache">许可证全文</string>
-    <string name="settings_licenses_apache_full">查看 Apache License 2.0 全文</string>
     <string name="settings_licenses_close">关闭</string>
     <string name="settings_appearance_display_language">显示语言</string>
+    <string name="settings_licenses_view_full">查看全文</string>
 </resources>

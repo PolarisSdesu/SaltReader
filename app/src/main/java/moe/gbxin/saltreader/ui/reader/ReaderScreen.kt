@@ -13,6 +13,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -57,6 +58,11 @@ import androidx.compose.material3.HorizontalFloatingToolbar
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.ui.unit.DpOffset
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SheetValue
 import androidx.compose.material3.Slider
@@ -340,6 +346,13 @@ private fun ReaderContent(
     // layer (a single GPU transform over the virtualized list), so all visible pages zoom together
     // without per-page cost. List scrolling pauses while zoomed and one-finger drags pan.
     var verticalZoomed by remember { mutableStateOf(false) }
+    // The fade-in exists only to hide the first decode flash when opening a book; pages loaded
+    // later while scrolling appear instantly (a white fade from a dark background hurts the eyes).
+    var allowPageFade by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        kotlinx.coroutines.delay(900)
+        allowPageFade = false
+    }
     var verticalScale by remember { mutableFloatStateOf(1f) }
     var verticalOffset by remember { mutableStateOf(Offset.Zero) }
     val liveVerticalZoomed = rememberUpdatedState(verticalZoomed)
@@ -562,6 +575,7 @@ private fun ReaderContent(
                         targetWidth = pageTarget,
                         colorFilter = pageFilter,
                         resetToken = zoomResetToken,
+                        animateAppear = allowPageFade,
                         onZoomChanged = { zoomed = it },
                     )
                 }
@@ -634,6 +648,7 @@ private fun ReaderContent(
                                     index = index,
                                     targetWidth = pageTarget,
                                     colorFilter = pageFilter,
+                                    animateAppear = allowPageFade,
                                 )
                             }
                         }
@@ -875,13 +890,14 @@ private fun PagedPage(
     targetWidth: Int,
     colorFilter: ColorFilter?,
     resetToken: Int,
+    animateAppear: Boolean,
     onZoomChanged: (Boolean) -> Unit,
 ) {
     val state = rememberPageState(vm, index, targetWidth)
     when (state) {
         PageState.Loading -> PagePlaceholder(index)
         PageState.Failed -> PageError(index)
-        is PageState.Ready -> ZoomablePage(state.image, index, colorFilter, resetToken, onZoomChanged)
+        is PageState.Ready -> ZoomablePage(state.image, index, colorFilter, resetToken, animateAppear, onZoomChanged)
     }
 }
 
@@ -891,17 +907,16 @@ private fun VerticalPage(
     index: Int,
     targetWidth: Int,
     colorFilter: ColorFilter?,
+    animateAppear: Boolean,
 ) {
     val state = rememberPageState(vm, index, targetWidth)
-    BoxWithConstraints(
-        Modifier.fillMaxWidth().animateContentSize(animationSpec = tween(durationMillis = 140)),
-    ) {
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
         when (state) {
             PageState.Loading -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.45f)) { PagePlaceholder(index) }
             PageState.Failed -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.2f)) { PageError(index) }
             is PageState.Ready -> {
                 val ratio = state.image.height.toFloat() / state.image.width.toFloat()
-                val appearAlpha = rememberPageAppearAlpha(index)
+                val appearAlpha = rememberPageAppearAlpha(index, animateAppear)
                 Image(
                     bitmap = state.image,
                     contentDescription = stringResource(R.string.reader_page_number, index + 1),
@@ -919,9 +934,9 @@ private fun VerticalPage(
 
 /** Fades a freshly decoded page in over ~150ms; cached pages appear with the same subtle fade. */
 @Composable
-private fun rememberPageAppearAlpha(index: Int): Float {
-    var visible by remember(index) { mutableStateOf(false) }
-    LaunchedEffect(index) { visible = true }
+private fun rememberPageAppearAlpha(index: Int, animate: Boolean): Float {
+    var visible by remember(index, animate) { mutableStateOf(!animate) }
+    LaunchedEffect(index, animate) { if (animate) visible = true }
     val alpha by animateFloatAsState(
         targetValue = if (visible) 1f else 0f,
         animationSpec = tween(durationMillis = 150),
@@ -971,12 +986,13 @@ private fun ZoomablePage(
     index: Int,
     colorFilter: ColorFilter?,
     resetToken: Int,
+    animateAppear: Boolean,
     onZoomChanged: (Boolean) -> Unit,
 ) {
     var scale by remember(index) { mutableFloatStateOf(1f) }
     var offset by remember(index) { mutableStateOf(Offset.Zero) }
     var containerSize by remember { mutableStateOf(IntSize.Zero) }
-    val appearAlpha = rememberPageAppearAlpha(index)
+    val appearAlpha = rememberPageAppearAlpha(index, animateAppear)
     // Reset the transform when the pager settles on another page (or the mode changes), so a
     // retained page can never come back zoomed and keep horizontal paging disabled.
     LaunchedEffect(resetToken) {
@@ -1059,7 +1075,6 @@ internal fun ReaderControlsSheet(
         initialValue = SheetValue.Hidden,
         enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
     )
-    var tab by rememberSaveable { mutableIntStateOf(0) }
     var pendingJump by remember { mutableStateOf<Int?>(null) }
     var lastTickPage by remember { mutableStateOf(currentPage) }
     val sliderMax = (count - 1).coerceAtLeast(1)
@@ -1067,11 +1082,6 @@ internal fun ReaderControlsSheet(
     val sliderState = rememberSliderState(
         value = currentPage.toFloat().coerceIn(0f, sliderMax.toFloat()),
         trackRange = 0f..sliderMax.toFloat(),
-    )
-    val tabIndicator by androidx.compose.animation.core.animateFloatAsState(
-        targetValue = tab.toFloat(),
-        animationSpec = spring(dampingRatio = 0.86f, stiffness = 380f),
-        label = "reader-tab-indicator",
     )
     LaunchedEffect(currentPage, pendingJump) {
         if (pendingJump == currentPage) {
@@ -1131,124 +1141,157 @@ internal fun ReaderControlsSheet(
             } else {
                 Spacer(Modifier.height(6.dp))
             }
-            ReaderTabRow(
-                labels = listOf(
-                    stringResource(R.string.reader_tab_mode),
-                    stringResource(R.string.reader_tab_general),
-                    stringResource(R.string.reader_tab_filters),
+            ReaderMenuRow(
+                title = stringResource(R.string.reader_section_mode),
+                selected = settings.readerMode,
+                options = listOf(
+                    ReaderMode.PAGED to stringResource(R.string.reader_mode_paged),
+                    ReaderMode.VERTICAL to stringResource(R.string.reader_mode_vertical),
                 ),
-                selectedTab = tab,
-                indicatorPosition = tabIndicator,
-                onSelect = { index -> tab = index },
+                onSelect = { mode -> onSettingsChange { it.copy(readerMode = mode) } },
             )
-            Spacer(Modifier.height(20.dp))
-            when (tab) {
-                0 -> {
-                    ChoiceGroup(
-                        title = stringResource(R.string.reader_section_mode),
-                        options = listOf(
-                            ReaderMode.PAGED to stringResource(R.string.reader_mode_paged),
-                            ReaderMode.VERTICAL to stringResource(R.string.reader_mode_vertical),
-                        ),
-                        selected = settings.readerMode,
-                        onSelect = { mode -> onSettingsChange { it.copy(readerMode = mode) } },
-                    )
-                    Spacer(Modifier.height(18.dp))
-                    ChoiceGroup(
-                        title = stringResource(R.string.reader_section_direction),
-                        options = listOf(
-                            ReadingDirection.LTR to stringResource(R.string.reader_direction_ltr),
-                            ReadingDirection.RTL to stringResource(R.string.reader_direction_rtl),
-                        ),
-                        selected = direction,
-                        onSelect = onDirection,
-                    )
-                }
-                1 -> {
-                    ChoiceGroup(
-                        title = stringResource(R.string.reader_section_background),
-                        options = listOf(
-                            ReaderBackground.AUTO to stringResource(R.string.reader_background_auto),
-                            ReaderBackground.WHITE to stringResource(R.string.reader_background_white),
-                            ReaderBackground.INK to stringResource(R.string.reader_background_ink),
-                            ReaderBackground.CUSTOM to stringResource(R.string.reader_background_custom),
-                        ),
-                        selected = settings.readerBackground,
-                        onSelect = { background ->
-                            if (background == ReaderBackground.CUSTOM) onCustomBackground()
-                            else onSettingsChange { it.copy(readerBackground = background) }
-                        },
-                    )
-                    Spacer(Modifier.height(12.dp))
-                    if (isTextBook) {
-                        // Font size only affects the reflowable text reader; committed on release so
-                        // re-layout happens once per adjustment.
-                        val fontMin = READER_FONT_SIZE_MIN_SP.toFloat()
-                        val fontMax = READER_FONT_SIZE_MAX_SP.toFloat()
-                        val fontSliderState = rememberSliderState(
-                            value = settings.readerFontSizeSp.toFloat().coerceIn(fontMin, fontMax),
-                            steps = (READER_FONT_SIZE_MAX_SP - READER_FONT_SIZE_MIN_SP - 1).coerceAtLeast(0),
-                            trackRange = fontMin..fontMax,
-                        )
-                        LaunchedEffect(settings.readerFontSizeSp) {
-                            if (!fontSliderState.isDragging) {
-                                fontSliderState.value =
-                                    settings.readerFontSizeSp.toFloat().coerceIn(fontMin, fontMax)
-                            }
-                        }
-                        Text(stringResource(R.string.reader_font_size), style = MaterialTheme.typography.titleSmall)
-                        Slider(
-                            state = fontSliderState,
-                            onValueChange = { value -> fontSliderState.value = value },
-                            onValueChangeFinished = {
-                                val sp = fontSliderState.value.roundToInt().coerceIn(
-                                    READER_FONT_SIZE_MIN_SP,
-                                    READER_FONT_SIZE_MAX_SP,
-                                )
-                                onSettingsChange { it.copy(readerFontSizeSp = sp) }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                        )
-                        Text(
-                            stringResource(
-                                R.string.reader_font_size_value,
-                                fontSliderState.value.roundToInt()
-                                    .coerceIn(READER_FONT_SIZE_MIN_SP, READER_FONT_SIZE_MAX_SP),
-                            ),
-                            style = MaterialTheme.typography.labelLarge,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        Spacer(Modifier.height(12.dp))
-                    }
-                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    ToggleRow(stringResource(R.string.reader_show_page_number), settings.showPageNumber) {
-                        onSettingsChange { it.copy(showPageNumber = it.showPageNumber.not()) }
-                    }
-                    ToggleRow(stringResource(R.string.reader_keep_screen_on), settings.keepScreenOn) {
-                        onSettingsChange { it.copy(keepScreenOn = it.keepScreenOn.not()) }
-                    }
-                    ToggleRow(stringResource(R.string.reader_volume_keys), settings.volumeKeyPaging) {
-                        onSettingsChange { it.copy(volumeKeyPaging = it.volumeKeyPaging.not()) }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            ReaderMenuRow(
+                title = stringResource(R.string.reader_section_direction),
+                selected = direction,
+                options = listOf(
+                    ReadingDirection.LTR to stringResource(R.string.reader_direction_ltr),
+                    ReadingDirection.RTL to stringResource(R.string.reader_direction_rtl),
+                ),
+                onSelect = onDirection,
+            )
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            ReaderMenuRow(
+                title = stringResource(R.string.reader_section_background),
+                selected = settings.readerBackground,
+                options = listOf(
+                    ReaderBackground.AUTO to stringResource(R.string.reader_background_auto),
+                    ReaderBackground.WHITE to stringResource(R.string.reader_background_white),
+                    ReaderBackground.INK to stringResource(R.string.reader_background_ink),
+                    ReaderBackground.CUSTOM to stringResource(R.string.reader_background_custom),
+                ),
+                onSelect = { background ->
+                    if (background == ReaderBackground.CUSTOM) onCustomBackground()
+                    else onSettingsChange { it.copy(readerBackground = background) }
+                },
+            )
+            if (isTextBook) {
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                // Font size only affects the reflowable text reader; committed on release so
+                // re-layout happens once per adjustment.
+                val fontMin = READER_FONT_SIZE_MIN_SP.toFloat()
+                val fontMax = READER_FONT_SIZE_MAX_SP.toFloat()
+                val fontSliderState = rememberSliderState(
+                    value = settings.readerFontSizeSp.toFloat().coerceIn(fontMin, fontMax),
+                    steps = (READER_FONT_SIZE_MAX_SP - READER_FONT_SIZE_MIN_SP - 1).coerceAtLeast(0),
+                    trackRange = fontMin..fontMax,
+                )
+                LaunchedEffect(settings.readerFontSizeSp) {
+                    if (!fontSliderState.isDragging) {
+                        fontSliderState.value =
+                            settings.readerFontSizeSp.toFloat().coerceIn(fontMin, fontMax)
                     }
                 }
-                else -> {
-                    if (isTextBook) {
-                        // The text reader colours its content from the theme / reader background;
-                        // an image-style colour filter would invert the background too.
-                        Text(
-                            stringResource(R.string.reader_text_filters_note),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Spacer(Modifier.height(10.dp))
+                Text(stringResource(R.string.reader_font_size), style = MaterialTheme.typography.titleSmall)
+                Slider(
+                    state = fontSliderState,
+                    onValueChange = { value -> fontSliderState.value = value },
+                    onValueChangeFinished = {
+                        val sp = fontSliderState.value.roundToInt().coerceIn(
+                            READER_FONT_SIZE_MIN_SP,
+                            READER_FONT_SIZE_MAX_SP,
                         )
+                        onSettingsChange { it.copy(readerFontSizeSp = sp) }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                Text(
+                    stringResource(
+                        R.string.reader_font_size_value,
+                        fontSliderState.value.roundToInt()
+                            .coerceIn(READER_FONT_SIZE_MIN_SP, READER_FONT_SIZE_MAX_SP),
+                    ),
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            ToggleRow(stringResource(R.string.reader_show_page_number), settings.showPageNumber) {
+                onSettingsChange { it.copy(showPageNumber = it.showPageNumber.not()) }
+            }
+            ToggleRow(stringResource(R.string.reader_keep_screen_on), settings.keepScreenOn) {
+                onSettingsChange { it.copy(keepScreenOn = it.keepScreenOn.not()) }
+            }
+            ToggleRow(stringResource(R.string.reader_volume_keys), settings.volumeKeyPaging) {
+                onSettingsChange { it.copy(volumeKeyPaging = it.volumeKeyPaging.not()) }
+            }
+            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            if (isTextBook) {
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    stringResource(R.string.reader_text_filters_note),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else {
+                ToggleRow(stringResource(R.string.reader_grayscale), settings.grayscale) {
+                    onSettingsChange { it.copy(grayscale = it.grayscale.not()) }
+                }
+                ToggleRow(stringResource(R.string.reader_invert_colors), settings.invertColors) {
+                    onSettingsChange { it.copy(invertColors = it.invertColors.not()) }
+                }
+            }
+        }
+    }
+}
+
+/** Menu-style option row used by the reader settings sheet (theme/language style dropdown). */
+@Composable
+private fun <T> ReaderMenuRow(
+    title: String,
+    selected: T,
+    options: List<Pair<T, String>>,
+    onSelect: (T) -> Unit,
+) {
+    var expanded by remember { mutableStateOf(false) }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().clickable { expanded = true }.padding(vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+            Text(
+                options.firstOrNull { it.first == selected }?.second.orEmpty(),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Icon(
+                Icons.Filled.ArrowDropDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        val menuWidth = 220.dp
+        DropdownMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+            offset = DpOffset(x = (maxWidth - menuWidth).coerceAtLeast(0.dp), y = 0.dp),
+            modifier = Modifier.width(menuWidth),
+        ) {
+            options.forEach { (value, label) ->
+                DropdownMenuItem(
+                    text = { Text(label) },
+                    leadingIcon = if (value == selected) {
+                        { Icon(Icons.Filled.Check, contentDescription = null) }
                     } else {
-                        ToggleRow(stringResource(R.string.reader_grayscale), settings.grayscale) {
-                            onSettingsChange { it.copy(grayscale = it.grayscale.not()) }
-                        }
-                        ToggleRow(stringResource(R.string.reader_invert_colors), settings.invertColors) {
-                            onSettingsChange { it.copy(invertColors = it.invertColors.not()) }
-                        }
-                    }
-                }
+                        null
+                    },
+                    onClick = {
+                        expanded = false
+                        onSelect(value)
+                    },
+                )
             }
         }
     }

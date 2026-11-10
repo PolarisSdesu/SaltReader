@@ -75,7 +75,7 @@
         <item quantity="one">%1$d book indexed</item>
         <item quantity="other">%1$d books indexed</item>
     </plurals>
-    <string name="settings_storage_scan_no_comics">No comics found</string>
+    <string name="settings_storage_scan_no_comics">No new books found</string>
     <string name="settings_storage_scan_failed">Scan failed: %1$s</string>
     <string name="settings_unknown_error">Unknown error</string>
     <string name="settings_storage_root_removed">Removed “%1$s”</string>
@@ -86,7 +86,7 @@
     <string name="settings_storage_section_folders">Folders</string>
     <string name="settings_storage_add_folder">Add folder</string>
     <string name="settings_storage_no_folders">No folders added yet</string>
-    <string name="settings_storage_remove_hint">Removes the index only; original files are untouched.</string>
+    <string name="settings_storage_remove_hint">Folders removed here are only removed from the index, not from your device.</string>
     <string name="settings_storage_section_cache">Cache</string>
     <string name="settings_storage_clear_cache">Clear cache</string>
     <string name="settings_storage_clearing">Clearing…</string>
@@ -122,14 +122,13 @@
     <string name="settings_about_cache_cleared">Cache cleared, freed %1$s</string>
     <string name="settings_about_cache_empty">No cache to clear</string>
     <string name="settings_about_cache_failed">Clear failed: %1$s</string>
-    <string name="settings_about_copyright">© Salt Reader · Local-first reading</string>
     <string name="settings_about_section_maintenance">Maintenance</string>
     <string name="settings_licenses_title">Open-source licenses</string>
     <string name="settings_licenses_intro">Salt Reader is built on the following open-source projects. Thanks to their maintainers.</string>
     <string name="settings_licenses_runtime">Runtime dependencies</string>
     <string name="settings_licenses_test">Build &amp; test tooling</string>
     <string name="settings_licenses_apache">License texts</string>
-    <string name="settings_licenses_apache_full">View full Apache License 2.0</string>
     <string name="settings_licenses_close">Close</string>
     <string name="settings_appearance_display_language">Display language</string>
+    <string name="settings_licenses_view_full">View full text</string>
 </resources>

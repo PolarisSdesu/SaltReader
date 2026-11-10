@@ -9,7 +9,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.animation.Crossfade
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.material3.FilterChip
@@ -77,6 +77,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -123,7 +124,7 @@ import moe.gbxin.saltreader.util.LANGUAGE_SYSTEM
 import moe.gbxin.saltreader.util.LANGUAGE_ZH_CN
 import moe.gbxin.saltreader.util.LANGUAGE_ZH_TW
 import moe.gbxin.saltreader.util.SUPPORTED_APP_LANGUAGES
-import moe.gbxin.saltreader.util.currentAppLanguage
+import moe.gbxin.saltreader.util.AppLanguageStore
 import moe.gbxin.saltreader.util.formatBytes
 import moe.gbxin.saltreader.util.setAppLanguage
 
@@ -267,9 +268,8 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
             SettingsSectionLabel(stringResource(R.string.settings_appearance_section_language))
             SettingsCard {
                 val context = LocalContext.current
-                // Recomputed on every composition so a locale configuration change updates the
-                // summary without recreating the activity.
-                val language = currentAppLanguage(context)
+                // Observed so an in-app language change updates the summary without recreation.
+                val language by AppLanguageStore.language.collectAsState()
                 var menuOpen by remember { mutableStateOf(false) }
                 BoxWithConstraints(Modifier.fillMaxWidth()) {
                     Row(
@@ -624,36 +624,43 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
             item { SettingsSectionLabel(stringResource(R.string.settings_storage_section_library)) }
             item {
                 SettingsCard {
-                    Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    // Height changes are animated, so scan progress/messages no longer shift the
+                    // content below the card abruptly.
+                    Column(
+                        Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                            .animateContentSize(animationSpec = tween(durationMillis = 180)),
+                    ) {
                         Text(
                             pluralStringResource(
-                                        R.plurals.settings_storage_indexed_books,
-                                        books.size,
-                                        books.size,
-                                    ),
-                                    style = MaterialTheme.typography.titleMedium,
-                                )
-                                Spacer(Modifier.height(2.dp))
-                                // Reflowable text books only carry an estimated pageCount, so they
-                                // are counted as books instead of inflating the page total.
-                                val reflowableCount = books.count { it.reflowable }
-                                val indexedPageCount = books.filter { !it.reflowable }.sumOf { it.pageCount }
-                                val stats = mutableListOf<String>()
-                                if (reflowableCount > 0) {
-                                    stats += pluralStringResource(
-                                        R.plurals.settings_storage_reflowable_books,
-                                        reflowableCount,
-                                        reflowableCount,
-                                    )
-                                }
-                                if (indexedPageCount > 0) {
-                                    stats += pluralStringResource(
-                                        R.plurals.settings_storage_indexed_pages,
-                                        indexedPageCount,
-                                        indexedPageCount,
-                                    )
-                                }
-                                stats += formatBytes(appDataBytes)
+                                R.plurals.settings_storage_indexed_books,
+                                books.size,
+                                books.size,
+                            ),
+                            style = MaterialTheme.typography.titleMedium,
+                        )
+                        Spacer(Modifier.height(2.dp))
+                        // Reflowable text books only carry an estimated pageCount, so they are
+                        // counted as books instead of inflating the page total.
+                        val reflowableCount = books.count { it.reflowable }
+                        val indexedPageCount = books.filter { !it.reflowable }.sumOf { it.pageCount }
+                        val stats = mutableListOf<String>()
+                        if (reflowableCount > 0) {
+                            stats += pluralStringResource(
+                                R.plurals.settings_storage_reflowable_books,
+                                reflowableCount,
+                                reflowableCount,
+                            )
+                        }
+                        if (indexedPageCount > 0) {
+                            stats += pluralStringResource(
+                                R.plurals.settings_storage_indexed_pages,
+                                indexedPageCount,
+                                indexedPageCount,
+                            )
+                        }
+                        stats += formatBytes(appDataBytes)
                         Text(
                             stats.joinToString(" · "),
                             style = MaterialTheme.typography.bodyMedium,
@@ -663,62 +670,43 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                         FilledTonalButton(
                             modifier = Modifier.align(Alignment.End),
                             enabled = !scanning && roots.isNotEmpty(),
-                                onClick = { launchScan { p -> app.library.refreshLibrary(p) } },
-                            ) {
-                                Text(
-                                    if (scanning) {
-                                        stringResource(R.string.settings_storage_refreshing)
-                                    } else {
-                                        stringResource(R.string.settings_storage_refresh_index)
-                                    },
-                                )
-                            }
-                        // Fixed-height status slot: scanning progress and the result message share the
-                        // same space, so the card never jumps when a refresh starts or finishes.
-                        Spacer(Modifier.height(10.dp))
-                        val status = when {
-                            scanning -> StorageScanStatus.PROGRESS
-                            scanMessage != null -> StorageScanStatus.MESSAGE
-                            else -> StorageScanStatus.IDLE
-                        }
-                        Box(
-                            Modifier.fillMaxWidth().height(52.dp),
-                            contentAlignment = Alignment.CenterStart,
+                            onClick = { launchScan { p -> app.library.refreshLibrary(p) } },
                         ) {
-                            Crossfade(
-                                targetState = status,
-                                animationSpec = tween(durationMillis = 160),
-                                label = "storage-scan-status",
-                            ) { value ->
-                                when (value) {
-                                    StorageScanStatus.PROGRESS -> Column(Modifier.fillMaxWidth()) {
-                                        LinearWavyProgressIndicator(
-                                            progress = { scanProgress },
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
-                                        Spacer(Modifier.height(6.dp))
-                                        Text(
-                                            scanLabel,
-                                            style = MaterialTheme.typography.bodySmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                        )
-                                    }
-                                    StorageScanStatus.MESSAGE -> Text(
-                                        scanMessage.orEmpty(),
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        color = if (scanMessageIsError) {
-                                            MaterialTheme.colorScheme.error
-                                        } else {
-                                            MaterialTheme.colorScheme.primary
-                                        },
-                                        maxLines = 2,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                    StorageScanStatus.IDLE -> Spacer(Modifier.fillMaxSize())
-                                }
-                            }
+                            Text(
+                                if (scanning) {
+                                    stringResource(R.string.settings_storage_refreshing)
+                                } else {
+                                    stringResource(R.string.settings_storage_refresh_index)
+                                },
+                            )
+                        }
+                        if (scanning) {
+                            Spacer(Modifier.height(12.dp))
+                            LinearWavyProgressIndicator(
+                                progress = { scanProgress },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                scanLabel,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        } else if (scanMessage != null) {
+                            Spacer(Modifier.height(10.dp))
+                            Text(
+                                scanMessage.orEmpty(),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (scanMessageIsError) {
+                                    MaterialTheme.colorScheme.error
+                                } else {
+                                    MaterialTheme.colorScheme.primary
+                                },
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
                         }
                     }
                 }
@@ -869,7 +857,8 @@ private fun LicensesSettingsPage(onBack: () -> Unit) {
                 SettingsCard {
                     SettingsActionRow(
                         icon = Icons.Outlined.Info,
-                        title = stringResource(R.string.settings_licenses_apache_full),
+                        title = "Apache License 2.0",
+                        supporting = stringResource(R.string.settings_licenses_view_full),
                         enabled = true,
                     ) { showApache = true }
                 }
@@ -1035,20 +1024,10 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                     enabled = true,
                 ) { context.startActivity(Intent(context, LicensesSettingsActivity::class.java)) }
             }
-            Spacer(Modifier.height(24.dp))
-            Text(
-                stringResource(R.string.settings_about_copyright),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.fillMaxWidth(),
-            )
         }
     }
 
 }
-
-private enum class StorageScanStatus { IDLE, PROGRESS, MESSAGE }
 
 @Composable
 private fun SettingsSectionLabel(text: String) {

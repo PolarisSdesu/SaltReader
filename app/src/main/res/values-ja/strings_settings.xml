@@ -71,7 +71,7 @@
     <plurals name="settings_storage_scan_indexed">
         <item quantity="other">%1$d 冊をインデックスしました</item>
     </plurals>
-    <string name="settings_storage_scan_no_comics">漫画が見つかりません</string>
+    <string name="settings_storage_scan_no_comics">新しい本が見つかりません</string>
     <string name="settings_storage_scan_failed">スキャンに失敗しました：%1$s</string>
     <string name="settings_unknown_error">不明なエラー</string>
     <string name="settings_storage_root_removed">「%1$s」を削除しました</string>
@@ -82,7 +82,7 @@
     <string name="settings_storage_section_folders">フォルダ</string>
     <string name="settings_storage_add_folder">フォルダを追加</string>
     <string name="settings_storage_no_folders">フォルダがまだ追加されていません</string>
-    <string name="settings_storage_remove_hint">インデックスのみ削除され、元のファイルは影響を受けません。</string>
+    <string name="settings_storage_remove_hint">ここで削除した索引フォルダは端末から削除されません。</string>
     <string name="settings_storage_section_cache">キャッシュ</string>
     <string name="settings_storage_clear_cache">キャッシュを削除</string>
     <string name="settings_storage_clearing">削除中…</string>
@@ -118,14 +118,13 @@
     <string name="settings_about_cache_cleared">キャッシュを削除しました（%1$s 解放）</string>
     <string name="settings_about_cache_empty">削除できるキャッシュはありません</string>
     <string name="settings_about_cache_failed">削除に失敗しました：%1$s</string>
-    <string name="settings_about_copyright">© Salt Reader · ローカル優先の読書</string>
     <string name="settings_about_section_maintenance">メンテナンス</string>
     <string name="settings_licenses_title">オープンソースライセンス</string>
     <string name="settings_licenses_intro">Salt Reader は以下のオープンソースプロジェクトで構築されています。メンテナーの皆様に感謝します。</string>
     <string name="settings_licenses_runtime">実行時依存関係</string>
     <string name="settings_licenses_test">ビルド／テストツール</string>
     <string name="settings_licenses_apache">ライセンス全文</string>
-    <string name="settings_licenses_apache_full">Apache License 2.0 の全文を表示</string>
     <string name="settings_licenses_close">閉じる</string>
     <string name="settings_appearance_display_language">表示言語</string>
+    <string name="settings_licenses_view_full">全文を表示</string>
 </resources>
