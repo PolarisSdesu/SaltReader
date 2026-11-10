@@ -104,4 +104,28 @@
 
     <!-- 封面无障碍描述 -->
     <string name="settings_cover_content_description">《%1$s》封面</string>
+    <string name="settings_appearance_section_language">语言</string>
+    <string name="settings_language_system">跟随系统</string>
+    <string name="settings_language_zh_cn">简体中文</string>
+    <string name="settings_language_zh_tw">繁體中文</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_language_ja">日本語</string>
+    <string name="settings_about_tagline">本地优先的漫画与电子书阅读器。</string>
+    <string name="settings_about_build">构建</string>
+    <string name="settings_about_legal">法律与许可</string>
+    <string name="settings_about_licenses">开源许可</string>
+    <string name="settings_about_licenses_body">Salt Reader 使用 Jetpack Compose、Material 3、Kotlin 与 AndroidX（Apache-2.0）构建；MOBI/AZW3 解析基于 mobi-api4java（Apache-2.0）。书籍通过系统 WebView 与 PdfRenderer 本地渲染，应用不申请网络权限。</string>
+    <string name="settings_about_privacy">隐私</string>
+    <string name="settings_about_privacy_body">Salt Reader 坚持本地优先：无账号、无统计、无网络权限。书库只引用你在系统文件选择器中授权的目录，应用不会复制或上传你的书籍；封面与临时文本缓存保存在应用私有目录，可随时清理。</string>
+    <string name="settings_about_maintenance">维护</string>
+    <string name="settings_about_clear_cache">清理缓存</string>
+    <string name="settings_about_cache_usage">当前占用 %1$s</string>
+    <string name="settings_about_clearing">正在清理…</string>
+    <string name="settings_about_cache_cleared">已清理缓存，释放 %1$s</string>
+    <string name="settings_about_cache_empty">没有可清理的缓存</string>
+    <string name="settings_about_cache_failed">清理失败：%1$s</string>
+    <string name="settings_about_copyright">© Salt Reader · 本地优先阅读</string>
+    <string name="settings_about_close">关闭</string>
+    <string name="settings_about_section_legal">法律与许可</string>
+    <string name="settings_about_section_maintenance">维护</string>
 </resources>

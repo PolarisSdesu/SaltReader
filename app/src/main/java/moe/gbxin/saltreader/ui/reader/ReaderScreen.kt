@@ -80,6 +80,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -332,6 +333,11 @@ private fun ReaderContent(
     // Zoom is transient: it is reset whenever the pager settles on a different page.
     var zoomed by remember { mutableStateOf(false) }
     var zoomResetToken by remember { mutableIntStateOf(0) }
+    // Vertical (continuous) mode pinch-to-zoom: zoom applies to the page under the fingers and the
+    // list scroll is paused while zoomed so single-finger drags can pan the image.
+    var verticalZoomed by remember { mutableStateOf(false) }
+    var verticalZoomResetToken by remember { mutableIntStateOf(0) }
+    val liveVerticalZoomed = rememberUpdatedState(verticalZoomed)
 
     val readerBackground = pageBackgroundColor(
         settings.readerBackground,
@@ -470,7 +476,11 @@ private fun ReaderContent(
     }
 
     LaunchedEffect(volumePageEvents) {
-        volumePageEvents?.collect { delta -> step(delta) }
+        volumePageEvents?.collect { delta ->
+            verticalZoomResetToken += 1
+            verticalZoomed = false
+            step(delta)
+        }
     }
 
     Box(
@@ -486,16 +496,18 @@ private fun ReaderContent(
         Box(
             Modifier
                 .fillMaxSize()
-                .pointerInput(settings.readerMode, direction) {
+                .pointerInput(settings.readerMode, direction, verticalZoomed) {
                     detectTapGestures { offset ->
                         // A zoomed page consumes drags; taps must not turn the page underneath it.
                         if (liveZoomed.value) return@detectTapGestures
                         val third = size.width / 3f
                         when {
-                            // Product decision: in vertical scrolling the side thirds are inert.
-                            // Only the middle third toggles the chrome; scrolling stays vertical.
+                            // Vertical scrolling: a tap while the page is zoomed resets the zoom;
+                            // the side thirds are otherwise inert and only the middle toggles chrome.
                             settings.readerMode == ReaderMode.VERTICAL -> {
-                                if (offset.x >= third && offset.x <= size.width - third) {
+                                if (liveVerticalZoomed.value) {
+                                    verticalZoomResetToken += 1
+                                } else if (offset.x >= third && offset.x <= size.width - third) {
                                     chromeVisible = !chromeVisible
                                 }
                             }
@@ -549,9 +561,18 @@ private fun ReaderContent(
                 LazyColumn(
                     state = listState,
                     modifier = Modifier.fillMaxSize(),
+                    // Pause list scrolling while a page is zoomed so one-finger drags pan the image.
+                    userScrollEnabled = !verticalZoomed,
                 ) {
                     items(count) { index ->
-                        VerticalPage(vm = vm, index = index, targetWidth = pageTarget, colorFilter = pageFilter)
+                        VerticalPage(
+                            vm = vm,
+                            index = index,
+                            targetWidth = pageTarget,
+                            colorFilter = pageFilter,
+                            resetToken = verticalZoomResetToken,
+                            onZoomChanged = { verticalZoomed = it },
+                        )
                     }
                 }
             }
@@ -806,22 +827,100 @@ private fun VerticalPage(
     index: Int,
     targetWidth: Int,
     colorFilter: ColorFilter?,
+    resetToken: Int,
+    onZoomChanged: (Boolean) -> Unit,
 ) {
     val state = rememberPageState(vm, index, targetWidth)
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         when (state) {
             PageState.Loading -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.45f)) { PagePlaceholder(index) }
             PageState.Failed -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.2f)) { PageError(index) }
-            is PageState.Ready -> {
-                val ratio = state.image.height.toFloat() / state.image.width.toFloat()
-                Image(
-                    bitmap = state.image,
-                    contentDescription = stringResource(R.string.reader_page_number, index + 1),
-                    modifier = Modifier.fillMaxWidth().height(maxWidth * ratio),
-                    contentScale = ContentScale.FillWidth,
-                    colorFilter = colorFilter,
-                )
-            }
+            is PageState.Ready -> ZoomableVerticalPage(
+                image = state.image,
+                index = index,
+                colorFilter = colorFilter,
+                resetToken = resetToken,
+                onZoomChanged = onZoomChanged,
+            )
+        }
+    }
+}
+
+/**
+ * Continuous-mode page with two-finger pinch zoom and one-finger panning while zoomed.
+ * The list scroll is paused by the caller, so drags reach this surface; a tap on the reading
+ * area (handled by the parent) resets the zoom.
+ */
+@Composable
+private fun ZoomableVerticalPage(
+    image: ImageBitmap,
+    index: Int,
+    colorFilter: ColorFilter?,
+    resetToken: Int,
+    onZoomChanged: (Boolean) -> Unit,
+) {
+    var scale by remember(index) { mutableFloatStateOf(1f) }
+    var offset by remember(index) { mutableStateOf(Offset.Zero) }
+    var containerSize by remember { mutableStateOf(IntSize.Zero) }
+    LaunchedEffect(resetToken) {
+        if (resetToken != 0) {
+            scale = 1f
+            offset = Offset.Zero
+            onZoomChanged(false)
+        }
+    }
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val ratio = image.height.toFloat() / image.width.toFloat()
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(maxWidth * ratio)
+                .clipToBounds()
+                .onSizeChanged { containerSize = it }
+                .pointerInput(index) {
+                    awaitEachGesture {
+                        awaitFirstDown(requireUnconsumed = false)
+                        var event = awaitPointerEvent()
+                        while (event.changes.any { it.pressed }) {
+                            val pointerCount = event.changes.count { it.pressed }
+                            if (pointerCount > 1 || scale > 1.01f) {
+                                val zoomChange = event.calculateZoom()
+                                val panChange = event.calculatePan()
+                                val nextScale = (scale * zoomChange).coerceIn(1f, 4f)
+                                if (nextScale <= 1.01f) {
+                                    scale = 1f
+                                    offset = Offset.Zero
+                                    onZoomChanged(false)
+                                } else {
+                                    scale = nextScale
+                                    val maxX = containerSize.width * (nextScale - 1f) / 2f
+                                    val maxY = containerSize.height * (nextScale - 1f) / 2f
+                                    offset = Offset(
+                                        (offset.x + panChange.x).coerceIn(-maxX, maxX),
+                                        (offset.y + panChange.y).coerceIn(-maxY, maxY),
+                                    )
+                                    onZoomChanged(true)
+                                }
+                                event.changes.forEach { it.consume() }
+                            }
+                            event = awaitPointerEvent()
+                        }
+                    }
+                },
+            contentAlignment = Alignment.Center,
+        ) {
+            Image(
+                bitmap = image,
+                contentDescription = stringResource(R.string.reader_page_number, index + 1),
+                modifier = Modifier.fillMaxSize().graphicsLayer(
+                    scaleX = scale,
+                    scaleY = scale,
+                    translationX = offset.x,
+                    translationY = offset.y,
+                ),
+                contentScale = ContentScale.FillWidth,
+                colorFilter = colorFilter,
+            )
         }
     }
 }

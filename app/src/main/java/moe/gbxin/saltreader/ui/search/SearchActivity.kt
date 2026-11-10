@@ -2,16 +2,16 @@ package moe.gbxin.saltreader.ui.search
 
 import android.content.Intent
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import moe.gbxin.saltreader.SaltReaderApplication
+import moe.gbxin.saltreader.ui.LocalizedActivity
 import moe.gbxin.saltreader.ui.reader.ReaderActivity
 import moe.gbxin.saltreader.ui.theme.SaltReaderTheme
 
-class SearchActivity : ComponentActivity() {
+class SearchActivity : LocalizedActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()

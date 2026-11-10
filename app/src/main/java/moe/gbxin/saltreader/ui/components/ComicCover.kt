@@ -18,6 +18,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -92,8 +93,11 @@ fun ComicCover(
 ) {
     val bitmap = rememberCoverBitmap(coverFile)
     val shape = RoundedCornerShape(radius.dp)
-    val accent = book.accent?.let { Color(it) } ?: MaterialTheme.colorScheme.primary
-    Box(modifier.clip(shape).background(Color(0xFF2A2723))) {
+    val accent = book.accent?.let { Color(it) } ?: MaterialTheme.colorScheme.primaryContainer
+    // Contrast-aware fallback foreground: dynamic color primaries can be light in dark themes.
+    val onAccent = if (accent.luminance() > 0.5f) Color(0xFF1A1C1E) else Color(0xFFF7EEDF)
+    val backdrop = MaterialTheme.colorScheme.surfaceContainerHighest
+    Box(modifier.clip(shape).background(backdrop)) {
         if (bitmap != null) {
             Image(
                 bitmap = bitmap,
@@ -105,7 +109,7 @@ fun ComicCover(
             Box(
                 Modifier.fillMaxSize().background(
                     Brush.linearGradient(
-                        listOf(accent, accent.copy(alpha = 0.55f), Color(0xFF1E1B18)),
+                        listOf(accent, accent.copy(alpha = 0.85f), backdrop),
                     )
                 ),
                 contentAlignment = Alignment.Center,
@@ -113,7 +117,7 @@ fun ComicCover(
                 if (showTitleFallback) {
                     Text(
                         text = book.title.take(1),
-                        color = Color(0xFFF7EEDF),
+                        color = onAccent,
                         fontFamily = FontFamily.SansSerif,
                         fontWeight = FontWeight.Bold,
                         fontSize = 56.sp,

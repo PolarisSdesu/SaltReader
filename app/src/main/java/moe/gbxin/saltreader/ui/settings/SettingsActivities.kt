@@ -1,9 +1,10 @@
 package moe.gbxin.saltreader.ui.settings
 
+import android.widget.ImageView
+
 import android.content.Intent
 import android.os.Build
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -39,18 +41,22 @@ import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.FilterBAndW
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.outlined.Lock
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Numbers
 import androidx.compose.material.icons.outlined.Palette
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LargeFlexibleTopAppBar
 import androidx.compose.material3.LinearWavyProgressIndicator
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
@@ -58,6 +64,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
@@ -81,6 +88,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -97,11 +105,20 @@ import moe.gbxin.saltreader.data.ReaderBackground
 import moe.gbxin.saltreader.data.ReaderMode
 import moe.gbxin.saltreader.data.ReadingDirection
 import moe.gbxin.saltreader.data.ThemeMode
+import moe.gbxin.saltreader.ui.LocalizedActivity
 import moe.gbxin.saltreader.ui.components.CustomColorPickerDialog
 import moe.gbxin.saltreader.ui.theme.SaltReaderTheme
+import moe.gbxin.saltreader.util.LANGUAGE_EN
+import moe.gbxin.saltreader.util.LANGUAGE_JA
+import moe.gbxin.saltreader.util.LANGUAGE_SYSTEM
+import moe.gbxin.saltreader.util.LANGUAGE_ZH_CN
+import moe.gbxin.saltreader.util.LANGUAGE_ZH_TW
+import moe.gbxin.saltreader.util.SUPPORTED_APP_LANGUAGES
+import moe.gbxin.saltreader.util.currentAppLanguage
 import moe.gbxin.saltreader.util.formatBytes
+import moe.gbxin.saltreader.util.setAppLanguage
 
-abstract class BaseSettingsActivity : ComponentActivity() {
+abstract class BaseSettingsActivity : LocalizedActivity() {
     @Composable
     protected abstract fun Content(onBack: () -> Unit)
 
@@ -258,6 +275,37 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
                     supporting = stringResource(R.string.settings_appearance_amoled_supporting),
                     checked = settings.amoledBlack,
                 ) { app.settings.update { it.copy(amoledBlack = it.amoledBlack.not()) } }
+            }
+            SettingsSectionLabel(stringResource(R.string.settings_appearance_section_language))
+            SettingsCard {
+                val context = LocalContext.current
+                var language by remember { mutableStateOf(currentAppLanguage(context)) }
+                Column(Modifier.fillMaxWidth().selectableGroup()) {
+                    SUPPORTED_APP_LANGUAGES.forEach { tag ->
+                        val selected = tag == language
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .selectable(
+                                    selected = selected,
+                                    role = Role.RadioButton,
+                                    onClick = {
+                                        language = tag
+                                        setAppLanguage(context, tag)
+                                    },
+                                )
+                                .padding(horizontal = 16.dp, vertical = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = selected, onClick = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                stringResource(languageLabelRes(tag)),
+                                style = MaterialTheme.typography.bodyLarge,
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -574,23 +622,22 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                         title = stringResource(R.string.settings_storage_add_folder),
                         enabled = !scanning,
                     ) { folderLauncher.launch(null) }
-                }
-            }
-            if (roots.isEmpty()) {
-                item {
-                    SettingsCard {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    if (roots.isEmpty()) {
                         Text(
                             stringResource(R.string.settings_storage_no_folders),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
+                            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 18.dp),
                         )
-                    }
-                }
-            } else {
-                item {
-                    SettingsCard {
-                        roots.forEach { root ->
+                    } else {
+                        roots.forEachIndexed { index, root ->
+                            if (index > 0) {
+                                HorizontalDivider(
+                                    color = MaterialTheme.colorScheme.outlineVariant,
+                                    modifier = Modifier.padding(start = 72.dp),
+                                )
+                            }
                             SettingsFolderRow(
                                 displayName = root.displayName,
                                 treeUri = root.treeUri,
@@ -600,6 +647,8 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                         }
                     }
                 }
+            }
+            if (roots.isNotEmpty()) {
                 item {
                     Text(
                         stringResource(R.string.settings_storage_remove_hint),
@@ -630,17 +679,157 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
 
 @Composable
 private fun AboutSettingsPage(onBack: () -> Unit) {
-    SettingsScaffold(stringResource(R.string.settings_about_title), onBack) { innerPadding ->
+    val context = LocalContext.current
+    val app = context.applicationContext as SaltReaderApplication
+    val scope = rememberCoroutineScope()
+    val snackbar = remember { SnackbarHostState() }
+    var showLicenses by remember { mutableStateOf(false) }
+    var showPrivacy by remember { mutableStateOf(false) }
+    var cacheBytes by remember { mutableStateOf(0L) }
+    var clearing by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        cacheBytes = withContext(Dispatchers.IO) { app.library.appDataBytes() }
+    }
+
+    fun clearCache() {
+        if (clearing) return
+        scope.launch {
+            clearing = true
+            try {
+                val freed = withContext(Dispatchers.IO) { app.library.clearCaches() }
+                cacheBytes = withContext(Dispatchers.IO) { app.library.appDataBytes() }
+                snackbar.showSnackbar(
+                    if (freed > 0) {
+                        context.getString(R.string.settings_about_cache_cleared, formatBytes(freed))
+                    } else {
+                        context.getString(R.string.settings_about_cache_empty)
+                    },
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                val reason = e.message ?: context.getString(R.string.settings_unknown_error)
+                snackbar.showSnackbar(context.getString(R.string.settings_about_cache_failed, reason))
+            } finally {
+                clearing = false
+            }
+        }
+    }
+
+    SettingsScaffold(
+        stringResource(R.string.settings_about_title),
+        onBack,
+        snackbarHost = { SnackbarHost(snackbar) },
+    ) { innerPadding ->
         Column(
             Modifier.fillMaxSize().padding(innerPadding).verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
         ) {
+            Column(
+                Modifier.fillMaxWidth().padding(top = 8.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                AndroidView(
+                    factory = { ctx ->
+                        ImageView(ctx).apply {
+                            setImageResource(R.mipmap.ic_launcher)
+                            scaleType = ImageView.ScaleType.FIT_CENTER
+                        }
+                    },
+                    modifier = Modifier.size(96.dp).clip(CircleShape),
+                )
+                Spacer(Modifier.height(16.dp))
+                Text("Salt Reader", style = MaterialTheme.typography.headlineMedium)
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    stringResource(R.string.settings_about_tagline),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+                )
+            }
             SettingsSectionLabel(stringResource(R.string.settings_about_section_app))
             SettingsCard {
-                SettingsInfoRow(stringResource(R.string.settings_about_version), BuildConfig.VERSION_NAME)
+                SettingsInfoRow(
+                    stringResource(R.string.settings_about_version),
+                    "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                )
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier.padding(start = 16.dp),
+                )
+                SettingsInfoRow(stringResource(R.string.settings_about_build), BuildConfig.BUILD_TYPE)
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier.padding(start = 16.dp),
+                )
                 SettingsInfoRow(stringResource(R.string.settings_about_package), BuildConfig.APPLICATION_ID)
             }
+            SettingsSectionLabel(stringResource(R.string.settings_about_section_legal))
+            SettingsCard {
+                SettingsActionRow(
+                    icon = Icons.Outlined.Info,
+                    title = stringResource(R.string.settings_about_licenses),
+                    enabled = true,
+                ) { showLicenses = true }
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier.padding(start = 72.dp),
+                )
+                SettingsActionRow(
+                    icon = Icons.Outlined.Lock,
+                    title = stringResource(R.string.settings_about_privacy),
+                    enabled = true,
+                ) { showPrivacy = true }
+            }
+            SettingsSectionLabel(stringResource(R.string.settings_about_section_maintenance))
+            SettingsCard {
+                SettingsActionRow(
+                    icon = Icons.Outlined.Delete,
+                    title = stringResource(R.string.settings_about_clear_cache),
+                    supporting = if (clearing) {
+                        stringResource(R.string.settings_about_clearing)
+                    } else {
+                        stringResource(R.string.settings_about_cache_usage, formatBytes(cacheBytes))
+                    },
+                    enabled = !clearing,
+                ) { clearCache() }
+            }
+            Spacer(Modifier.height(24.dp))
+            Text(
+                stringResource(R.string.settings_about_copyright),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.fillMaxWidth(),
+            )
         }
+    }
+
+    if (showLicenses) {
+        AlertDialog(
+            onDismissRequest = { showLicenses = false },
+            title = { Text(stringResource(R.string.settings_about_licenses)) },
+            text = { Text(stringResource(R.string.settings_about_licenses_body)) },
+            confirmButton = {
+                TextButton(onClick = { showLicenses = false }) {
+                    Text(stringResource(R.string.settings_about_close))
+                }
+            },
+        )
+    }
+    if (showPrivacy) {
+        AlertDialog(
+            onDismissRequest = { showPrivacy = false },
+            title = { Text(stringResource(R.string.settings_about_privacy)) },
+            text = { Text(stringResource(R.string.settings_about_privacy_body)) },
+            confirmButton = {
+                TextButton(onClick = { showPrivacy = false }) {
+                    Text(stringResource(R.string.settings_about_close))
+                }
+            },
+        )
     }
 }
 
@@ -778,7 +967,11 @@ private fun SettingsFolderRow(
     onRemove: () -> Unit,
 ) {
     Row(
-        Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+        Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .alpha(if (enabled) 1f else 0.38f)
+            .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         SettingsIcon(Icons.Outlined.FolderOpen)
@@ -786,10 +979,11 @@ private fun SettingsFolderRow(
         Column(Modifier.weight(1f)) {
             Text(
                 displayName,
-                style = MaterialTheme.typography.bodyLarge,
+                style = MaterialTheme.typography.titleMedium,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            Spacer(Modifier.height(2.dp))
             Text(
                 treeUri,
                 style = MaterialTheme.typography.bodySmall,
@@ -798,7 +992,7 @@ private fun SettingsFolderRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        IconButton(enabled = enabled, onClick = onRemove) {
+        IconButton(enabled = enabled, onClick = onRemove, modifier = Modifier.size(48.dp)) {
             Icon(
                 Icons.Outlined.Delete,
                 contentDescription = stringResource(R.string.settings_storage_remove_folder, displayName),
@@ -877,6 +1071,15 @@ private fun <T> SettingsChoiceGroup(
             }
         }
     }
+}
+
+/** Native language names stay in their own language, the "system" option is translated. */
+private fun languageLabelRes(tag: String): Int = when (tag) {
+    LANGUAGE_ZH_CN -> R.string.settings_language_zh_cn
+    LANGUAGE_ZH_TW -> R.string.settings_language_zh_tw
+    LANGUAGE_EN -> R.string.settings_language_en
+    LANGUAGE_JA -> R.string.settings_language_ja
+    else -> R.string.settings_language_system
 }
 
 private fun ThemeMode.labelRes(): Int = when (this) {

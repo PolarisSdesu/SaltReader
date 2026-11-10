@@ -2,7 +2,6 @@ package moe.gbxin.saltreader.ui.reader
 
 import android.os.Bundle
 import android.view.KeyEvent
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
@@ -19,9 +18,10 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.flow.MutableSharedFlow
 import moe.gbxin.saltreader.SaltReaderApplication
+import moe.gbxin.saltreader.ui.LocalizedActivity
 import moe.gbxin.saltreader.ui.theme.SaltReaderTheme
 
-class ReaderActivity : ComponentActivity() {
+class ReaderActivity : LocalizedActivity() {
     companion object {
         const val EXTRA_BOOK_ID = "book_id"
     }

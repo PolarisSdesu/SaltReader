@@ -104,4 +104,28 @@
 
     <!-- 封面無障礙描述 -->
     <string name="settings_cover_content_description">《%1$s》封面</string>
+    <string name="settings_appearance_section_language">語言</string>
+    <string name="settings_language_system">跟隨系統</string>
+    <string name="settings_language_zh_cn">简体中文</string>
+    <string name="settings_language_zh_tw">繁體中文</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_language_ja">日本語</string>
+    <string name="settings_about_tagline">本機優先的漫畫與電子書閱讀器。</string>
+    <string name="settings_about_build">建置</string>
+    <string name="settings_about_legal">法律與授權</string>
+    <string name="settings_about_licenses">開放原始碼授權</string>
+    <string name="settings_about_licenses_body">Salt Reader 使用 Jetpack Compose、Material 3、Kotlin 與 AndroidX（Apache-2.0）建置；MOBI/AZW3 解析基於 mobi-api4java（Apache-2.0）。書籍透過系統 WebView 與 PdfRenderer 於本機轉譯，應用程式不申請網路權限。</string>
+    <string name="settings_about_privacy">隱私</string>
+    <string name="settings_about_privacy_body">Salt Reader 堅持本機優先：無帳號、無統計、無網路權限。書庫僅引用你在系統檔案選擇器中授權的資料夾，應用程式不會複製或上傳你的書籍；封面與暫存文字快取保存在應用程式私有目錄，可隨時清除。</string>
+    <string name="settings_about_maintenance">維護</string>
+    <string name="settings_about_clear_cache">清除快取</string>
+    <string name="settings_about_cache_usage">目前佔用 %1$s</string>
+    <string name="settings_about_clearing">正在清除…</string>
+    <string name="settings_about_cache_cleared">已清除快取，釋放 %1$s</string>
+    <string name="settings_about_cache_empty">沒有可清除的快取</string>
+    <string name="settings_about_cache_failed">清除失敗：%1$s</string>
+    <string name="settings_about_copyright">© Salt Reader · 本機優先閱讀</string>
+    <string name="settings_about_close">關閉</string>
+    <string name="settings_about_section_legal">法律與授權</string>
+    <string name="settings_about_section_maintenance">維護</string>
 </resources>

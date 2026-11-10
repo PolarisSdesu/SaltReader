@@ -108,4 +108,28 @@
 
     <!-- Cover content description -->
     <string name="settings_cover_content_description">Cover of %1$s</string>
+    <string name="settings_appearance_section_language">Language</string>
+    <string name="settings_language_system">Follow system</string>
+    <string name="settings_language_zh_cn">简体中文</string>
+    <string name="settings_language_zh_tw">繁體中文</string>
+    <string name="settings_language_en">English</string>
+    <string name="settings_language_ja">日本語</string>
+    <string name="settings_about_tagline">A local-first comic &amp; ebook reader.</string>
+    <string name="settings_about_build">Build</string>
+    <string name="settings_about_legal">Legal</string>
+    <string name="settings_about_licenses">Open-source licenses</string>
+    <string name="settings_about_licenses_body">Salt Reader is built with Jetpack Compose, Material 3, Kotlin and AndroidX (Apache-2.0). The MOBI/AZW3 parser is based on mobi-api4java (Apache-2.0). Books are rendered locally with the system WebView and PdfRenderer; no network permission is requested.</string>
+    <string name="settings_about_privacy">Privacy</string>
+    <string name="settings_about_privacy_body">Salt Reader is local-first: no account, no analytics and no network permission. Your library only references folders you picked through the system file picker; the app never copies or uploads your books. Covers and temporary text caches stay in app-private storage and can be cleared at any time.</string>
+    <string name="settings_about_maintenance">Maintenance</string>
+    <string name="settings_about_clear_cache">Clear cache</string>
+    <string name="settings_about_cache_usage">Currently using %1$s</string>
+    <string name="settings_about_clearing">Clearing…</string>
+    <string name="settings_about_cache_cleared">Cache cleared, freed %1$s</string>
+    <string name="settings_about_cache_empty">No cache to clear</string>
+    <string name="settings_about_cache_failed">Clear failed: %1$s</string>
+    <string name="settings_about_copyright">© Salt Reader · Local-first reading</string>
+    <string name="settings_about_close">Close</string>
+    <string name="settings_about_section_legal">Legal</string>
+    <string name="settings_about_section_maintenance">Maintenance</string>
 </resources>
