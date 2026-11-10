@@ -516,7 +516,6 @@ private fun ReaderContent(
         Box(
             Modifier
                 .fillMaxSize()
-                .navigationBarsPadding()
                 .pointerInput(settings.readerMode, direction, verticalZoomed) {
                     detectTapGestures { offset ->
                         // A zoomed page consumes drags; taps must not turn the page underneath it.
@@ -722,7 +721,6 @@ private fun ReaderContent(
             settings = settings,
             direction = direction,
             onDirection = { vm.setDirection(it) },
-            onGoToPage = { jumpTo(it) },
             onDismiss = { showSettings = false },
             onSettingsChange = onSettingsChange,
             onCustomBackground = { showCustomBackground = true },
@@ -799,15 +797,6 @@ private fun ReaderBottomBar(
     )
     // Follow page changes made elsewhere (swipe, volume keys, tap zones) unless the user is actively
     // dragging or a slider jump is still animating.
-    LaunchedEffect(currentPage, pendingJump) {
-        if (pendingJump == currentPage) {
-            pendingJump = null
-            lastTickPage = currentPage
-        }
-        if (pendingJump == null && !sliderState.isDragging) {
-            sliderState.value = currentPage.toFloat().coerceIn(0f, sliderMax.toFloat())
-        }
-    }
     Box(
         Modifier.fillMaxWidth()
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.38f))))
@@ -1066,7 +1055,6 @@ internal fun ReaderControlsSheet(
     settings: AppSettings,
     direction: ReadingDirection,
     onDirection: (ReadingDirection) -> Unit,
-    onGoToPage: (Int) -> Unit,
     onDismiss: () -> Unit,
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
     onCustomBackground: () -> Unit = {},
@@ -1078,23 +1066,6 @@ internal fun ReaderControlsSheet(
         initialValue = SheetValue.Hidden,
         enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
     )
-    var pendingJump by remember { mutableStateOf<Int?>(null) }
-    var lastTickPage by remember { mutableStateOf(currentPage) }
-    val sliderMax = (count - 1).coerceAtLeast(1)
-    val haptics = LocalHapticFeedback.current
-    val sliderState = rememberSliderState(
-        value = currentPage.toFloat().coerceIn(0f, sliderMax.toFloat()),
-        trackRange = 0f..sliderMax.toFloat(),
-    )
-    LaunchedEffect(currentPage, pendingJump) {
-        if (pendingJump == currentPage) {
-            pendingJump = null
-            lastTickPage = currentPage
-        }
-        if (pendingJump == null && !sliderState.isDragging) {
-            sliderState.value = currentPage.toFloat().coerceIn(0f, sliderMax.toFloat())
-        }
-    }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
@@ -1107,41 +1078,7 @@ internal fun ReaderControlsSheet(
         ) {
             Text(stringResource(R.string.reader_settings_title), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(14.dp))
-            // Text books have no meaningful page slider: their progress is a character offset and
-            // the real page count is decided by the WebView layout at the current font size.
-            if (!isTextBook) {
-                Slider(
-                    state = sliderState,
-                    onValueChange = { value ->
-                        // See ReaderBottomBar: with onValueChange supplied the state must be updated here.
-                        sliderState.value = value
-                        pendingJump = null
-                        val page = value.roundToInt().coerceIn(0, count - 1)
-                        if (page != lastTickPage) {
-                            lastTickPage = page
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        }
-                    },
-                    onValueChangeFinished = {
-                        val target = sliderState.value.roundToInt().coerceIn(0, count - 1)
-                        pendingJump = target
-                        lastTickPage = target
-                        onGoToPage(target)
-                    },
-                    enabled = count > 1,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    stringResource(
-                        R.string.reader_page_slider_label,
-                        sliderState.value.roundToInt().coerceIn(0, count - 1) + 1,
-                        count,
-                    ),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-                Spacer(Modifier.height(18.dp))
-            } else {
+            if (isTextBook) {
                 Spacer(Modifier.height(6.dp))
             }
             ReaderMenuRow(

@@ -318,7 +318,6 @@ internal fun TextReaderContent(
     Box(
         modifier
             .fillMaxSize()
-            .navigationBarsPadding()
             .background(readerBackground)
             .semantics {
                 contentDescription = readingAreaLabel
@@ -490,7 +489,6 @@ internal fun TextReaderContent(
             settings = settings,
             direction = direction,
             onDirection = { vm.setDirection(it) },
-            onGoToPage = { },
             onDismiss = { showSettings = false },
             onSettingsChange = onSettingsChange,
             onCustomBackground = { showCustomBackground = true },

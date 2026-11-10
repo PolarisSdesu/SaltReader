@@ -18,6 +18,8 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
@@ -191,6 +193,9 @@ private fun SettingsScaffold(
     Scaffold(
         modifier = Modifier.fillMaxSize().nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.background,
+        // The top app bar consumes the status bar inset itself; the body only needs to stay above
+        // the gesture navigation bar, applied explicitly below.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         snackbarHost = snackbarHost,
         topBar = {
             LargeFlexibleTopAppBar(
@@ -208,7 +213,9 @@ private fun SettingsScaffold(
             )
         },
     ) { innerPadding ->
-        content(innerPadding)
+        Box(Modifier.fillMaxSize().navigationBarsPadding()) {
+            content(innerPadding)
+        }
     }
 }
 
@@ -1005,6 +1012,14 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                 )
                 SettingsInfoRow(stringResource(R.string.settings_about_build), BuildConfig.BUILD_TYPE)
             }
+            // Directly under the app identity block, before maintenance actions.
+            SettingsCard {
+                SettingsActionRow(
+                    icon = Icons.Outlined.Info,
+                    title = stringResource(R.string.settings_licenses_title),
+                    enabled = true,
+                ) { context.startActivity(Intent(context, LicensesSettingsActivity::class.java)) }
+            }
             SettingsSectionLabel(stringResource(R.string.settings_about_section_maintenance))
             SettingsCard {
                 SettingsActionRow(
@@ -1017,15 +1032,7 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                     },
                     enabled = !clearing,
                 ) { clearCache() }
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    modifier = Modifier.padding(start = 72.dp),
-                )
-                SettingsActionRow(
-                    icon = Icons.Outlined.Info,
-                    title = stringResource(R.string.settings_licenses_title),
-                    enabled = true,
-                ) { context.startActivity(Intent(context, LicensesSettingsActivity::class.java)) }
+
             }
         }
     }
