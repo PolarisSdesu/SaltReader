@@ -40,40 +40,6 @@
 
 > 移除目录只会删除该目录下的索引与派生缓存，不会删除用户的任何文件。
 
-## 截图
-
-| 书架 | 搜索视图 | 设置 |
-|---|---|---|
-| ![书架](screenshots/01-library-light.png) | ![搜索](screenshots/02-search-light.png) | ![设置](screenshots/31-settings-expressive.png) |
-
-深色与纵向阅读：
-
-| 深色书架 | 深色阅读器 |
-|---|---|
-| ![深色书架](screenshots/04-library-dark.png) | ![深色阅读器](screenshots/05-reader-dark.png) |
-
-纵向模式与添加目录：
-
-| PDF 阅读 | 添加目录 |
-|---|---|
-| ![PDF](screenshots/10-pdf-reader.png) | ![添加目录](screenshots/12-import-final.png) |
-
-阅读进度与设置：
-
-| 阅读进度 | 阅读控制面板 |
-|---|---|
-| ![进度](screenshots/15-reader-progress.png) | ![控制](screenshots/14-reader-controls.png) |
-
-| 布局面板 | 存储页 |
-|---|---|
-| ![布局](screenshots/17-layout-sheet.png) | ![存储](screenshots/19-storage.png) |
-
-设置二级页（Material 3 Expressive）：
-
-| 外观 | 阅读器 | 存储 | 关于 |
-|---|---|---|---|
-| ![外观](screenshots/32-appearance-expressive.png) | ![阅读器](screenshots/33-reader-settings-expressive.png) | ![存储](screenshots/34-storage-expressive.png) | ![关于](screenshots/35-about-expressive.png) |
-
 ## 技术栈
 
 | 层 | 选型 |
