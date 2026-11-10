@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -56,6 +57,7 @@ import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
@@ -72,6 +74,7 @@ import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.annotation.Keep
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.data.AppSettings
 import moe.gbxin.saltreader.data.ComicBook
 import moe.gbxin.saltreader.data.EbookChapter
@@ -139,7 +142,11 @@ internal fun TextReaderContent(
     modifier: Modifier = Modifier,
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
 ) {
-    val readerBackground = pageBackgroundColor(settings.readerBackground, settings.customBackgroundColor)
+    val readerBackground = pageBackgroundColor(
+        settings.readerBackground,
+        settings.customBackgroundColor,
+        isSystemInDarkTheme(),
+    )
     val readerTextColor =
         if (readerBackground.luminance() < 0.5f) Color(0xFFEDE6DD) else Color(0xFF2A2622)
     val direction = book.direction ?: settings.readingDirection
@@ -294,24 +301,32 @@ internal fun TextReaderContent(
     }
 
     val pageLabel = if (settings.readerMode == ReaderMode.PAGED) {
-        "${(pageInfo.page + 1).coerceAtMost(pageInfo.pages)} / ${pageInfo.pages}"
+        stringResource(
+            R.string.reader_page_indicator,
+            (pageInfo.page + 1).coerceAtMost(pageInfo.pages),
+            pageInfo.pages,
+        )
     } else {
-        "${(pageInfo.ratio * 100f).roundToInt().coerceIn(0, 100)}%"
+        stringResource(R.string.reader_percent, (pageInfo.ratio * 100f).roundToInt().coerceIn(0, 100))
     }
-    val chromeToggleLabel = if (chromeVisible) "隐藏工具栏" else "显示工具栏"
+    val chromeToggleLabel =
+        stringResource(if (chromeVisible) R.string.reader_hide_controls else R.string.reader_show_controls)
+    val readingAreaLabel = stringResource(R.string.reader_reading_area)
+    val previousPageLabel = stringResource(R.string.reader_action_previous_page)
+    val nextPageLabel = stringResource(R.string.reader_action_next_page)
 
     Box(
         modifier
             .fillMaxSize()
             .background(readerBackground)
             .semantics {
-                contentDescription = "正文阅读区域"
+                contentDescription = readingAreaLabel
                 customActions = listOf(
-                    CustomAccessibilityAction("上一页") {
+                    CustomAccessibilityAction(previousPageLabel) {
                         if (liveMode.value == ReaderMode.PAGED) turnPage(-1) else scrollViewport(-1)
                         true
                     },
-                    CustomAccessibilityAction("下一页") {
+                    CustomAccessibilityAction(nextPageLabel) {
                         if (liveMode.value == ReaderMode.PAGED) turnPage(1) else scrollViewport(1)
                         true
                     },
@@ -512,7 +527,10 @@ private fun TextReaderBottomBar(
             IconButton(onClick = onToggleMode) {
                 Icon(
                     if (mode == ReaderMode.PAGED) Icons.Rounded.ViewAgenda else Icons.Rounded.Swipe,
-                    contentDescription = if (mode == ReaderMode.PAGED) "切换为纵向滚动" else "切换为横向翻页",
+                    contentDescription = stringResource(
+                        if (mode == ReaderMode.PAGED) R.string.reader_switch_to_vertical
+                        else R.string.reader_switch_to_paged,
+                    ),
                 )
             }
             Text(
@@ -523,7 +541,7 @@ private fun TextReaderBottomBar(
                 modifier = Modifier.weight(1f),
             )
             IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Rounded.Tune, contentDescription = "阅读设置")
+                Icon(Icons.Rounded.Tune, contentDescription = stringResource(R.string.reader_settings_title))
             }
         }
     }

@@ -75,6 +75,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -87,6 +89,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import moe.gbxin.saltreader.BuildConfig
+import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.ImportReport
 import moe.gbxin.saltreader.data.LibraryRoot
@@ -163,7 +166,7 @@ private fun SettingsScaffold(
                 title = { Text(title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "返回")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.settings_back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -181,39 +184,39 @@ private fun SettingsScaffold(
 @Composable
 private fun SettingsHomePage(onBack: () -> Unit) {
     val context = LocalContext.current
-    SettingsScaffold("设置", onBack) { innerPadding ->
+    SettingsScaffold(stringResource(R.string.settings_title), onBack) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
         ) {
-            item { SettingsSectionLabel("个性化") }
+            item { SettingsSectionLabel(stringResource(R.string.settings_home_section_personalization)) }
             item {
                 SettingsCard {
                     SettingsNavigateRow(
                         icon = Icons.Outlined.Palette,
-                        title = "外观",
+                        title = stringResource(R.string.settings_appearance_title),
                     ) { context.startActivity(Intent(context, AppearanceSettingsActivity::class.java)) }
                     SettingsNavigateRow(
                         icon = Icons.AutoMirrored.Outlined.MenuBook,
-                        title = "阅读器",
+                        title = stringResource(R.string.settings_reader_title),
                     ) { context.startActivity(Intent(context, ReaderSettingsActivity::class.java)) }
                 }
             }
-            item { SettingsSectionLabel("数据") }
+            item { SettingsSectionLabel(stringResource(R.string.settings_home_section_data)) }
             item {
                 SettingsCard {
                     SettingsNavigateRow(
                         icon = Icons.Outlined.Storage,
-                        title = "存储",
+                        title = stringResource(R.string.settings_storage_title),
                     ) { context.startActivity(Intent(context, StorageSettingsActivity::class.java)) }
                 }
             }
-            item { SettingsSectionLabel("关于") }
+            item { SettingsSectionLabel(stringResource(R.string.settings_home_section_about)) }
             item {
                 SettingsCard {
                     SettingsNavigateRow(
                         icon = Icons.Outlined.Info,
-                        title = "关于 Salt Reader",
+                        title = stringResource(R.string.settings_home_about),
                     ) { context.startActivity(Intent(context, AboutSettingsActivity::class.java)) }
                 }
             }
@@ -225,34 +228,34 @@ private fun SettingsHomePage(onBack: () -> Unit) {
 private fun AppearanceSettingsPage(onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as SaltReaderApplication
     val settings by app.settings.state.collectAsStateWithLifecycle()
-    SettingsScaffold("外观", onBack) { innerPadding ->
+    SettingsScaffold(stringResource(R.string.settings_appearance_title), onBack) { innerPadding ->
         Column(
             Modifier.fillMaxSize().padding(innerPadding).verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
         ) {
-            SettingsSectionLabel("主题")
+            SettingsSectionLabel(stringResource(R.string.settings_appearance_section_theme))
             SettingsCard {
                 SettingsChoiceGroup(
-                    title = "主题模式",
+                    title = stringResource(R.string.settings_appearance_theme_mode),
                     options = ThemeMode.entries.toList(),
                     selected = settings.themeMode,
-                    label = { it.label() },
+                    labelRes = { it.labelRes() },
                 ) { mode -> app.settings.update { it.copy(themeMode = mode) } }
             }
-            SettingsSectionLabel("颜色")
+            SettingsSectionLabel(stringResource(R.string.settings_appearance_section_color))
             SettingsCard {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     SettingsSwitchRow(
                         icon = Icons.Outlined.Palette,
-                        title = "动态取色",
-                        supporting = "仅 Android 12+",
+                        title = stringResource(R.string.settings_appearance_dynamic_color),
+                        supporting = stringResource(R.string.settings_appearance_dynamic_color_supporting),
                         checked = settings.dynamicColor,
                     ) { app.settings.update { it.copy(dynamicColor = it.dynamicColor.not()) } }
                 }
                 SettingsSwitchRow(
                     icon = Icons.Outlined.DarkMode,
-                    title = "纯黑模式",
-                    supporting = "深色下使用 AMOLED 纯黑",
+                    title = stringResource(R.string.settings_appearance_amoled),
+                    supporting = stringResource(R.string.settings_appearance_amoled_supporting),
                     checked = settings.amoledBlack,
                 ) { app.settings.update { it.copy(amoledBlack = it.amoledBlack.not()) } }
             }
@@ -265,37 +268,38 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
     val app = LocalContext.current.applicationContext as SaltReaderApplication
     val settings by app.settings.state.collectAsStateWithLifecycle()
     var showCustomBackground by remember { mutableStateOf(false) }
-    SettingsScaffold("阅读器", onBack) { innerPadding ->
+    SettingsScaffold(stringResource(R.string.settings_reader_title), onBack) { innerPadding ->
         Column(
             Modifier.fillMaxSize().padding(innerPadding).verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
         ) {
-            SettingsSectionLabel("布局")
+            SettingsSectionLabel(stringResource(R.string.settings_reader_section_layout))
             SettingsCard {
                 SettingsChoiceGroup(
-                    title = "阅读模式",
+                    title = stringResource(R.string.settings_reader_reading_mode),
                     options = ReaderMode.entries.toList(),
                     selected = settings.readerMode,
-                    label = { it.label() },
+                    labelRes = { it.labelRes() },
                 ) { mode -> app.settings.update { it.copy(readerMode = mode) } }
                 SettingsChoiceGroup(
-                    title = "翻页方向",
+                    title = stringResource(R.string.settings_reader_paging_direction),
                     options = ReadingDirection.entries.toList(),
                     selected = settings.readingDirection,
-                    label = { it.label() },
+                    labelRes = { it.labelRes() },
                 ) { direction -> app.settings.update { it.copy(readingDirection = direction) } }
             }
-            SettingsSectionLabel("显示")
+            SettingsSectionLabel(stringResource(R.string.settings_reader_section_display))
             SettingsCard {
                 SettingsChoiceGroup(
-                    title = "纸张颜色",
+                    title = stringResource(R.string.settings_reader_paper_color),
                     options = listOf(
+                        ReaderBackground.AUTO,
                         ReaderBackground.WHITE,
                         ReaderBackground.INK,
                         ReaderBackground.CUSTOM,
                     ),
                     selected = settings.readerBackground,
-                    label = { it.label() },
+                    labelRes = { it.labelRes() },
                 ) { background ->
                     if (background == ReaderBackground.CUSTOM) {
                         showCustomBackground = true
@@ -305,35 +309,35 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                 }
                 SettingsSwitchRow(
                     icon = Icons.Outlined.Numbers,
-                    title = "显示页码",
-                        supporting = "在页面底部显示当前页码",
+                    title = stringResource(R.string.settings_reader_show_page_number),
+                    supporting = stringResource(R.string.settings_reader_show_page_number_supporting),
                     checked = settings.showPageNumber,
                 ) { app.settings.update { it.copy(showPageNumber = it.showPageNumber.not()) } }
                 SettingsSwitchRow(
                     icon = Icons.Outlined.LightMode,
-                    title = "保持屏幕常亮",
-                        supporting = "阅读时屏幕不会自动熄灭",
+                    title = stringResource(R.string.settings_reader_keep_screen_on),
+                    supporting = stringResource(R.string.settings_reader_keep_screen_on_supporting),
                     checked = settings.keepScreenOn,
                 ) { app.settings.update { it.copy(keepScreenOn = it.keepScreenOn.not()) } }
                 SettingsSwitchRow(
                     icon = Icons.AutoMirrored.Outlined.VolumeUp,
-                    title = "音量键翻页",
-                        supporting = "音量键切换上一页 / 下一页",
+                    title = stringResource(R.string.settings_reader_volume_key_paging),
+                    supporting = stringResource(R.string.settings_reader_volume_key_paging_supporting),
                     checked = settings.volumeKeyPaging,
                 ) { app.settings.update { it.copy(volumeKeyPaging = it.volumeKeyPaging.not()) } }
             }
-            SettingsSectionLabel("滤镜")
+            SettingsSectionLabel(stringResource(R.string.settings_reader_section_filter))
             SettingsCard {
                 SettingsSwitchRow(
                     icon = Icons.Outlined.FilterBAndW,
-                    title = "灰度模式",
-                        supporting = "去除彩色",
+                    title = stringResource(R.string.settings_reader_grayscale),
+                    supporting = stringResource(R.string.settings_reader_grayscale_supporting),
                     checked = settings.grayscale,
                 ) { app.settings.update { it.copy(grayscale = it.grayscale.not()) } }
                 SettingsSwitchRow(
                     icon = Icons.Outlined.Contrast,
-                    title = "反色",
-                        supporting = "适合夜间阅读",
+                    title = stringResource(R.string.settings_reader_invert),
+                    supporting = stringResource(R.string.settings_reader_invert_supporting),
                     checked = settings.invertColors,
                 ) { app.settings.update { it.copy(invertColors = it.invertColors.not()) } }
             }
@@ -356,7 +360,8 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun StorageSettingsPage(onBack: () -> Unit) {
-    val app = LocalContext.current.applicationContext as SaltReaderApplication
+    val context = LocalContext.current
+    val app = context.applicationContext as SaltReaderApplication
     val scope = rememberCoroutineScope()
     val books by app.library.books.collectAsStateWithLifecycle()
     val snackbar = remember { SnackbarHostState() }
@@ -386,7 +391,7 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
         if (scanning) return
         scanning = true
         scanProgress = 0f
-        scanLabel = "正在扫描…"
+        scanLabel = context.getString(R.string.settings_storage_scanning)
         scanMessage = null
         scanMessageIsError = false
         scope.launch {
@@ -397,15 +402,22 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                 }
                 reloadStorage()
                 scanMessage = when {
-                    report.count > 0 -> "已索引 ${report.count} 本"
+                    report.count > 0 -> context.resources.getQuantityString(
+                        R.plurals.settings_storage_scan_indexed,
+                        report.count,
+                        report.count,
+                    )
                     report.hasFailures -> report.failures.first().reason
-                    else -> "没有找到漫画"
+                    else -> context.getString(R.string.settings_storage_scan_no_comics)
                 }
                 scanMessageIsError = report.count == 0 && report.hasFailures
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                scanMessage = "扫描失败：${e.message ?: "未知错误"}"
+                scanMessage = context.getString(
+                    R.string.settings_storage_scan_failed,
+                    e.message ?: context.getString(R.string.settings_unknown_error),
+                )
                 scanMessageIsError = true
             } finally {
                 scanning = false
@@ -423,12 +435,15 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
             try {
                 app.library.removeRoot(root.treeUri)
                 reloadStorage()
-                scanMessage = "已移除「${root.displayName}」及其缓存"
+                scanMessage = context.getString(R.string.settings_storage_root_removed, root.displayName)
                 scanMessageIsError = false
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                scanMessage = "移除失败：${e.message ?: "未知错误"}"
+                scanMessage = context.getString(
+                    R.string.settings_storage_root_remove_failed,
+                    e.message ?: context.getString(R.string.settings_unknown_error),
+                )
                 scanMessageIsError = true
             }
         }
@@ -444,44 +459,68 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                 reloadStorage()
                 snackbar.showSnackbar(
                     if (freed > 0) {
-                        "已清理阅读缓存与临时文件，释放 ${formatBytes(freed)}"
+                        context.getString(R.string.settings_storage_cache_cleared, formatBytes(freed))
                     } else {
-                        "没有可清理的缓存"
+                        context.getString(R.string.settings_storage_cache_empty)
                     },
                 )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                snackbar.showSnackbar("清理失败：${e.message ?: "未知错误"}")
+                snackbar.showSnackbar(
+                    context.getString(
+                        R.string.settings_storage_cache_clear_failed,
+                        e.message ?: context.getString(R.string.settings_unknown_error),
+                    ),
+                )
             } finally {
                 clearing = false
             }
         }
     }
 
-    SettingsScaffold("存储", onBack, snackbarHost = { SnackbarHost(snackbar) }) { innerPadding ->
+    SettingsScaffold(stringResource(R.string.settings_storage_title), onBack, snackbarHost = { SnackbarHost(snackbar) }) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 32.dp),
         ) {
-            item { SettingsSectionLabel("书库索引") }
+            item { SettingsSectionLabel(stringResource(R.string.settings_storage_section_library)) }
             item {
                 SettingsCard {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Column(Modifier.weight(1f)) {
-                                Text("${books.size} 本书", style = MaterialTheme.typography.titleMedium)
+                                Text(
+                                    pluralStringResource(
+                                        R.plurals.settings_storage_indexed_books,
+                                        books.size,
+                                        books.size,
+                                    ),
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
                                 Spacer(Modifier.height(2.dp))
                                 // Reflowable text books only carry an estimated pageCount, so they
                                 // are counted as books instead of inflating the page total.
                                 val reflowableCount = books.count { it.reflowable }
                                 val indexedPageCount = books.filter { !it.reflowable }.sumOf { it.pageCount }
+                                val stats = mutableListOf<String>()
+                                if (reflowableCount > 0) {
+                                    stats += pluralStringResource(
+                                        R.plurals.settings_storage_reflowable_books,
+                                        reflowableCount,
+                                        reflowableCount,
+                                    )
+                                }
+                                if (indexedPageCount > 0) {
+                                    stats += pluralStringResource(
+                                        R.plurals.settings_storage_indexed_pages,
+                                        indexedPageCount,
+                                        indexedPageCount,
+                                    )
+                                }
+                                stats += formatBytes(appDataBytes)
                                 Text(
-                                    buildString {
-                                        if (reflowableCount > 0) append("$reflowableCount 本文字书 · ")
-                                        append("$indexedPageCount 页已索引")
-                                        append(" · 应用数据 ${formatBytes(appDataBytes)}")
-                                    },
+                                    stats.joinToString(" · "),
                                     style = MaterialTheme.typography.bodyMedium,
                                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 )
@@ -489,15 +528,15 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                             FilledTonalButton(
                                 enabled = !scanning && roots.isNotEmpty(),
                                 onClick = { launchScan { p -> app.library.refreshLibrary(p) } },
-                            ) { Text(if (scanning) "刷新中…" else "刷新索引") }
-                        }
-                        if (roots.isEmpty()) {
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                "还没有添加文件夹，先添加一个漫画目录。",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+                            ) {
+                                Text(
+                                    if (scanning) {
+                                        stringResource(R.string.settings_storage_refreshing)
+                                    } else {
+                                        stringResource(R.string.settings_storage_refresh_index)
+                                    },
+                                )
+                            }
                         }
                         if (scanning) {
                             Spacer(Modifier.height(16.dp))
@@ -527,23 +566,21 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                     }
                 }
             }
-            item { SettingsSectionLabel("目录") }
+            item { SettingsSectionLabel(stringResource(R.string.settings_storage_section_folders)) }
             item {
                 SettingsCard {
                     SettingsActionRow(
                         icon = Icons.Outlined.FolderOpen,
-                        title = "添加文件夹",
-                        supporting = "通过系统文件选择器授权目录，只建立索引，不复制或移动原文件",
+                        title = stringResource(R.string.settings_storage_add_folder),
                         enabled = !scanning,
                     ) { folderLauncher.launch(null) }
                 }
             }
-            item { SettingsSectionLabel("已添加的文件夹") }
             if (roots.isEmpty()) {
                 item {
                     SettingsCard {
                         Text(
-                            "还没有添加文件夹",
+                            stringResource(R.string.settings_storage_no_folders),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp),
@@ -565,23 +602,23 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                 }
                 item {
                     Text(
-                        "移除目录只会删除书架索引与封面缓存，不会删除你的原文件。",
+                        stringResource(R.string.settings_storage_remove_hint),
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
                     )
                 }
             }
-            item { SettingsSectionLabel("缓存") }
+            item { SettingsSectionLabel(stringResource(R.string.settings_storage_section_cache)) }
             item {
                 SettingsCard {
                     SettingsActionRow(
                         icon = Icons.Outlined.Delete,
-                        title = "清理缓存",
+                        title = stringResource(R.string.settings_storage_clear_cache),
                         supporting = if (clearing) {
-                            "正在清理…"
+                            stringResource(R.string.settings_storage_clearing)
                         } else {
-                            "当前占用 ${formatBytes(appDataBytes)}；只清理派生缓存，不删除原文件"
+                            stringResource(R.string.settings_storage_cache_usage, formatBytes(appDataBytes))
                         },
                         enabled = !clearing && !scanning,
                     ) { clearCaches() }
@@ -593,15 +630,15 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
 
 @Composable
 private fun AboutSettingsPage(onBack: () -> Unit) {
-    SettingsScaffold("关于", onBack) { innerPadding ->
+    SettingsScaffold(stringResource(R.string.settings_about_title), onBack) { innerPadding ->
         Column(
             Modifier.fillMaxSize().padding(innerPadding).verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
         ) {
-            SettingsSectionLabel("应用")
+            SettingsSectionLabel(stringResource(R.string.settings_about_section_app))
             SettingsCard {
-                SettingsInfoRow("版本", BuildConfig.VERSION_NAME)
-                SettingsInfoRow("包名", BuildConfig.APPLICATION_ID)
+                SettingsInfoRow(stringResource(R.string.settings_about_version), BuildConfig.VERSION_NAME)
+                SettingsInfoRow(stringResource(R.string.settings_about_package), BuildConfig.APPLICATION_ID)
             }
         }
     }
@@ -764,7 +801,7 @@ private fun SettingsFolderRow(
         IconButton(enabled = enabled, onClick = onRemove) {
             Icon(
                 Icons.Outlined.Delete,
-                contentDescription = "移除目录 $displayName",
+                contentDescription = stringResource(R.string.settings_storage_remove_folder, displayName),
             )
         }
     }
@@ -795,7 +832,7 @@ private fun <T> SettingsChoiceGroup(
     title: String,
     options: List<T>,
     selected: T,
-    label: (T) -> String,
+    labelRes: (T) -> Int,
     onSelect: (T) -> Unit,
 ) {
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
@@ -829,7 +866,7 @@ private fun <T> SettingsChoiceGroup(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            label(option),
+                            stringResource(labelRes(option)),
                             style = MaterialTheme.typography.labelLarge,
                             textAlign = TextAlign.Center,
                             maxLines = 1,
@@ -842,24 +879,25 @@ private fun <T> SettingsChoiceGroup(
     }
 }
 
-private fun ThemeMode.label(): String = when (this) {
-    ThemeMode.SYSTEM -> "跟随系统"
-    ThemeMode.LIGHT -> "浅色"
-    ThemeMode.DARK -> "深色"
+private fun ThemeMode.labelRes(): Int = when (this) {
+    ThemeMode.SYSTEM -> R.string.settings_theme_system
+    ThemeMode.LIGHT -> R.string.settings_theme_light
+    ThemeMode.DARK -> R.string.settings_theme_dark
 }
 
-private fun ReaderMode.label(): String = when (this) {
-    ReaderMode.PAGED -> "横向翻页"
-    ReaderMode.VERTICAL -> "纵向滚动"
+private fun ReaderMode.labelRes(): Int = when (this) {
+    ReaderMode.PAGED -> R.string.settings_reader_mode_paged
+    ReaderMode.VERTICAL -> R.string.settings_reader_mode_vertical
 }
 
-private fun ReadingDirection.label(): String = when (this) {
-    ReadingDirection.LTR -> "从左到右"
-    ReadingDirection.RTL -> "从右到左"
+private fun ReadingDirection.labelRes(): Int = when (this) {
+    ReadingDirection.LTR -> R.string.settings_direction_ltr
+    ReadingDirection.RTL -> R.string.settings_direction_rtl
 }
 
-private fun ReaderBackground.label(): String = when (this) {
-    ReaderBackground.WHITE -> "纯白"
-    ReaderBackground.INK -> "纯黑"
-    ReaderBackground.CUSTOM -> "自定义"
+private fun ReaderBackground.labelRes(): Int = when (this) {
+    ReaderBackground.AUTO -> R.string.settings_background_auto
+    ReaderBackground.WHITE -> R.string.settings_background_white
+    ReaderBackground.INK -> R.string.settings_background_ink
+    ReaderBackground.CUSTOM -> R.string.settings_background_custom
 }

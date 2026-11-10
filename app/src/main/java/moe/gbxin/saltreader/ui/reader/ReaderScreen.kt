@@ -11,6 +11,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculatePan
@@ -97,6 +98,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
@@ -115,6 +117,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import kotlin.math.max
 import kotlin.math.roundToInt
+import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.AppSettings
 import moe.gbxin.saltreader.data.ComicBook
@@ -129,10 +132,10 @@ import moe.gbxin.saltreader.ui.theme.pageBackgroundColor
 
 /**
  * Reader entry point. Renders the top-level states instead of assuming the book is already usable:
- * [ReaderUiState.Loading] while the index is publishing or the page source is being prepared
- * (e-books may convert on demand, hence the dedicated message), [ReaderUiState.Missing] only when
- * the book is definitively gone, [ReaderUiState.Failed] with a retry when opening the file failed,
- * and the actual reader once ComicPageSource.prepare() reported the real page count.
+ * [ReaderUiState.Loading] while the index is publishing or the image page source is being prepared,
+ * [ReaderUiState.TextLoading] while a reflowable book's chapters are parsed, [ReaderUiState.Missing]
+ * only when the book is definitively gone, [ReaderUiState.Failed] with a retry when opening the file
+ * failed, and the actual reader once the page count / chapters are ready.
  */
 @Composable
 fun ReaderScreen(
@@ -146,7 +149,15 @@ fun ReaderScreen(
     val uiState by vm.uiState.collectAsStateWithLifecycle()
 
     when (val state = uiState) {
-        is ReaderUiState.Loading -> ReaderLoading(message = state.message, modifier = modifier)
+        is ReaderUiState.Loading -> ReaderLoading(
+            message = stringResource(
+                when (state.reason) {
+                    ReaderLoadingReason.INDEX -> R.string.reader_loading_opening
+                    ReaderLoadingReason.PREPARING -> R.string.reader_loading_preparing
+                },
+            ),
+            modifier = modifier,
+        )
 
         ReaderUiState.Missing -> {
             // The book vanished from the index while the reader was open; show why, then return to
@@ -156,14 +167,17 @@ fun ReaderScreen(
                 onBack()
             }
             ReaderMessage(
-                title = "无法打开",
-                message = "这本书已经不在书架上。",
+                title = stringResource(R.string.reader_unavailable_title),
+                message = stringResource(R.string.reader_unavailable_message),
                 onBack = onBack,
                 modifier = modifier,
             )
         }
 
-        is ReaderUiState.TextLoading -> ReaderLoading(message = state.message, modifier = modifier)
+        ReaderUiState.TextLoading -> ReaderLoading(
+            message = stringResource(R.string.reader_loading_parsing_ebook),
+            modifier = modifier,
+        )
 
         ReaderUiState.TextFailed -> ReaderFailed(
             onRetry = vm::retryLoadChapters,
@@ -193,8 +207,8 @@ fun ReaderScreen(
                 // Prepared book with no readable pages: this is not "page 1 failed", there is simply
                 // nothing to display. Never render the pager with a fake single page.
                 ReaderMessage(
-                    title = "没有可读的页面",
-                    message = "这本书里没有找到支持的图片或页面。",
+                    title = stringResource(R.string.reader_empty_title),
+                    message = stringResource(R.string.reader_empty_message),
                     onBack = onBack,
                     modifier = modifier,
                 )
@@ -252,7 +266,7 @@ private fun ReaderMessage(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(20.dp))
-            FilledTonalButton(onClick = onBack) { Text("回到书架") }
+            FilledTonalButton(onClick = onBack) { Text(stringResource(R.string.reader_back_to_library)) }
         }
     }
 }
@@ -268,17 +282,17 @@ private fun ReaderFailed(
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            Text("无法打开这本书", style = MaterialTheme.typography.headlineMedium)
+            Text(stringResource(R.string.reader_failed_title), style = MaterialTheme.typography.headlineMedium)
             Spacer(Modifier.height(8.dp))
             Text(
-                "文件可能已损坏、格式不受支持，或转换没有完成。",
+                stringResource(R.string.reader_failed_message),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(20.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                FilledTonalButton(onClick = onRetry) { Text("重试") }
-                TextButton(onClick = onBack) { Text("回到书架") }
+                FilledTonalButton(onClick = onRetry) { Text(stringResource(R.string.reader_retry)) }
+                TextButton(onClick = onBack) { Text(stringResource(R.string.reader_back_to_library)) }
             }
         }
     }
@@ -319,7 +333,11 @@ private fun ReaderContent(
     var zoomed by remember { mutableStateOf(false) }
     var zoomResetToken by remember { mutableIntStateOf(0) }
 
-    val readerBackground = pageBackgroundColor(settings.readerBackground, settings.customBackgroundColor)
+    val readerBackground = pageBackgroundColor(
+        settings.readerBackground,
+        settings.customBackgroundColor,
+        isSystemInDarkTheme(),
+    )
     val pageFilter = remember(settings.grayscale, settings.invertColors) {
         readerColorFilter(settings.grayscale, settings.invertColors)
     }
@@ -460,7 +478,11 @@ private fun ReaderContent(
             .fillMaxSize()
             .background(readerBackground),
     ) {
-        val chromeToggleLabel = if (chromeVisible) "隐藏工具栏" else "显示工具栏"
+        val chromeToggleLabel =
+            stringResource(if (chromeVisible) R.string.reader_hide_controls else R.string.reader_show_controls)
+        val readingAreaLabel = stringResource(R.string.reader_reading_area)
+        val previousPageLabel = stringResource(R.string.reader_action_previous_page)
+        val nextPageLabel = stringResource(R.string.reader_action_next_page)
         Box(
             Modifier
                 .fillMaxSize()
@@ -488,13 +510,13 @@ private fun ReaderContent(
                     }
                 }
                 .semantics {
-                    contentDescription = "阅读区域"
+                    contentDescription = readingAreaLabel
                     customActions = listOf(
-                        CustomAccessibilityAction("上一页") {
+                        CustomAccessibilityAction(previousPageLabel) {
                             step(-1)
                             true
                         },
-                        CustomAccessibilityAction("下一页") {
+                        CustomAccessibilityAction(nextPageLabel) {
                             step(1)
                             true
                         },
@@ -582,7 +604,7 @@ private fun ReaderContent(
                 contentColor = if (readerBackground.luminance() < 0.5f) Color(0xFFEDE0D4) else Color(0xFF29231D),
             ) {
                 Text(
-                    "${currentPage + 1} / $count",
+                    stringResource(R.string.reader_page_indicator, currentPage + 1, count),
                     style = MaterialTheme.typography.labelMedium,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                 )
@@ -636,7 +658,7 @@ internal fun ReaderTopBar(book: ComicBook, onBack: () -> Unit) {
             verticalAlignment = Alignment.CenterVertically,
         ) {
             IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = "返回")
+                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.reader_back))
             }
             Text(
                 book.title,
@@ -663,6 +685,10 @@ private fun ReaderBottomBar(
     var lastTickPage by remember { mutableStateOf(currentPage) }
     val haptics = LocalHapticFeedback.current
     val sliderMax = (count - 1).coerceAtLeast(1)
+    val toggleModeLabel = stringResource(
+        if (mode == ReaderMode.PAGED) R.string.reader_switch_to_vertical else R.string.reader_switch_to_paged,
+    )
+    val settingsLabel = stringResource(R.string.reader_settings_title)
     // Material3 1.5 state-based Slider: the state is the single source of truth for the thumb.
     val sliderState = rememberSliderState(
         value = currentPage.toFloat().coerceIn(0f, sliderMax.toFloat()),
@@ -692,7 +718,7 @@ private fun ReaderBottomBar(
             IconButton(onClick = onToggleMode) {
                 Icon(
                     if (mode == ReaderMode.PAGED) Icons.Rounded.ViewAgenda else Icons.Rounded.Swipe,
-                    contentDescription = if (mode == ReaderMode.PAGED) "切换为纵向滚动" else "切换为横向翻页",
+                    contentDescription = toggleModeLabel,
                 )
             }
             Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
@@ -720,7 +746,11 @@ private fun ReaderBottomBar(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    "${sliderState.value.roundToInt().coerceIn(0, count - 1) + 1} / $count",
+                    stringResource(
+                        R.string.reader_page_indicator,
+                        sliderState.value.roundToInt().coerceIn(0, count - 1) + 1,
+                        count,
+                    ),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center,
@@ -728,7 +758,7 @@ private fun ReaderBottomBar(
                 )
             }
             IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Rounded.Tune, contentDescription = "阅读设置")
+                Icon(Icons.Rounded.Tune, contentDescription = settingsLabel)
             }
         }
     }
@@ -786,7 +816,7 @@ private fun VerticalPage(
                 val ratio = state.image.height.toFloat() / state.image.width.toFloat()
                 Image(
                     bitmap = state.image,
-                    contentDescription = "第 ${index + 1} 页",
+                    contentDescription = stringResource(R.string.reader_page_number, index + 1),
                     modifier = Modifier.fillMaxWidth().height(maxWidth * ratio),
                     contentScale = ContentScale.FillWidth,
                     colorFilter = colorFilter,
@@ -802,7 +832,11 @@ private fun PagePlaceholder(index: Int) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             SaltLoading(sizeDp = 32)
             Spacer(Modifier.height(10.dp))
-            Text("第 ${index + 1} 页", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f))
+            Text(
+                stringResource(R.string.reader_page_number, index + 1),
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+            )
         }
     }
 }
@@ -810,7 +844,11 @@ private fun PagePlaceholder(index: Int) {
 @Composable
 private fun PageError(index: Int) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-        Text("第 ${index + 1} 页读不出来", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+        Text(
+            stringResource(R.string.reader_page_failed, index + 1),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.error,
+        )
     }
 }
 
@@ -873,7 +911,7 @@ private fun ZoomablePage(
     ) {
         Image(
             bitmap = image,
-            contentDescription = "第 ${index + 1} 页",
+            contentDescription = stringResource(R.string.reader_page_number, index + 1),
             modifier = Modifier.fillMaxSize().graphicsLayer(
                 scaleX = scale,
                 scaleY = scale,
@@ -939,7 +977,7 @@ internal fun ReaderControlsSheet(
                 )
                 .verticalScroll(rememberScrollState()),
         ) {
-            Text("阅读设置", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.reader_settings_title), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(14.dp))
             // Text books have no meaningful page slider: their progress is a character offset and
             // the real page count is decided by the WebView layout at the current font size.
@@ -966,7 +1004,11 @@ internal fun ReaderControlsSheet(
                     modifier = Modifier.fillMaxWidth(),
                 )
                 Text(
-                    "第 ${sliderState.value.roundToInt().coerceIn(0, count - 1) + 1} / $count 页",
+                    stringResource(
+                        R.string.reader_page_slider_label,
+                        sliderState.value.roundToInt().coerceIn(0, count - 1) + 1,
+                        count,
+                    ),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -975,6 +1017,11 @@ internal fun ReaderControlsSheet(
                 Spacer(Modifier.height(6.dp))
             }
             ReaderTabRow(
+                labels = listOf(
+                    stringResource(R.string.reader_tab_mode),
+                    stringResource(R.string.reader_tab_general),
+                    stringResource(R.string.reader_tab_filters),
+                ),
                 selectedTab = tab,
                 indicatorPosition = tabIndicator,
                 onSelect = { index -> tab = index },
@@ -983,26 +1030,33 @@ internal fun ReaderControlsSheet(
             when (tab) {
                 0 -> {
                     ChoiceGroup(
-                        title = "阅读模式",
-                        options = ReaderMode.entries.map { it to if (it == ReaderMode.PAGED) "横向翻页" else "纵向滚动" },
+                        title = stringResource(R.string.reader_section_mode),
+                        options = listOf(
+                            ReaderMode.PAGED to stringResource(R.string.reader_mode_paged),
+                            ReaderMode.VERTICAL to stringResource(R.string.reader_mode_vertical),
+                        ),
                         selected = settings.readerMode,
                         onSelect = { mode -> onSettingsChange { it.copy(readerMode = mode) } },
                     )
                     Spacer(Modifier.height(18.dp))
                     ChoiceGroup(
-                        title = "翻页方向",
-                        options = ReadingDirection.entries.map { it to if (it == ReadingDirection.LTR) "从左到右" else "从右到左" },
+                        title = stringResource(R.string.reader_section_direction),
+                        options = listOf(
+                            ReadingDirection.LTR to stringResource(R.string.reader_direction_ltr),
+                            ReadingDirection.RTL to stringResource(R.string.reader_direction_rtl),
+                        ),
                         selected = direction,
                         onSelect = onDirection,
                     )
                 }
                 1 -> {
                     ChoiceGroup(
-                        title = "背景颜色",
+                        title = stringResource(R.string.reader_section_background),
                         options = listOf(
-                            ReaderBackground.WHITE to "纯白",
-                            ReaderBackground.INK to "纯黑",
-                            ReaderBackground.CUSTOM to "自定义",
+                            ReaderBackground.AUTO to stringResource(R.string.reader_background_auto),
+                            ReaderBackground.WHITE to stringResource(R.string.reader_background_white),
+                            ReaderBackground.INK to stringResource(R.string.reader_background_ink),
+                            ReaderBackground.CUSTOM to stringResource(R.string.reader_background_custom),
                         ),
                         selected = settings.readerBackground,
                         onSelect = { background ->
@@ -1027,7 +1081,7 @@ internal fun ReaderControlsSheet(
                                     settings.readerFontSizeSp.toFloat().coerceIn(fontMin, fontMax)
                             }
                         }
-                        Text("字号", style = MaterialTheme.typography.titleSmall)
+                        Text(stringResource(R.string.reader_font_size), style = MaterialTheme.typography.titleSmall)
                         Slider(
                             state = fontSliderState,
                             onValueChange = { value -> fontSliderState.value = value },
@@ -1041,20 +1095,24 @@ internal fun ReaderControlsSheet(
                             modifier = Modifier.fillMaxWidth(),
                         )
                         Text(
-                            "${fontSliderState.value.roundToInt().coerceIn(READER_FONT_SIZE_MIN_SP, READER_FONT_SIZE_MAX_SP)} sp",
+                            stringResource(
+                                R.string.reader_font_size_value,
+                                fontSliderState.value.roundToInt()
+                                    .coerceIn(READER_FONT_SIZE_MIN_SP, READER_FONT_SIZE_MAX_SP),
+                            ),
                             style = MaterialTheme.typography.labelLarge,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                         Spacer(Modifier.height(12.dp))
                     }
                     HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
-                    ToggleRow("显示页码", settings.showPageNumber) {
+                    ToggleRow(stringResource(R.string.reader_show_page_number), settings.showPageNumber) {
                         onSettingsChange { it.copy(showPageNumber = it.showPageNumber.not()) }
                     }
-                    ToggleRow("保持屏幕常亮", settings.keepScreenOn) {
+                    ToggleRow(stringResource(R.string.reader_keep_screen_on), settings.keepScreenOn) {
                         onSettingsChange { it.copy(keepScreenOn = it.keepScreenOn.not()) }
                     }
-                    ToggleRow("音量键翻页", settings.volumeKeyPaging) {
+                    ToggleRow(stringResource(R.string.reader_volume_keys), settings.volumeKeyPaging) {
                         onSettingsChange { it.copy(volumeKeyPaging = it.volumeKeyPaging.not()) }
                     }
                 }
@@ -1063,15 +1121,15 @@ internal fun ReaderControlsSheet(
                         // The text reader colours its content from the theme / reader background;
                         // an image-style colour filter would invert the background too.
                         Text(
-                            "文字阅读器使用主题与背景配色，灰度/反色仅对图片书生效。",
+                            stringResource(R.string.reader_text_filters_note),
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     } else {
-                        ToggleRow("灰度模式", settings.grayscale) {
+                        ToggleRow(stringResource(R.string.reader_grayscale), settings.grayscale) {
                             onSettingsChange { it.copy(grayscale = it.grayscale.not()) }
                         }
-                        ToggleRow("反色", settings.invertColors) {
+                        ToggleRow(stringResource(R.string.reader_invert_colors), settings.invertColors) {
                             onSettingsChange { it.copy(invertColors = it.invertColors.not()) }
                         }
                     }
@@ -1083,11 +1141,11 @@ internal fun ReaderControlsSheet(
 
 @Composable
 private fun ReaderTabRow(
+    labels: List<String>,
     selectedTab: Int,
     indicatorPosition: Float,
     onSelect: (Int) -> Unit,
 ) {
-    val labels = listOf("阅读模式", "常规", "滤镜")
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val tabWidth = maxWidth / labels.size
         Column {

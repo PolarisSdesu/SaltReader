@@ -25,10 +25,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import java.util.Locale
 import kotlin.math.roundToInt
+import moe.gbxin.saltreader.R
 
 @Composable
 fun CustomColorPickerDialog(
@@ -50,7 +52,7 @@ fun CustomColorPickerDialog(
     val hexSupporting: (@Composable () -> Unit)? = if (hexValid) {
         null
     } else {
-        { Text("请输入 #RRGGBB 格式的颜色") }
+        { Text(stringResource(R.string.settings_color_invalid_hex)) }
     }
 
     fun applyValidHex() {
@@ -62,7 +64,7 @@ fun CustomColorPickerDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("自定义背景") },
+        title = { Text(stringResource(R.string.settings_color_dialog_title)) },
         text = {
             Column {
                 Box(
@@ -75,7 +77,7 @@ fun CustomColorPickerDialog(
                         hex = raw.uppercase(Locale.ROOT).take(7)
                         applyValidHex()
                     },
-                    label = { Text("十六进制") },
+                    label = { Text(stringResource(R.string.settings_color_hex_label)) },
                     placeholder = { Text("#RRGGBB") },
                     singleLine = true,
                     isError = !hexValid,
@@ -105,9 +107,9 @@ fun CustomColorPickerDialog(
                     val argb = parsedHex ?: ((0xFF shl 24) or (red shl 16) or (green shl 8) or blue)
                     onConfirm(argb.toLong() and 0xFFFFFFFFL)
                 },
-            ) { Text("保存") }
+            ) { Text(stringResource(R.string.settings_color_save)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.settings_color_cancel)) } },
     )
 }
 

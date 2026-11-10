@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Common library/reading labels shared by the shelf, search and metadata rows. -->
+<resources>
+    <string name="common_local_library">Local library</string>
+    <string name="common_finished">Finished</string>
+    <string name="common_not_started">Not started</string>
+    <string name="common_progress_percent">Read %1$d%%</string>
+    <string name="common_read_to_page">Read to page %1$d</string>
+
+    <string name="common_format_epub">EPUB</string>
+    <string name="common_format_mobi">MOBI</string>
+    <string name="common_format_archive">Archive</string>
+    <string name="common_format_pdf">PDF</string>
+    <string name="common_format_folder">Folder</string>
+
+    <string name="common_meta_format">Format</string>
+    <string name="common_meta_size">Size</string>
+    <string name="common_meta_pages">Pages</string>
+    <string name="common_meta_progress">Progress</string>
+    <string name="common_meta_last_read">Last read</string>
+
+    <string name="common_filter_all">All</string>
+    <string name="common_filter_reading">Reading</string>
+    <string name="common_filter_unread">Unread</string>
+
+    <string name="common_sort_recent">Recently read</string>
+    <string name="common_sort_added">Recently added</string>
+    <string name="common_sort_title">Title</string>
+    <string name="common_sort_progress">Reading progress</string>
+
+    <string name="common_layout_compact">Compact grid</string>
+    <string name="common_layout_comfortable">Comfortable grid</string>
+    <string name="common_layout_cover_only">Covers only</string>
+    <string name="common_layout_list">List</string>
+
+    <plurals name="common_pages">
+        <item quantity="one">%1$d page</item>
+        <item quantity="other">%1$d pages</item>
+    </plurals>
+</resources>

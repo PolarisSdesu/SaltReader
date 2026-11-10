@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="common_local_library">ローカルライブラリ</string>
+    <string name="common_finished">読了</string>
+    <string name="common_not_started">未読</string>
+    <string name="common_progress_percent">%1$d%% まで読了</string>
+    <string name="common_read_to_page">%1$d ページまで読了</string>
+
+    <string name="common_format_epub">EPUB</string>
+    <string name="common_format_mobi">MOBI</string>
+    <string name="common_format_archive">アーカイブ</string>
+    <string name="common_format_pdf">PDF</string>
+    <string name="common_format_folder">フォルダ</string>
+
+    <string name="common_meta_format">形式</string>
+    <string name="common_meta_size">サイズ</string>
+    <string name="common_meta_pages">ページ数</string>
+    <string name="common_meta_progress">進捗</string>
+    <string name="common_meta_last_read">最終閲覧</string>
+
+    <string name="common_filter_all">すべて</string>
+    <string name="common_filter_reading">読書中</string>
+    <string name="common_filter_unread">未読</string>
+
+    <string name="common_sort_recent">最近読んだ順</string>
+    <string name="common_sort_added">追加した順</string>
+    <string name="common_sort_title">タイトル</string>
+    <string name="common_sort_progress">読書進捗</string>
+
+    <string name="common_layout_compact">コンパクトグリッド</string>
+    <string name="common_layout_comfortable">ゆったりグリッド</string>
+    <string name="common_layout_cover_only">表紙のみ</string>
+    <string name="common_layout_list">リスト</string>
+
+    <plurals name="common_pages">
+        <item quantity="other">%1$d ページ</item>
+    </plurals>
+</resources>

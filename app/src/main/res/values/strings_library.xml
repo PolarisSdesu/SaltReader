@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Library shelf, book card/actions and search page. -->
+<resources>
+    <string name="library_action_search">Search</string>
+    <string name="library_action_layout">Layout</string>
+    <string name="library_action_settings">Settings</string>
+    <string name="library_loading_shelf">Organizing your shelf…</string>
+    <string name="library_sort_action">Sort</string>
+    <string name="library_sort_by">Sort by</string>
+    <string name="library_sort_direction">Sort direction</string>
+    <string name="library_sort_ascending">Ascending</string>
+    <string name="library_sort_descending">Descending</string>
+
+    <string name="library_empty_title">Your shelf is empty</string>
+    <string name="library_empty_body">Choose a folder with comics. The app only indexes it and never copies or moves your files.</string>
+    <string name="library_add_folder">Add folder</string>
+    <string name="library_empty_hint">You can manage or remove folders later in Settings → Storage.</string>
+    <string name="library_no_results_title">No comics found</string>
+    <string name="library_no_results_search">Try a different keyword.</string>
+    <string name="library_no_results_filter">Nothing matches this filter.</string>
+
+    <string name="library_importing">Importing</string>
+    <string name="library_import_scanning">Scanning folder…</string>
+    <string name="library_import_failed_one">Import failed: %1$s</string>
+    <string name="library_import_done_failed">Indexed %1$d books; %2$d failed: %3$s</string>
+    <string name="library_import_done">Indexed %1$d books. EPUB/MOBI/AZW3 can be read directly.</string>
+    <string name="library_import_empty">No readable comics found.</string>
+    <string name="library_import_progress_percent">%1$d%%</string>
+
+    <string name="library_layout_title">Layout</string>
+    <string name="library_layout_mode">Layout mode</string>
+    <string name="library_layout_columns">Columns  %1$s</string>
+    <string name="library_layout_columns_auto">Auto</string>
+    <string name="library_layout_columns_custom">Custom · %1$d columns</string>
+    <string name="library_layout_title_size">Title size  %1$dsp</string>
+    <string name="library_layout_meta_visible">Show labels</string>
+    <string name="library_layout_meta_visible_supporting">Format / size / pages / progress / last read under each cover</string>
+    <string name="library_layout_meta_size">Label size  %1$dsp</string>
+    <string name="library_layout_meta_fields">Label fields</string>
+
+    <string name="library_book_meta_pages">%1$d pages · %2$s · %3$s</string>
+    <string name="library_book_meta_format">%1$s · %2$s</string>
+    <string name="library_book_percent">%1$d%%</string>
+
+    <string name="library_action_start_reading">Start reading</string>
+    <string name="library_action_continue_page">Continue · page %1$d</string>
+    <string name="library_action_continue_percent">Continue · %1$d%%</string>
+    <string name="library_action_mark_read">Mark as read</string>
+    <string name="library_action_mark_unread">Mark as unread</string>
+    <string name="library_action_rename">Rename</string>
+    <string name="library_action_remove">Remove from shelf</string>
+
+    <string name="library_rename_title">Rename</string>
+    <string name="library_rename_label">Title</string>
+    <string name="library_save">Save</string>
+    <string name="library_cancel">Cancel</string>
+    <string name="library_remove_title">Remove from shelf?</string>
+    <string name="library_remove_body">Only the shelf index and cover cache are removed. Your original files stay untouched.</string>
+    <string name="library_remove_confirm">Remove</string>
+
+    <string name="library_deleted">%1$s removed from shelf</string>
+    <string name="library_delete_failed">Could not remove %1$s</string>
+    <string name="library_title_empty">Title cannot be empty</string>
+    <string name="library_title_unchanged">Title unchanged</string>
+    <string name="library_renamed">Renamed to %1$s</string>
+    <string name="library_rename_failed">Rename failed</string>
+    <string name="library_marked_read">%1$s marked as read</string>
+    <string name="library_marked_unread">%1$s marked as unread</string>
+    <string name="library_update_failed">Could not update %1$s</string>
+    <string name="library_refresh_partial">Refresh finished; %1$d unreadable: %2$s (%3$s)</string>
+    <string name="library_refresh_failed">Refresh failed: %1$s</string>
+    <string name="library_error_unknown">Unknown error</string>
+
+    <string name="search_title">Search</string>
+    <string name="search_placeholder">Search title or author</string>
+    <string name="search_clear">Clear search</string>
+    <string name="search_back">Back</string>
+    <string name="search_hint_title">Search your shelf</string>
+    <string name="search_hint_body">Type a title or author to search %1$d books.</string>
+    <string name="search_empty_title">Your shelf is empty</string>
+    <string name="search_empty_body">Go back to the shelf and add a comic folder first.</string>
+    <string name="search_no_results_title">No results for “%1$s”</string>
+    <string name="search_no_results_body">Try another keyword, or clear the search to see all books.</string>
+
+    <plurals name="library_result_count">
+        <item quantity="one">%1$d book found</item>
+        <item quantity="other">%1$d books found</item>
+    </plurals>
+</resources>

@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 設定画面、ストレージ管理、アプリ情報、カラーピッカー。 -->
+<resources>
+    <!-- 共通のトップバー / ナビゲーション -->
+    <string name="settings_back">戻る</string>
+    <string name="settings_title">設定</string>
+
+    <!-- 設定ホーム -->
+    <string name="settings_home_section_personalization">カスタマイズ</string>
+    <string name="settings_home_section_data">データ</string>
+    <string name="settings_home_section_about">このアプリについて</string>
+    <string name="settings_home_about">Salt Reader について</string>
+
+    <!-- 表示 -->
+    <string name="settings_appearance_title">表示</string>
+    <string name="settings_appearance_section_theme">テーマ</string>
+    <string name="settings_appearance_theme_mode">テーマモード</string>
+    <string name="settings_appearance_section_color">カラー</string>
+    <string name="settings_appearance_dynamic_color">ダイナミックカラー</string>
+    <string name="settings_appearance_dynamic_color_supporting">システムの壁紙に合わせて配色（Android 12+ のみ）</string>
+    <string name="settings_appearance_amoled">純黒モード</string>
+    <string name="settings_appearance_amoled_supporting">ダークモードで AMOLED の純黒を使用</string>
+
+    <!-- リーダー -->
+    <string name="settings_reader_title">リーダー</string>
+    <string name="settings_reader_section_layout">レイアウト</string>
+    <string name="settings_reader_reading_mode">表示モード</string>
+    <string name="settings_reader_paging_direction">横めくり方向</string>
+    <string name="settings_reader_section_display">画面表示</string>
+    <string name="settings_reader_paper_color">用紙の色</string>
+    <string name="settings_reader_show_page_number">ページ番号を表示</string>
+    <string name="settings_reader_show_page_number_supporting">ページ下部に現在のページ番号を表示</string>
+    <string name="settings_reader_keep_screen_on">画面を常に点灯</string>
+    <string name="settings_reader_keep_screen_on_supporting">閲覧中は画面が自動で消灯しません</string>
+    <string name="settings_reader_volume_key_paging">音量キーでページ送り</string>
+    <string name="settings_reader_volume_key_paging_supporting">音量キーで前後のページに移動</string>
+    <string name="settings_reader_section_filter">フィルター</string>
+    <string name="settings_reader_grayscale">グレースケール</string>
+    <string name="settings_reader_grayscale_supporting">色を除去</string>
+    <string name="settings_reader_invert">色を反転</string>
+    <string name="settings_reader_invert_supporting">夜間の閲覧に最適</string>
+
+    <!-- 表示モード / 方向 / 背景の選択肢 -->
+    <string name="settings_theme_system">システムに従う</string>
+    <string name="settings_theme_light">ライト</string>
+    <string name="settings_theme_dark">ダーク</string>
+    <string name="settings_reader_mode_paged">横めくり</string>
+    <string name="settings_reader_mode_vertical">縦スクロール</string>
+    <string name="settings_direction_ltr">左から右</string>
+    <string name="settings_direction_rtl">右から左</string>
+    <string name="settings_background_auto">自動</string>
+    <string name="settings_background_white">ホワイト</string>
+    <string name="settings_background_ink">ブラック</string>
+    <string name="settings_background_custom">カスタム</string>
+
+    <!-- ストレージ -->
+    <string name="settings_storage_title">ストレージ</string>
+    <string name="settings_storage_section_library">ライブラリ</string>
+    <plurals name="settings_storage_indexed_books">
+        <item quantity="other">%1$d 冊をインデックス済み</item>
+    </plurals>
+    <plurals name="settings_storage_reflowable_books">
+        <item quantity="other">%1$d 冊のテキスト本</item>
+    </plurals>
+    <plurals name="settings_storage_indexed_pages">
+        <item quantity="other">%1$d ページ</item>
+    </plurals>
+    <string name="settings_storage_refreshing">更新中…</string>
+    <string name="settings_storage_refresh_index">インデックスを更新</string>
+    <string name="settings_storage_scanning">スキャン中…</string>
+    <plurals name="settings_storage_scan_indexed">
+        <item quantity="other">%1$d 冊をインデックスしました</item>
+    </plurals>
+    <string name="settings_storage_scan_no_comics">漫画が見つかりません</string>
+    <string name="settings_storage_scan_failed">スキャンに失敗しました：%1$s</string>
+    <string name="settings_unknown_error">不明なエラー</string>
+    <string name="settings_storage_root_removed">「%1$s」を削除しました</string>
+    <string name="settings_storage_root_remove_failed">削除に失敗しました：%1$s</string>
+    <string name="settings_storage_cache_cleared">キャッシュを削除し、%1$s を解放しました</string>
+    <string name="settings_storage_cache_empty">削除できるキャッシュはありません</string>
+    <string name="settings_storage_cache_clear_failed">削除に失敗しました：%1$s</string>
+    <string name="settings_storage_section_folders">フォルダ</string>
+    <string name="settings_storage_add_folder">フォルダを追加</string>
+    <string name="settings_storage_no_folders">フォルダがまだ追加されていません</string>
+    <string name="settings_storage_remove_hint">インデックスのみ削除され、元のファイルは影響を受けません。</string>
+    <string name="settings_storage_section_cache">キャッシュ</string>
+    <string name="settings_storage_clear_cache">キャッシュを削除</string>
+    <string name="settings_storage_clearing">削除中…</string>
+    <string name="settings_storage_cache_usage">現在 %1$s 使用中</string>
+    <string name="settings_storage_remove_folder">フォルダ %1$s を削除</string>
+
+    <!-- アプリ情報 -->
+    <string name="settings_about_title">このアプリについて</string>
+    <string name="settings_about_section_app">アプリ</string>
+    <string name="settings_about_version">バージョン</string>
+    <string name="settings_about_package">パッケージ名</string>
+
+    <!-- カラーピッカー -->
+    <string name="settings_color_dialog_title">カスタム背景</string>
+    <string name="settings_color_invalid_hex">#RRGGBB 形式の色を入力してください</string>
+    <string name="settings_color_hex_label">16 進数</string>
+    <string name="settings_color_save">保存</string>
+    <string name="settings_color_cancel">キャンセル</string>
+
+    <!-- 表紙のアクセシビリティ説明 -->
+    <string name="settings_cover_content_description">%1$s の表紙</string>
+</resources>

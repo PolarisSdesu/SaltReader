@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Loading / terminal states -->
+    <string name="reader_loading_opening">Opening…</string>
+    <string name="reader_loading_preparing">Preparing…</string>
+    <string name="reader_loading_parsing_ebook">Parsing e-book…</string>
+    <string name="reader_unavailable_title">Cannot open</string>
+    <string name="reader_unavailable_message">This book is no longer in your library.</string>
+    <string name="reader_empty_title">No readable pages</string>
+    <string name="reader_empty_message">No supported images or pages were found in this book.</string>
+    <string name="reader_failed_title">Cannot open this book</string>
+    <string name="reader_failed_message">The file may be corrupt or in an unsupported format.</string>
+    <string name="reader_retry">Retry</string>
+    <string name="reader_back_to_library">Back to library</string>
+
+    <!-- Toolbar / accessibility -->
+    <string name="reader_back">Back</string>
+    <string name="reader_reading_area">Reading area</string>
+    <string name="reader_action_previous_page">Previous page</string>
+    <string name="reader_action_next_page">Next page</string>
+    <string name="reader_show_controls">Show controls</string>
+    <string name="reader_hide_controls">Hide controls</string>
+    <string name="reader_settings_title">Reading settings</string>
+    <string name="reader_switch_to_vertical">Switch to vertical scrolling</string>
+    <string name="reader_switch_to_paged">Switch to horizontal paging</string>
+
+    <!-- Page / slider labels -->
+    <string name="reader_page_indicator">%1$d / %2$d</string>
+    <string name="reader_page_number">Page %1$d</string>
+    <string name="reader_page_failed">Page %1$d cannot be displayed</string>
+    <string name="reader_page_slider_label">Page %1$d / %2$d</string>
+    <string name="reader_percent">%1$d%%</string>
+    <string name="reader_font_size_value">%1$d sp</string>
+
+    <!-- Reading settings sheet -->
+    <string name="reader_tab_mode">Mode</string>
+    <string name="reader_tab_general">General</string>
+    <string name="reader_tab_filters">Filters</string>
+    <string name="reader_mode_paged">Horizontal paging</string>
+    <string name="reader_mode_vertical">Vertical scrolling</string>
+    <string name="reader_section_mode">Reading mode</string>
+    <string name="reader_section_direction">Paging direction</string>
+    <string name="reader_direction_ltr">Left to right</string>
+    <string name="reader_direction_rtl">Right to left</string>
+    <string name="reader_section_background">Background colour</string>
+    <string name="reader_background_auto">Auto</string>
+    <string name="reader_background_white">White</string>
+    <string name="reader_background_ink">Black</string>
+    <string name="reader_background_custom">Custom</string>
+    <string name="reader_font_size">Font size</string>
+    <string name="reader_show_page_number">Show page number</string>
+    <string name="reader_keep_screen_on">Keep screen on</string>
+    <string name="reader_volume_keys">Volume keys turn pages</string>
+    <string name="reader_grayscale">Grayscale</string>
+    <string name="reader_invert_colors">Invert colours</string>
+    <string name="reader_text_filters_note">The text reader follows the theme and background colour; grayscale and invert only apply to image books.</string>
+</resources>

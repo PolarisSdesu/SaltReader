@@ -21,6 +21,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.sp
 import java.io.File
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.data.ComicBook
 
 /** Process-wide cover cache: covers are derived cache files, so evicting them is always safe. */
@@ -95,7 +97,7 @@ fun ComicCover(
         if (bitmap != null) {
             Image(
                 bitmap = bitmap,
-                contentDescription = "《${book.title}》封面",
+                contentDescription = stringResource(R.string.settings_cover_content_description, book.title),
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop,
             )

@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.ComicBook
 import moe.gbxin.saltreader.data.ImportReport
@@ -60,6 +61,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val _events = Channel<LibraryEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
+    private fun str(id: Int, vararg args: Any): String =
+        getApplication<Application>().getString(id, *args)
+
+    private fun errorText(e: Exception): String = e.message ?: str(R.string.library_error_unknown)
+
     val uiState: StateFlow<LibraryUiState> = combine(
         repo.books, repo.ready, query, filter, sort,
     ) { books, ready, q, f, s ->
@@ -100,7 +106,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun importLibraryTree(uri: Uri) {
         if (_importState.value.running) return
         viewModelScope.launch {
-            _importState.value = ImportUiState(running = true, progress = 0f, label = "正在扫描目录…")
+            _importState.value = ImportUiState(running = true, progress = 0f, label = str(R.string.library_import_scanning))
             try {
                 val report = repo.importLibraryTree(uri) { progress, label ->
                     _importState.update { it.copy(progress = progress, label = label) }
@@ -109,7 +115,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _events.send(LibraryEvent.Message("导入失败：${e.message ?: "未知错误"}"))
+                _events.send(LibraryEvent.Message(str(R.string.library_import_failed_one, errorText(e))))
             } finally {
                 _importState.value = ImportUiState()
             }
@@ -128,7 +134,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     val first = report.failures.first()
                     _events.send(
                         LibraryEvent.Message(
-                            "刷新完成，${report.failures.size} 项无法读取：${first.name}（${first.reason}）",
+                            str(R.string.library_refresh_partial, report.failures.size, first.name, first.reason),
                         ),
                     )
                 }
@@ -138,7 +144,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _events.send(LibraryEvent.Message("刷新失败：${e.message ?: "未知错误"}"))
+                _events.send(LibraryEvent.Message(str(R.string.library_refresh_failed, errorText(e))))
             } finally {
                 _refreshing.value = false
             }
@@ -148,22 +154,22 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     fun delete(book: ComicBook) = viewModelScope.launch {
         try {
             repo.delete(book)
-            _events.send(LibraryEvent.Message("《${book.title}》已移出书架"))
+            _events.send(LibraryEvent.Message(str(R.string.library_deleted, book.title)))
         } catch (e: CancellationException) {
             throw e
         } catch (_: Exception) {
-            _events.send(LibraryEvent.Message("操作失败：无法移出《${book.title}》"))
+            _events.send(LibraryEvent.Message(str(R.string.library_delete_failed, book.title)))
         }
     }
 
     fun rename(book: ComicBook, title: String) = viewModelScope.launch {
         val clean = title.trim().take(120)
         if (clean.isBlank()) {
-            _events.send(LibraryEvent.Message("书名不能为空"))
+            _events.send(LibraryEvent.Message(str(R.string.library_title_empty)))
             return@launch
         }
         if (clean == book.title) {
-            _events.send(LibraryEvent.Message("书名没有变化"))
+            _events.send(LibraryEvent.Message(str(R.string.library_title_unchanged)))
             return@launch
         }
         val ok = try {
@@ -173,7 +179,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         } catch (_: Exception) {
             false
         }
-        _events.send(LibraryEvent.Message(if (ok) "已重命名为《$clean》" else "重命名失败"))
+        _events.send(
+            LibraryEvent.Message(
+                if (ok) str(R.string.library_renamed, clean) else str(R.string.library_rename_failed),
+            ),
+        )
     }
 
     fun toggleFinished(book: ComicBook) = viewModelScope.launch {
@@ -188,9 +198,13 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         _events.send(
             LibraryEvent.Message(
                 if (ok) {
-                    if (target) "《${book.title}》已标为读完" else "《${book.title}》已标为未读"
+                    if (target) {
+                        str(R.string.library_marked_read, book.title)
+                    } else {
+                        str(R.string.library_marked_unread, book.title)
+                    }
                 } else {
-                    "操作失败：无法更新《${book.title}》"
+                    str(R.string.library_update_failed, book.title)
                 },
             ),
         )

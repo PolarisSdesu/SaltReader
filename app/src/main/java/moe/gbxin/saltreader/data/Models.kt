@@ -1,7 +1,6 @@
 package moe.gbxin.saltreader.data
 
 import kotlinx.serialization.Serializable
-import kotlin.math.roundToInt
 
 @Serializable
 enum class BookKind {
@@ -22,14 +21,20 @@ enum class ReaderMode { PAGED, VERTICAL }
 enum class ReadingDirection { LTR, RTL }
 
 @Serializable
-enum class ReaderBackground { WHITE, INK, CUSTOM }
+enum class ReaderBackground {
+    /** Follow the system theme: pure white in light mode, pure black in dark mode. */
+    AUTO,
+    WHITE,
+    INK,
+    CUSTOM,
+}
 
 @Serializable
 enum class ThemeMode { SYSTEM, LIGHT, DARK }
 
-enum class LibraryFilter(val label: String) { ALL("全部"), READING("在读"), UNREAD("未读") }
+enum class LibraryFilter { ALL, READING, UNREAD }
 
-enum class LibrarySort(val label: String) { RECENT("最近阅读"), ADDED("最近加入"), TITLE("书名"), PROGRESS("阅读进度") }
+enum class LibrarySort { RECENT, ADDED, TITLE, PROGRESS }
 
 /**
  * A book is a reference to a document inside one of the user's SAF folder trees.
@@ -71,38 +76,31 @@ data class ComicBook(
     val progress: Float
         get() = if (pageCount <= 0) 0f else ((currentPage + if (finished) 1 else 0).toFloat() / pageCount).coerceIn(0f, 1f)
 
-    val displayAuthor: String
-        get() = author?.takeIf { it.isNotBlank() } ?: "本地藏书"
-
-    val pageLabel: String
-        get() = when {
-            finished -> "已读完"
-            reflowable && progressOffset > 0L -> "读至 ${(progress * 100).roundToInt()}%"
-            currentPage <= 0 -> "尚未开始"
-            else -> "读到第 ${currentPage + 1} 页"
-        }
-
     /** File extension of the referenced document, lowercased ("" for folder books). */
     val extension: String
         get() = documentPath.substringAfterLast('.', "").lowercase()
 
-    /** Human-readable format label, used by the book cards and the actions sheet. */
-    val kindLabel: String
+    /** Format independent of the UI language; labels are resolved in the UI layer. */
+    val format: BookFormat
         get() = when (kind) {
-            BookKind.FOLDER -> "文件夹"
-            BookKind.PDF -> "PDF"
-            BookKind.TEXT -> when (extension) {
-                "epub" -> "EPUB 电子书"
-                "mobi", "azw", "azw3" -> "MOBI 电子书"
-                else -> "电子书"
-            }
+            BookKind.FOLDER -> BookFormat.FOLDER
+            BookKind.PDF -> BookFormat.PDF
+            BookKind.TEXT -> if (extension in mobiExtensions) BookFormat.MOBI else BookFormat.EPUB
             BookKind.ARCHIVE -> when (extension) {
-                "epub" -> "EPUB 电子书"
-                "mobi", "azw", "azw3" -> "MOBI 电子书"
-                else -> "压缩包"
+                "epub" -> BookFormat.EPUB
+                in mobiExtensions -> BookFormat.MOBI
+                else -> BookFormat.ARCHIVE
             }
         }
 }
+
+/** UI-facing book format; labels live in string resources. */
+enum class BookFormat { EPUB, MOBI, ARCHIVE, PDF, FOLDER }
+
+private val mobiExtensions = setOf("mobi", "azw", "azw3")
+
+/** Optional metadata pieces shown under a book card; freely combinable in the layout panel. */
+enum class LibraryMetaField { FORMAT, SIZE, PAGES, PROGRESS, LAST_READ }
 
 data class ImportFailure(val name: String, val reason: String)
 

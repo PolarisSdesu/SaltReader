@@ -77,6 +77,7 @@ import androidx.compose.material3.rememberSliderState
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
@@ -102,6 +103,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -110,13 +112,24 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
 import kotlin.math.roundToInt
+import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.AppSettings
 import moe.gbxin.saltreader.data.ComicBook
 import moe.gbxin.saltreader.data.LibraryFilter
+import moe.gbxin.saltreader.data.LIBRARY_META_TEXT_MAX_SP
+import moe.gbxin.saltreader.data.LIBRARY_META_TEXT_MIN_SP
 import moe.gbxin.saltreader.data.LibraryLayout
+import moe.gbxin.saltreader.data.LibraryMetaField
 import moe.gbxin.saltreader.data.LibrarySort
 import moe.gbxin.saltreader.ui.components.ComicCover
+import moe.gbxin.saltreader.ui.components.bookFormatLabel
+import moe.gbxin.saltreader.ui.components.bookMetaLabel
+import moe.gbxin.saltreader.ui.components.bookProgressLabel
+import moe.gbxin.saltreader.ui.components.libraryFilterLabel
+import moe.gbxin.saltreader.ui.components.libraryLayoutLabel
+import moe.gbxin.saltreader.ui.components.librarySortLabel
+import moe.gbxin.saltreader.ui.components.metaFieldLabel
 import moe.gbxin.saltreader.ui.components.SaltLoading
 import moe.gbxin.saltreader.util.formatBytes
 
@@ -131,7 +144,8 @@ fun LibraryScreen(
     val state by vm.uiState.collectAsStateWithLifecycle()
     val importState by vm.importState.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
-    val app = LocalContext.current.applicationContext as SaltReaderApplication
+    val context = LocalContext.current
+    val app = context.applicationContext as SaltReaderApplication
     val repo = app.library
     val allBooks by repo.books.collectAsStateWithLifecycle()
     val settings by app.settings.state.collectAsStateWithLifecycle()
@@ -167,11 +181,15 @@ fun LibraryScreen(
                     val report = event.report
                     // Every supported format is readable in place now; no conversion step remains.
                     val message = when {
-                        report.count > 0 && report.hasFailures ->
-                            "已索引 ${report.count} 本；${report.failures.size} 项失败：${report.failures.first().name}"
-                        report.count > 0 -> "已索引 ${report.count} 本，EPUB/MOBI/AZW3 可直接阅读"
-                        report.hasFailures -> "导入失败：${report.failures.first().reason}"
-                        else -> "没有找到可导入的漫画"
+                        report.count > 0 && report.hasFailures -> context.getString(
+                            R.string.library_import_done_failed,
+                            report.count,
+                            report.failures.size,
+                            report.failures.first().name,
+                        )
+                        report.count > 0 -> context.getString(R.string.library_import_done, report.count)
+                        report.hasFailures -> context.getString(R.string.library_import_failed_one, report.failures.first().reason)
+                        else -> context.getString(R.string.library_import_empty)
                     }
                     snackbar.showSnackbar(message)
                 }
@@ -207,13 +225,13 @@ fun LibraryScreen(
                 title = { Text("Salt Reader", maxLines = 1) },
                 actions = {
                     IconButton(onClick = onOpenSearch) {
-                        Icon(Icons.Filled.Search, contentDescription = "搜索")
+                        Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.library_action_search))
                     }
                     IconButton(onClick = { showLayoutSheet = true }) {
-                        Icon(Icons.Filled.GridView, contentDescription = "布局")
+                        Icon(Icons.Filled.GridView, contentDescription = stringResource(R.string.library_action_layout))
                     }
                     IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = "设置")
+                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.library_action_settings))
                     }
                 },
                 scrollBehavior = scrollBehavior,
@@ -263,7 +281,7 @@ fun LibraryScreen(
                         ) {
                             SaltLoading(sizeDp = 40)
                             Spacer(Modifier.height(16.dp))
-                            Text("正在整理书架…", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(stringResource(R.string.library_loading_shelf), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
                 } else if (state.isEmpty) {
@@ -293,6 +311,9 @@ fun LibraryScreen(
                                 titleSizeSp = settings.libraryTitleSizeSp,
                                 listMode = settings.libraryLayout == LibraryLayout.LIST,
                                 coverOnly = settings.libraryLayout == LibraryLayout.COVER_ONLY,
+                                showMeta = settings.libraryMetaVisible,
+                                metaTextSizeSp = settings.libraryMetaTextSizeSp,
+                                metaFields = settings.libraryMetaFields,
                                 onClick = { onOpenBook(book) },
                                 onLongClick = { selectedBookId = book.id },
                                 modifier = Modifier.animateItem(),
@@ -367,7 +388,7 @@ private fun ShelfHeader(
                 FilterChip(
                     selected = state.filter == filter,
                     onClick = { onFilter(filter) },
-                    label = { Text(filter.label) },
+                    label = { Text(libraryFilterLabel(filter)) },
                     leadingIcon = if (state.filter == filter) {
                         { Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(FilterChipDefaults.IconSize)) }
                     } else null,
@@ -376,7 +397,10 @@ private fun ShelfHeader(
         }
         Box {
             IconButton(onClick = { sortOpen = true }) {
-                Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = "排序")
+                Icon(
+                    Icons.AutoMirrored.Filled.Sort,
+                    contentDescription = stringResource(R.string.library_sort_action),
+                )
             }
             DropdownMenu(
                 expanded = sortOpen,
@@ -386,14 +410,14 @@ private fun ShelfHeader(
                 tonalElevation = 2.dp,
             ) {
                 Text(
-                    "排序方式",
+                    stringResource(R.string.library_sort_by),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 12.dp, top = 10.dp, bottom = 6.dp),
                 )
                 LibrarySort.entries.forEach { sort ->
                     DropdownMenuItem(
-                        text = { Text(sort.label) },
+                        text = { Text(librarySortLabel(sort)) },
                         onClick = {
                             onSort(sort)
                             sortOpen = false
@@ -405,12 +429,15 @@ private fun ShelfHeader(
                 }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 Text(
-                    "排序方向",
+                    stringResource(R.string.library_sort_direction),
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 12.dp, top = 8.dp, bottom = 6.dp),
                 )
-                listOf(true to "升序", false to "降序").forEach { (ascending, label) ->
+                listOf(
+                    true to stringResource(R.string.library_sort_ascending),
+                    false to stringResource(R.string.library_sort_descending),
+                ).forEach { (ascending, label) ->
                     DropdownMenuItem(
                         text = { Text(label) },
                         onClick = {
@@ -441,6 +468,9 @@ private fun BookCard(
     titleSizeSp: Int,
     listMode: Boolean,
     coverOnly: Boolean,
+    showMeta: Boolean,
+    metaTextSizeSp: Int,
+    metaFields: Set<LibraryMetaField>,
     onClick: () -> Unit,
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
@@ -449,17 +479,11 @@ private fun BookCard(
         fontSize = titleSizeSp.sp,
         lineHeight = (titleSizeSp + 6).sp,
     )
-    val meta = when {
-        // Reflowable text books have no fixed pages: show the percentage or type + size.
-        book.reflowable -> if (book.finished || book.progressOffset > 0L) {
-            book.pageLabel
-        } else {
-            "${book.kindLabel} · ${formatBytes(book.sizeBytes)}"
-        }
-        book.finished -> "已读完"
-        book.currentPage > 0 -> "阅读至 ${book.currentPage + 1} 页"
-        else -> "${book.kindLabel} · ${formatBytes(book.sizeBytes)}"
-    }
+    val meta = if (showMeta) bookMetaLabel(book, metaFields) else ""
+    val metaStyle = MaterialTheme.typography.bodySmall.copy(
+        fontSize = metaTextSizeSp.sp,
+        lineHeight = (metaTextSizeSp + 4).sp,
+    )
     if (listMode) {
         Card(
             modifier = modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
@@ -471,8 +495,10 @@ private fun BookCard(
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text(book.title, style = titleStyle, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(4.dp))
-                    Text(meta, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    if (meta.isNotEmpty()) {
+                        Spacer(Modifier.height(4.dp))
+                        Text(meta, style = metaStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
                 }
             }
         }
@@ -504,8 +530,10 @@ private fun BookCard(
                     maxLines = 3,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Spacer(Modifier.height(3.dp))
-                Text(meta, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (meta.isNotEmpty()) {
+                    Spacer(Modifier.height(3.dp))
+                    Text(meta, style = metaStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
             }
         }
     }
@@ -527,15 +555,24 @@ private fun LayoutSheet(
     // not thrash SharedPreferences. Both are re-synced when the stored value changes elsewhere.
     var columnDraft by remember(settings.libraryColumns) { mutableFloatStateOf(settings.libraryColumns.toFloat()) }
     var titleSizeDraft by remember(settings.libraryTitleSizeSp) { mutableFloatStateOf(settings.libraryTitleSizeSp.toFloat()) }
+    var metaSizeDraft by remember(settings.libraryMetaTextSizeSp) { mutableFloatStateOf(settings.libraryMetaTextSizeSp.toFloat()) }
     // Material3 1.5 state-based Sliders: the state owns the thumb, the drafts are the persisted
     // values committed in onValueChangeFinished. Follow external changes unless dragging.
     val columnSlider = rememberSliderState(value = columnDraft, steps = 5, trackRange = 0f..6f)
     val titleSizeSlider = rememberSliderState(value = titleSizeDraft, steps = 13, trackRange = 14f..28f)
+    val metaSizeSlider = rememberSliderState(
+        value = metaSizeDraft,
+        steps = LIBRARY_META_TEXT_MAX_SP - LIBRARY_META_TEXT_MIN_SP - 1,
+        trackRange = LIBRARY_META_TEXT_MIN_SP.toFloat()..LIBRARY_META_TEXT_MAX_SP.toFloat(),
+    )
     LaunchedEffect(columnDraft) {
         if (!columnSlider.isDragging && columnSlider.value != columnDraft) columnSlider.value = columnDraft
     }
     LaunchedEffect(titleSizeDraft) {
         if (!titleSizeSlider.isDragging && titleSizeSlider.value != titleSizeDraft) titleSizeSlider.value = titleSizeDraft
+    }
+    LaunchedEffect(metaSizeDraft) {
+        if (!metaSizeSlider.isDragging && metaSizeSlider.value != metaSizeDraft) metaSizeSlider.value = metaSizeDraft
     }
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
@@ -543,9 +580,9 @@ private fun LayoutSheet(
                 .verticalScroll(rememberScrollState())
                 .padding(start = 24.dp, end = 24.dp, bottom = 28.dp),
         ) {
-            Text("布局", style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.library_layout_title), style = MaterialTheme.typography.headlineSmall)
             Spacer(Modifier.height(20.dp))
-            Text("布局模式", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.library_layout_mode), style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(8.dp))
             Row(
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
@@ -560,13 +597,13 @@ private fun LayoutSheet(
                             columnDraft = 0f
                             onSettingsChange { it.copy(libraryLayout = layout, libraryColumns = 0) }
                         },
-                        label = { Text(layout.label()) },
+                        label = { Text(libraryLayoutLabel(layout)) },
                     )
                 }
             }
             Spacer(Modifier.height(20.dp))
             Text(
-                "列数  ${columnLabel(columnDraft.roundToInt())}",
+                stringResource(R.string.library_layout_columns, columnLabel(columnDraft.roundToInt())),
                 style = MaterialTheme.typography.titleSmall,
             )
             Slider(
@@ -582,7 +619,10 @@ private fun LayoutSheet(
                 modifier = Modifier.fillMaxWidth(),
             )
             Spacer(Modifier.height(16.dp))
-            Text("书名大小  ${titleSizeDraft.roundToInt()}sp", style = MaterialTheme.typography.titleSmall)
+            Text(
+                stringResource(R.string.library_layout_title_size, titleSizeDraft.roundToInt()),
+                style = MaterialTheme.typography.titleSmall,
+            )
             Slider(
                 state = titleSizeSlider,
                 onValueChange = { value ->
@@ -595,19 +635,68 @@ private fun LayoutSheet(
                 },
                 modifier = Modifier.fillMaxWidth(),
             )
+            Spacer(Modifier.height(20.dp))
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.library_layout_meta_visible), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        stringResource(R.string.library_layout_meta_visible_supporting),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(
+                    checked = settings.libraryMetaVisible,
+                    onCheckedChange = { visible -> onSettingsChange { it.copy(libraryMetaVisible = visible) } },
+                )
+            }
+            Spacer(Modifier.height(16.dp))
+            Text(
+                stringResource(R.string.library_layout_meta_size, metaSizeDraft.roundToInt()),
+                style = MaterialTheme.typography.titleSmall,
+            )
+            Slider(
+                state = metaSizeSlider,
+                onValueChange = { value ->
+                    metaSizeDraft = value
+                    metaSizeSlider.value = value
+                },
+                onValueChangeFinished = {
+                    onSettingsChange { it.copy(libraryMetaTextSizeSp = metaSizeDraft.roundToInt()) }
+                },
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Spacer(Modifier.height(12.dp))
+            Text(stringResource(R.string.library_layout_meta_fields), style = MaterialTheme.typography.titleSmall)
+            Spacer(Modifier.height(8.dp))
+            Row(
+                Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                LibraryMetaField.entries.forEach { field ->
+                    val selected = field in settings.libraryMetaFields
+                    FilterChip(
+                        selected = selected,
+                        onClick = {
+                            val next = if (selected) settings.libraryMetaFields - field
+                            else settings.libraryMetaFields + field
+                            onSettingsChange { it.copy(libraryMetaFields = next) }
+                        },
+                        label = { Text(metaFieldLabel(field)) },
+                    )
+                }
+            }
         }
     }
 }
 
-private fun LibraryLayout.label(): String = when (this) {
-    LibraryLayout.COMPACT -> "紧凑网格"
-    LibraryLayout.COMFORTABLE -> "松散网格"
-    LibraryLayout.COVER_ONLY -> "仅封面"
-    LibraryLayout.LIST -> "列表"
+/** 0 means "auto per layout preset"; any other value is a user-chosen custom column count. */
+@Composable
+private fun columnLabel(columns: Int): String = if (columns <= 0) {
+    stringResource(R.string.library_layout_columns_auto)
+} else {
+    stringResource(R.string.library_layout_columns_custom, columns)
 }
-
-/** 0 means "按布局预设自动"; any other value is a user-chosen custom column count. */
-private fun columnLabel(columns: Int): String = if (columns <= 0) "自动" else "自定义 · $columns 列"
 
 @Composable
 private fun EmptyLibrary(onChooseFolder: () -> Unit) {
@@ -626,10 +715,10 @@ private fun EmptyLibrary(onChooseFolder: () -> Unit) {
             }
         }
         Spacer(Modifier.height(20.dp))
-        Text("书架还是空的", style = MaterialTheme.typography.headlineSmall)
+        Text(stringResource(R.string.library_empty_title), style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(10.dp))
         Text(
-            "选择一个存放漫画的文件夹，应用只会建立索引，不会复制或移动你的文件。",
+            stringResource(R.string.library_empty_body),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -638,11 +727,11 @@ private fun EmptyLibrary(onChooseFolder: () -> Unit) {
         Button(onClick = onChooseFolder, modifier = Modifier.height(52.dp)) {
             Icon(Icons.Filled.FolderOpen, contentDescription = null, modifier = Modifier.size(20.dp))
             Spacer(Modifier.width(8.dp))
-            Text("添加文件夹", style = MaterialTheme.typography.titleMedium)
+            Text(stringResource(R.string.library_add_folder), style = MaterialTheme.typography.titleMedium)
         }
         Spacer(Modifier.height(12.dp))
         Text(
-            "之后可在「设置 → 存储」中管理或移除目录。",
+            stringResource(R.string.library_empty_hint),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
@@ -656,10 +745,14 @@ private fun NoResults(searching: Boolean) {
         Modifier.fillMaxWidth().padding(vertical = 64.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Text("没有找到漫画", style = MaterialTheme.typography.titleMedium)
+        Text(stringResource(R.string.library_no_results_title), style = MaterialTheme.typography.titleMedium)
         Spacer(Modifier.height(4.dp))
         Text(
-            if (searching) "换个关键词试试。" else "这个筛选下暂时没有内容。",
+            if (searching) {
+                stringResource(R.string.library_no_results_search)
+            } else {
+                stringResource(R.string.library_no_results_filter)
+            },
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -679,10 +772,13 @@ private fun ImportProgress(state: ImportUiState) {
                 SaltLoading(sizeDp = 22)
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("正在导入", style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.library_importing), style = MaterialTheme.typography.titleSmall)
                     Text(state.label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
-                Text("${(state.progress * 100).toInt()}%", style = MaterialTheme.typography.labelMedium)
+                Text(
+                    stringResource(R.string.library_import_progress_percent, (state.progress * 100).toInt()),
+                    style = MaterialTheme.typography.labelMedium,
+                )
             }
             Spacer(Modifier.height(8.dp))
             LinearProgressIndicator(
@@ -738,9 +834,18 @@ private fun BookActionsSheet(
                     Spacer(Modifier.height(4.dp))
                     Text(
                         if (book.reflowable) {
-                            "${book.kindLabel} · ${formatBytes(book.sizeBytes)}"
+                            stringResource(
+                                R.string.library_book_meta_format,
+                                bookFormatLabel(book),
+                                formatBytes(book.sizeBytes),
+                            )
                         } else {
-                            "${book.pageCount} 页 · ${formatBytes(book.sizeBytes)} · ${book.kindLabel}"
+                            stringResource(
+                                R.string.library_book_meta_pages,
+                                book.pageCount,
+                                formatBytes(book.sizeBytes),
+                                bookFormatLabel(book),
+                            )
                         },
                         style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -754,13 +859,13 @@ private fun BookActionsSheet(
                 Spacer(Modifier.height(18.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        book.pageLabel,
+                        bookProgressLabel(book),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                     Spacer(Modifier.weight(1f))
                     Text(
-                        "${(book.progress * 100).roundToInt()}%",
+                        stringResource(R.string.library_book_percent, (book.progress * 100).roundToInt()),
                         style = MaterialTheme.typography.labelLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
@@ -779,10 +884,12 @@ private fun BookActionsSheet(
             ) {
                 Text(
                     when {
-                        book.reflowable && (book.finished || book.progressOffset > 0L) ->
-                            "继续阅读 · ${book.pageLabel}"
-                        book.currentPage > 0 -> "继续阅读 · 第 ${book.currentPage + 1} 页"
-                        else -> "开始阅读"
+                        book.reflowable && (book.finished || book.progressOffset > 0L) -> stringResource(
+                            R.string.library_action_continue_percent,
+                            (book.progress * 100).roundToInt(),
+                        )
+                        book.currentPage > 0 -> stringResource(R.string.library_action_continue_page, book.currentPage + 1)
+                        else -> stringResource(R.string.library_action_start_reading)
                     },
                     style = MaterialTheme.typography.titleMedium,
                 )
@@ -797,11 +904,11 @@ private fun BookActionsSheet(
                 Column {
                     SheetActionRow(
                         icon = if (book.finished) Icons.Filled.RadioButtonUnchecked else Icons.Filled.CheckCircle,
-                        title = if (book.finished) "标为未读" else "标为已读",
+                        title = if (book.finished) stringResource(R.string.library_action_mark_unread) else stringResource(R.string.library_action_mark_read),
                     ) { onToggleFinished() }
                     SheetActionRow(
                         icon = Icons.Filled.Edit,
-                        title = "重命名",
+                        title = stringResource(R.string.library_action_rename),
                     ) { renameOpen = true }
                 }
             }
@@ -814,7 +921,7 @@ private fun BookActionsSheet(
             ) {
                 SheetActionRow(
                     icon = Icons.Filled.Delete,
-                    title = "移出书架",
+                    title = stringResource(R.string.library_action_remove),
                     tint = MaterialTheme.colorScheme.error,
                 ) { deleteOpen = true }
             }
@@ -825,14 +932,14 @@ private fun BookActionsSheet(
     if (renameOpen) {
         AlertDialog(
             onDismissRequest = { renameOpen = false },
-            title = { Text("重命名") },
+            title = { Text(stringResource(R.string.library_rename_title)) },
             text = {
                 Column(Modifier.fillMaxWidth().padding(top = 8.dp)) {
                     OutlinedTextField(
                         value = draftTitle,
                         onValueChange = { draftTitle = it.take(120) },
                         singleLine = true,
-                        label = { Text("书名") },
+                        label = { Text(stringResource(R.string.library_rename_label)) },
                         modifier = Modifier.fillMaxWidth(),
                     )
                     Spacer(Modifier.height(8.dp))
@@ -845,23 +952,23 @@ private fun BookActionsSheet(
                         onRename(draftTitle)
                     },
                     enabled = draftTitle.isNotBlank(),
-                ) { Text("保存") }
+                ) { Text(stringResource(R.string.library_save)) }
             },
-            dismissButton = { TextButton(onClick = { renameOpen = false }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { renameOpen = false }) { Text(stringResource(R.string.library_cancel)) } },
         )
     }
     if (deleteOpen) {
         AlertDialog(
             onDismissRequest = { deleteOpen = false },
-            title = { Text("移出书架？") },
-            text = { Text("只会移除书架索引和封面缓存，不会删除你的原文件。", modifier = Modifier.padding(vertical = 8.dp)) },
+            title = { Text(stringResource(R.string.library_remove_title)) },
+            text = { Text(stringResource(R.string.library_remove_body), modifier = Modifier.padding(vertical = 8.dp)) },
             confirmButton = {
                 TextButton(onClick = {
                     deleteOpen = false
                     onDelete()
-                }) { Text("移出", color = MaterialTheme.colorScheme.error) }
+                }) { Text(stringResource(R.string.library_remove_confirm), color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = { deleteOpen = false }) { Text("取消") } },
+            dismissButton = { TextButton(onClick = { deleteOpen = false }) { Text(stringResource(R.string.library_cancel)) } },
         )
     }
 }

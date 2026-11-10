@@ -104,6 +104,6 @@ class EpubSpineClassifierTest {
             progressOffset = charCount / 2,
             charCount = charCount,
         )
-        assertEquals("读至 50%", book.pageLabel)
+        assertEquals(0.5f, book.progress, 1e-6f)
     }
 }

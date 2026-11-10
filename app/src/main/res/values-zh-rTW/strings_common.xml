@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="common_local_library">本地藏書</string>
+    <string name="common_finished">已讀完</string>
+    <string name="common_not_started">尚未開始</string>
+    <string name="common_progress_percent">讀至 %1$d%%</string>
+    <string name="common_read_to_page">讀到第 %1$d 頁</string>
+
+    <string name="common_format_epub">EPUB</string>
+    <string name="common_format_mobi">MOBI</string>
+    <string name="common_format_archive">壓縮檔</string>
+    <string name="common_format_pdf">PDF</string>
+    <string name="common_format_folder">資料夾</string>
+
+    <string name="common_meta_format">格式</string>
+    <string name="common_meta_size">大小</string>
+    <string name="common_meta_pages">頁數</string>
+    <string name="common_meta_progress">進度</string>
+    <string name="common_meta_last_read">最近閱讀</string>
+
+    <string name="common_filter_all">全部</string>
+    <string name="common_filter_reading">在讀</string>
+    <string name="common_filter_unread">未讀</string>
+
+    <string name="common_sort_recent">最近閱讀</string>
+    <string name="common_sort_added">最近加入</string>
+    <string name="common_sort_title">書名</string>
+    <string name="common_sort_progress">閱讀進度</string>
+
+    <string name="common_layout_compact">緊湊網格</string>
+    <string name="common_layout_comfortable">寬鬆網格</string>
+    <string name="common_layout_cover_only">僅封面</string>
+    <string name="common_layout_list">清單</string>
+
+    <plurals name="common_pages">
+        <item quantity="other">%1$d 頁</item>
+    </plurals>
+</resources>

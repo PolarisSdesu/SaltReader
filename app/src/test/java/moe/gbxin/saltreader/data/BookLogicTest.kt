@@ -5,7 +5,7 @@ import kotlin.test.assertEquals
 import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
-/** Pure-JVM tests for model-derived logic (progress, labels, import aggregation). */
+/** Pure-JVM tests for model-derived logic (format inference, progress, import aggregation). */
 class BookLogicTest {
 
     private fun book(
@@ -35,6 +35,8 @@ class BookLogicTest {
         charCount = charCount,
     )
 
+    // --- progress ---------------------------------------------------------------------------
+
     @Test
     fun `progress is zero before the first page`() {
         assertEquals(0f, book(pageCount = 10, currentPage = 0).progress, 1e-6f)
@@ -56,66 +58,65 @@ class BookLogicTest {
         assertEquals(0f, book(pageCount = 0, currentPage = 0).progress, 1e-6f)
     }
 
+    // --- format inference (UI labels are resolved in the UI layer) ---------------------------
+
     @Test
-    fun `page label reflects the reading state of an image book`() {
-        assertEquals("尚未开始", book(currentPage = 0).pageLabel)
-        assertEquals("读到第 3 页", book(currentPage = 2).pageLabel)
-        assertEquals("已读完", book(finished = true).pageLabel)
+    fun `text books are EPUB unless the extension is MOBI`() {
+        assertEquals(BookFormat.EPUB, book(kind = BookKind.TEXT, documentPath = "novel.epub").format)
+        assertEquals(BookFormat.MOBI, book(kind = BookKind.TEXT, documentPath = "novel.mobi").format)
+        assertEquals(BookFormat.MOBI, book(kind = BookKind.TEXT, documentPath = "novel.azw").format)
+        assertEquals(BookFormat.MOBI, book(kind = BookKind.TEXT, documentPath = "novel.azw3").format)
     }
 
     @Test
-    fun `reflowable EPUB page label is a percentage instead of a page number`() {
-        val textBook = book(
-            kind = BookKind.TEXT,
-            reflowable = true,
-            pageCount = 4,
-            currentPage = 1,
-            progressOffset = 250L,
-            charCount = 1000L,
+    fun `archives are EPUB for epub files and MOBI for mobi files`() {
+        assertEquals(BookFormat.EPUB, book(kind = BookKind.ARCHIVE, documentPath = "images.epub").format)
+        assertEquals(BookFormat.MOBI, book(kind = BookKind.ARCHIVE, documentPath = "book.mobi").format)
+        assertEquals(BookFormat.ARCHIVE, book(kind = BookKind.ARCHIVE, documentPath = "book.cbz").format)
+        assertEquals(BookFormat.ARCHIVE, book(kind = BookKind.ARCHIVE, documentPath = "book.zip").format)
+    }
+
+    @Test
+    fun `folder and PDF kinds map directly and ignore the extension`() {
+        assertEquals(BookFormat.FOLDER, book(kind = BookKind.FOLDER, documentPath = "").format)
+        assertEquals(BookFormat.FOLDER, book(kind = BookKind.FOLDER, documentPath = "some/dir").format)
+        assertEquals(BookFormat.PDF, book(kind = BookKind.PDF, documentPath = "comic.pdf").format)
+        assertEquals(BookFormat.PDF, book(kind = BookKind.PDF, documentPath = "weird.cbz").format)
+    }
+
+    @Test
+    fun `all format enum values are reachable from the model`() {
+        val formats = setOf(
+            book(kind = BookKind.TEXT, documentPath = "a.epub").format,
+            book(kind = BookKind.TEXT, documentPath = "a.mobi").format,
+            book(kind = BookKind.ARCHIVE, documentPath = "a.cbz").format,
+            book(kind = BookKind.PDF, documentPath = "a.pdf").format,
+            book(kind = BookKind.FOLDER).format,
         )
-
-        assertEquals("读至 25%", textBook.pageLabel)
-        assertEquals(0.25f, textBook.progress, 1e-6f)
+        assertEquals(BookFormat.entries.toSet(), formats)
     }
 
     @Test
-    fun `reflowable EPUB before any progress shows the normal start label`() {
-        val started = book(kind = BookKind.TEXT, reflowable = true, pageCount = 4, currentPage = 0, progressOffset = 0L)
-
-        assertEquals("尚未开始", started.pageLabel)
-    }
-
-    @Test
-    fun `reflowable EPUB finished label wins over the percentage`() {
-        val finished = book(
-            kind = BookKind.TEXT,
-            reflowable = true,
-            pageCount = 4,
-            currentPage = 3,
-            finished = true,
-            progressOffset = 990L,
-            charCount = 1000L,
+    fun `metadata field enum keeps the five combinable fields`() {
+        assertEquals(
+            setOf(
+                LibraryMetaField.FORMAT,
+                LibraryMetaField.SIZE,
+                LibraryMetaField.PAGES,
+                LibraryMetaField.PROGRESS,
+                LibraryMetaField.LAST_READ,
+            ),
+            LibraryMetaField.entries.toSet(),
         )
-
-        assertEquals("已读完", finished.pageLabel)
     }
 
     @Test
-    fun `display author falls back when blank or missing`() {
-        assertEquals("本地藏书", book(author = null).displayAuthor)
-        assertEquals("本地藏书", book(author = "  ").displayAuthor)
-        assertEquals("Author", book(author = "Author").displayAuthor)
-    }
-
-    @Test
-    fun `all indexed books are SAF references and text books have their own label`() {
+    fun `all indexed books are SAF references`() {
         assertTrue(book().treeUri.isNotBlank())
         assertEquals("book-b.cbz", book().documentPath)
-        assertEquals("EPUB 电子书", book(kind = BookKind.TEXT, documentPath = "novel.epub").kindLabel)
-        assertEquals("MOBI 电子书", book(kind = BookKind.TEXT, documentPath = "novel.mobi").kindLabel)
-        assertEquals("压缩包", book(kind = BookKind.ARCHIVE, documentPath = "book.cbz").kindLabel)
-        assertEquals("EPUB 电子书", book(kind = BookKind.ARCHIVE, documentPath = "images.epub").kindLabel)
     }
+
+    // --- import report ----------------------------------------------------------------------
 
     @Test
     fun `import report aggregates imported books and failures`() {

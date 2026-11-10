@@ -111,7 +111,7 @@ fun saltDarkColorScheme(): ColorScheme = darkColorScheme(
 @Composable
 fun SaltReaderTheme(
     themeMode: ThemeMode = ThemeMode.SYSTEM,
-    dynamicColor: Boolean = false,
+    dynamicColor: Boolean = true,
     amoledBlack: Boolean = false,
     content: @Composable () -> Unit,
 ) {
@@ -167,7 +167,10 @@ private fun ColorScheme.withAmoledBlack(): ColorScheme = copy(
 fun pageBackgroundColor(
     background: moe.gbxin.saltreader.data.ReaderBackground,
     customColor: Long = 0xFFFDFCFF,
+    darkTheme: Boolean = false,
 ): Color = when (background) {
+    // AUTO follows the system theme: pure white in light mode, pure black in dark mode.
+    moe.gbxin.saltreader.data.ReaderBackground.AUTO -> if (darkTheme) Color.Black else Color.White
     moe.gbxin.saltreader.data.ReaderBackground.WHITE -> Color.White
     moe.gbxin.saltreader.data.ReaderBackground.INK -> Color.Black
     moe.gbxin.saltreader.data.ReaderBackground.CUSTOM -> Color(customColor)

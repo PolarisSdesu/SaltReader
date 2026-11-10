@@ -1,7 +1,6 @@
 package moe.gbxin.saltreader.util
 
-import java.text.SimpleDateFormat
-import java.util.Date
+import android.text.format.DateUtils
 import java.util.Locale
 
 fun formatBytes(bytes: Long): String = when {
@@ -11,24 +10,12 @@ fun formatBytes(bytes: Long): String = when {
     else -> "$bytes B"
 }
 
-fun formatRelativeTime(time: Long?): String {
-    if (time == null) return "还没翻开"
-    val delta = System.currentTimeMillis() - time
-    return when {
-        delta < 60_000L -> "刚刚"
-        delta < 3_600_000L -> "${delta / 60_000L} 分钟前"
-        delta < 86_400_000L -> "${delta / 3_600_000L} 小时前"
-        delta < 7 * 86_400_000L -> "${delta / 86_400_000L} 天前"
-        else -> SimpleDateFormat("M 月 d 日", Locale.CHINA).format(Date(time))
-    }
-}
-
-fun greeting(): String {
-    val hour = java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY)
-    return when (hour) {
-        in 5..10 -> "早上好"
-        in 11..13 -> "中午好"
-        in 14..18 -> "下午好"
-        else -> "晚上好"
-    }
-}
+/**
+ * Relative last-read label in the system locale, rendered by Android's [DateUtils]
+ * (so "5 minutes ago" / "5 分钟前" / "5分前" come from the platform automatically).
+ * Returns an empty string for a never-opened book; the localized "never opened"
+ * copy lives in `strings_util.xml` and is used by the UI layer
+ * (`ui/components/BookText.kt`), since this util is Context-free.
+ */
+fun formatRelativeTime(time: Long?): String =
+    if (time == null) "" else DateUtils.getRelativeTimeSpanString(time).toString()

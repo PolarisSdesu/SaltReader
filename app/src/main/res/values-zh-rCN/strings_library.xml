@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="library_action_search">搜索</string>
+    <string name="library_action_layout">布局</string>
+    <string name="library_action_settings">设置</string>
+    <string name="library_loading_shelf">正在整理书架…</string>
+    <string name="library_sort_action">排序</string>
+    <string name="library_sort_by">排序方式</string>
+    <string name="library_sort_direction">排序方向</string>
+    <string name="library_sort_ascending">升序</string>
+    <string name="library_sort_descending">降序</string>
+
+    <string name="library_empty_title">书架还是空的</string>
+    <string name="library_empty_body">选择一个存放漫画的文件夹，应用只会建立索引，不会复制或移动你的文件。</string>
+    <string name="library_add_folder">添加文件夹</string>
+    <string name="library_empty_hint">之后可在「设置 → 存储」中管理或移除目录。</string>
+    <string name="library_no_results_title">没有找到漫画</string>
+    <string name="library_no_results_search">换个关键词试试。</string>
+    <string name="library_no_results_filter">这个筛选下暂时没有内容。</string>
+
+    <string name="library_importing">正在导入</string>
+    <string name="library_import_scanning">正在扫描目录…</string>
+    <string name="library_import_failed_one">导入失败：%1$s</string>
+    <string name="library_import_done_failed">已索引 %1$d 本；%2$d 项失败：%3$s</string>
+    <string name="library_import_done">已索引 %1$d 本，EPUB/MOBI/AZW3 可直接阅读</string>
+    <string name="library_import_empty">没有找到可导入的漫画</string>
+    <string name="library_import_progress_percent">%1$d%%</string>
+
+    <string name="library_layout_title">布局</string>
+    <string name="library_layout_mode">布局模式</string>
+    <string name="library_layout_columns">列数  %1$s</string>
+    <string name="library_layout_columns_auto">自动</string>
+    <string name="library_layout_columns_custom">自定义 · %1$d 列</string>
+    <string name="library_layout_title_size">书名大小  %1$dsp</string>
+    <string name="library_layout_meta_visible">显示标签</string>
+    <string name="library_layout_meta_visible_supporting">书卡下方的格式 / 大小 / 页数 / 进度 / 最近阅读</string>
+    <string name="library_layout_meta_size">标签字号  %1$dsp</string>
+    <string name="library_layout_meta_fields">标签内容</string>
+
+    <string name="library_book_meta_pages">%1$d 页 · %2$s · %3$s</string>
+    <string name="library_book_meta_format">%1$s · %2$s</string>
+    <string name="library_book_percent">%1$d%%</string>
+
+    <string name="library_action_start_reading">开始阅读</string>
+    <string name="library_action_continue_page">继续阅读 · 第 %1$d 页</string>
+    <string name="library_action_continue_percent">继续阅读 · 读至 %1$d%%</string>
+    <string name="library_action_mark_read">标为已读</string>
+    <string name="library_action_mark_unread">标为未读</string>
+    <string name="library_action_rename">重命名</string>
+    <string name="library_action_remove">移出书架</string>
+
+    <string name="library_rename_title">重命名</string>
+    <string name="library_rename_label">书名</string>
+    <string name="library_save">保存</string>
+    <string name="library_cancel">取消</string>
+    <string name="library_remove_title">移出书架？</string>
+    <string name="library_remove_body">只会移除书架索引和封面缓存，不会删除你的原文件。</string>
+    <string name="library_remove_confirm">移出</string>
+
+    <string name="library_deleted">《%1$s》已移出书架</string>
+    <string name="library_delete_failed">操作失败：无法移出《%1$s》</string>
+    <string name="library_title_empty">书名不能为空</string>
+    <string name="library_title_unchanged">书名没有变化</string>
+    <string name="library_renamed">已重命名为《%1$s》</string>
+    <string name="library_rename_failed">重命名失败</string>
+    <string name="library_marked_read">《%1$s》已标为读完</string>
+    <string name="library_marked_unread">《%1$s》已标为未读</string>
+    <string name="library_update_failed">操作失败：无法更新《%1$s》</string>
+    <string name="library_refresh_partial">刷新完成，%1$d 项无法读取：%2$s（%3$s）</string>
+    <string name="library_refresh_failed">刷新失败：%1$s</string>
+    <string name="library_error_unknown">未知错误</string>
+
+    <string name="search_title">搜索</string>
+    <string name="search_placeholder">搜索书名或作者</string>
+    <string name="search_clear">清空搜索</string>
+    <string name="search_back">返回</string>
+    <string name="search_hint_title">搜索你的书架</string>
+    <string name="search_hint_body">输入书名或作者，在 %1$d 本藏书中查找。</string>
+    <string name="search_empty_title">书架还是空的</string>
+    <string name="search_empty_body">回到书架，先添加一个漫画文件夹。</string>
+    <string name="search_no_results_title">没有找到「%1$s」</string>
+    <string name="search_no_results_body">换个关键词试试，或清空搜索查看全部藏书。</string>
+
+    <plurals name="library_result_count">
+        <item quantity="other">找到 %1$d 本</item>
+    </plurals>
+</resources>

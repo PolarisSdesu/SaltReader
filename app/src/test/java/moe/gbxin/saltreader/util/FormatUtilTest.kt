@@ -3,7 +3,7 @@ package moe.gbxin.saltreader.util
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
-/** Pure-JVM tests for the storage/relative-time formatting helpers. */
+/** Pure-JVM tests for the storage formatting helpers (relative time is platform-localized). */
 class FormatUtilTest {
 
     @Test
@@ -24,16 +24,9 @@ class FormatUtilTest {
     }
 
     @Test
-    fun `formatRelativeTime handles the never-opened case`() {
-        assertEquals("还没翻开", formatRelativeTime(null))
-    }
-
-    @Test
-    fun `formatRelativeTime renders recent activity`() {
-        val now = System.currentTimeMillis()
-        assertEquals("刚刚", formatRelativeTime(now - 30_000L))
-        assertEquals("5 分钟前", formatRelativeTime(now - 5L * 60_000L))
-        assertEquals("3 小时前", formatRelativeTime(now - 3L * 3_600_000L))
-        assertEquals("2 天前", formatRelativeTime(now - 2L * 86_400_000L))
+    fun `formatRelativeTime returns empty for a never-opened book`() {
+        // Non-null times are rendered by Android's DateUtils in the system locale, which is
+        // an Android framework API and therefore not exercised by this plain-JVM test.
+        assertEquals("", formatRelativeTime(null))
     }
 }

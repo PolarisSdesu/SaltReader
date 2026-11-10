@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="data_source_folder">目录</string>
+    <string name="data_source_library">书架</string>
+    <string name="data_untitled_comic">未命名漫画</string>
+    <string name="data_progress_scanning">正在扫描 %1$s\u2026</string>
+    <string name="data_progress_refreshing">正在刷新 %1$s\u2026</string>
+    <string name="data_progress_indexed">已索引 %1$d/%2$d</string>
+    <string name="data_progress_done">完成</string>
+    <string name="data_error_select_folder">请选择一个文件夹</string>
+    <string name="data_error_folder_access_failed">无法访问该文件夹</string>
+    <string name="data_error_folder_read_failed">无法读取该文件夹</string>
+    <string name="data_error_scan_failed">扫描失败</string>
+    <string name="data_error_refresh_failed">刷新失败</string>
+    <string name="data_error_permission_not_persisted">无法持久保存该目录的访问权限，重启后需要重新添加</string>
+    <string name="data_error_index_save_failed">索引已更新，但保存书架失败</string>
+    <string name="data_error_save_failed">保存书架失败</string>
+    <string name="data_error_no_supported_books">没有找到 CBZ、ZIP、PDF、EPUB、MOBI 或图片文件夹</string>
+    <string name="data_error_no_refreshable_roots">还没有可刷新的漫画目录</string>
+    <string name="data_error_invalid_root">目录地址无效</string>
+    <string name="data_error_root_unreadable">无法访问该目录</string>
+    <string name="data_error_directory_unreadable">无法读取目录</string>
+    <string name="data_error_read_failed">无法读取</string>
+    <string name="data_error_no_readable_pages">没有找到可读页面</string>
+</resources>

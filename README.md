@@ -10,7 +10,7 @@
 - **不做导入副本**：应用私有目录只保存封面与 MOBI/AZW3 的章节文本缓存（`cacheDir/text/`）。
 - **备份仅设置**：云备份 / 设备迁移只包含 `saltreader_settings`，书库索引与派生缓存永不备份。
 - **release 开启 R8**：`isMinifyEnabled` + `isShrinkResources`，未使用的 Material 图标会被裁掉。
-- `compileSdk 37` / `targetSdk 36` / `minSdk 26`，`versionCode 6` / `versionName 1.4.0`。
+- `compileSdk 37` / `targetSdk 36` / `minSdk 26`，`versionCode 10` / `versionName 1.6.0`。
 
 ## 格式矩阵
 
@@ -35,12 +35,14 @@
 - **PDF**：用系统 `PdfRenderer` 按需渲染，索引阶段只统计页数
 - **单主页**：可收缩的大标题、封面自动提取（固定取文档第一页）、全部 / 在读 / 未读筛选、长按重命名或删除
 - **布局面板**：右上角搜索旁的布局按钮，支持紧凑网格 / 松散网格 / 仅封面 / 列表、列数、书名大小、排序与方向
+- **书卡标签**：可开关、调字号，并可自由组合格式 / 大小 / 页数 / 进度 / 最近阅读任意字段
 - **搜索**：右上角搜索图标打开独立搜索视图，实时按书名或作者过滤，返回回到书架
 - **设置**：Material 3 Expressive 重构；`LargeFlexibleTopAppBar` 弹性大标题、28dp 分组卡片、带图标圆底色的设置行、`ButtonGroup` + `ToggleButton` 单选组与 Wavy 进度条；外观 / 阅读器 / 存储 / 关于四个二级页
 - **图像阅读器**：横向翻页与纵向连续滚动、RTL（右到左）、沉浸模式、点击分区翻页、双指缩放、页码滑杆（实时预览 + 按页触感）、阅读进度持久化
 - **文字阅读器**：EPUB/MOBI/AZW3 用原生 WebView 重排，字号滑杆、分页/滚动模式、字符偏移进度、RTL 翻页、音量键翻页，禁用远程资源
-- **阅读设置**：底部标准 MD3 进度 Slider；点开为“阅读模式 / 常规 / 滤镜”三标签面板，含页码滑杆、方向、纸张、字号、常亮与灰度/反色滤镜；页码默认关闭沉浸显示
-- **主题**：默认蓝色 MD3 色板；支持浅色 / 深色 / 跟随系统；Android 12+ 支持动态取色
+- **阅读背景**：默认「自动」——浅色模式纯白 `#FFFFFF`、深色模式纯黑 `#000000`；也可手动选纯白 / 纯黑 / 自定义颜色
+- **阅读设置**：底部标准 MD3 进度 Slider；点开为“阅读模式 / 常规 / 滤镜”三标签面板，含页码滑杆、方向、背景（自动/纯白/纯黑/自定义）、字号、常亮与灰度/反色滤镜；页码默认关闭沉浸显示
+- **主题**：默认开启动态取色（Android 12+ 跟随系统壁纸配色，低版本自动忽略）；支持浅色 / 深色 / 跟随系统；非动态取色时使用蓝色 MD3 色板
 - **空书架起步**：APK 不打包任何漫画，添加目录后建立书架
 
 **权限：** 不申请任何存储或网络权限。可访问范围完全由用户通过 SAF 选择的目录决定；卸载应用或清除数据后，需要重新添加目录并授权。
@@ -123,7 +125,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ```
 
 - **R8**：release 已开启 `isMinifyEnabled=true` + `isShrinkResources=true`，使用 `proguard-android-optimize.txt`；`app/proguard-rules.pro` 中保留了 kotlinx.serialization、mobi4java 的保守 keep 规则，未使用的 Material 图标会被裁掉。构建完成后可直接比较 `app/build/outputs/apk/release/` 下 APK 体积（无 epub4j/zip4j/kxml2 等依赖后明显更小）。
-- **版本规则**：`versionCode` 在每次向 Play 上传新版本时递增且不可回退（当前为 `6`）；`versionName` 采用语义化版本（当前 `1.4.0`）。两者都在 `app/build.gradle.kts` 的 `defaultConfig` 中维护。
+- **版本规则**：`versionCode` 在每次向 Play 上传新版本时递增且不可回退（当前为 `10`）；`versionName` 采用语义化版本（当前 `1.6.0`）。两者都在 `app/build.gradle.kts` 的 `defaultConfig` 中维护。
 - **签名材料**：默认读取根目录下被 `.gitignore` 排除的 `keystore.properties`（`storeFile` / `storePassword` / `keyAlias` / `keyPassword`）；也可以改用环境变量 `SALTREADER_KEYSTORE`、`SALTREADER_STORE_PASSWORD`、`SALTREADER_KEY_ALIAS`、`SALTREADER_KEY_PASSWORD`。两者都不存在时 release 产物为**未签名** APK，配置阶段不会失败（CI 会构建 debug/release 并跑单测，release 未签名但 R8 规则会被真实执行）。
 - **keystore 治理**：`keystore/` 与 `keystore.properties` 已被 `.gitignore` 排除，请离线备份密钥库；不要把口令写进仓库或 CI 日志。建议启用 Play App Signing，由 Google 保管分发密钥，本地上传密钥仅用于上传。
 - **TODO（上架前）**：把所有口令迁移到 CI secret / 本地环境变量，并在 Play Console 完成 App Signing 与内部测试轨道验证。
@@ -135,6 +137,15 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 - Android 12+（`res/xml/data_extraction_rules.xml`）：`cloud-backup` 与 `device-transfer` 都只 include `sharedpref/saltreader_settings.xml`，并显式排除 `saltreader_library.xml`、`file` 域（含 `library/` 与全部其他私有文件）、`database`、`external`。
 - Android 11 及以下（`res/xml/backup_rules.xml`，`fullBackupContent`）：同样只 include 该设置文件，排除其余数据。
 - 书库本体在用户自己的 SAF 目录中，永不复制、永不备份；封面与 `cacheDir/text/` 章节缓存同样不备份，换机后重新添加目录即可重建。
+
+## 多语言（i18n）
+
+- **支持语言**：English（`values/`，默认与回退语言）、简体中文（`values-zh-rCN/`）、繁體中文（`values-zh-rTW/`，台湾用语）、日本語（`values-ja/`）。
+- **资源布局**：每个模块一个资源文件，避免冲突——`strings_common.xml`（格式/进度/元数据/筛选排序）、`strings_reader.xml`、`strings_library.xml`、`strings_settings.xml`、`strings_data.xml`、`strings_util.xml`；带数量的文案使用 `<plurals>` 或位置参数（`%1$d`/`%1$s`），禁止在 Kotlin 里拼接语序。
+- **模型与文案分离**：`ComicBook.format` / `BookFormat` / `LibraryFilter` / `LibrarySort` / `LibraryMetaField` 等只保存语言中立的枚举；所有标签在 `ui/components/BookText.kt` 用 `stringResource` 映射，`contentDescription` 同样走资源。
+- **Android 13+ 按应用语言**：`res/xml/locales_config.xml` 声明 4 种语言，`AndroidManifest.xml` 通过 `android:localeConfig` 接入；用户可在系统设置里只为 Salt Reader 选择语言，未翻译项自动回退英文。
+- **相对时间**：最近阅读时间由 Android `DateUtils.getRelativeTimeSpanString` 按系统 Locale 渲染；`strings_util.xml` 提供“从未打开”文案。
+- **防回归校验**：纯 JVM 测试 `I18nResourceConsistencyTest` 会检查每个 `values/strings_*.xml` 在 3 个翻译目录中存在且 key 集合完全一致，并校验 `locales_config.xml` 恰好包含 4 个 locale；CI 执行 `:app:testDebugUnitTest` 时自动运行，缺 key 直接失败。
 
 ## 测试与 CI
 
@@ -151,7 +162,8 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 - `RemoteZipReaderTest`：自研远程 ZIP 解析（central directory、DEFLATE/STORED 读取、按大小拒绝、图片条目自然序、损坏包拒绝）。
 - `PageIndexingTest`：流式 ZIP 回退的图片计数 / 首图封面 / 损坏包处理、图片文件名过滤。
 - `LibraryRootSerializationTest`：`roots.json` 的 `LibraryRoot` 往返、顺序保持、未知字段忽略。
-- `FormatUtilTest`：`formatBytes` 的 B / KB / MB / GB 阈值，以及 `formatRelativeTime` 的空值与近期时间。
+- `FormatUtilTest`：`formatBytes` 的 B / KB / MB / GB 阈值，以及 `formatRelativeTime` 对从未打开书籍的空串返回。
+- `I18nResourceConsistencyTest`：4 语言 × 6 个模块 `strings_*.xml` 的 key 集合完全一致、无重复 key，`locales_config.xml` 恰好列出 en/zh-CN/zh-TW/ja。
 
 CI 见 `.github/workflows/android.yml`：JDK 21（Temurin）+ Gradle 构建缓存，执行
 `./gradlew :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest --no-daemon`，

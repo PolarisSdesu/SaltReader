@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Data layer user-visible strings: import/index/scan failures and progress. -->
+<resources>
+    <string name="data_source_folder">Folder</string>
+    <string name="data_source_library">Library</string>
+    <string name="data_untitled_comic">Untitled comic</string>
+    <string name="data_progress_scanning">Scanning %1$s\u2026</string>
+    <string name="data_progress_refreshing">Refreshing %1$s\u2026</string>
+    <string name="data_progress_indexed">Indexed %1$d/%2$d</string>
+    <string name="data_progress_done">Done</string>
+    <string name="data_error_select_folder">Please choose a folder</string>
+    <string name="data_error_folder_access_failed">Cannot access this folder</string>
+    <string name="data_error_folder_read_failed">Cannot read this folder</string>
+    <string name="data_error_scan_failed">Scan failed</string>
+    <string name="data_error_refresh_failed">Refresh failed</string>
+    <string name="data_error_permission_not_persisted">Could not keep access to this folder. Add it again after restarting.</string>
+    <string name="data_error_index_save_failed">Index updated, but saving the library failed</string>
+    <string name="data_error_save_failed">Saving the library failed</string>
+    <string name="data_error_no_supported_books">No CBZ, ZIP, PDF, EPUB, MOBI or image folders found</string>
+    <string name="data_error_no_refreshable_roots">There are no folders to refresh yet</string>
+    <string name="data_error_invalid_root">Invalid folder address</string>
+    <string name="data_error_root_unreadable">Cannot access this folder</string>
+    <string name="data_error_directory_unreadable">Cannot read this directory</string>
+    <string name="data_error_read_failed">Could not read this item</string>
+    <string name="data_error_no_readable_pages">No readable pages found</string>
+</resources>

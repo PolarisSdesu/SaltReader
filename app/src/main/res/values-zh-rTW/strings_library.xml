@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="library_action_search">搜尋</string>
+    <string name="library_action_layout">版面</string>
+    <string name="library_action_settings">設定</string>
+    <string name="library_loading_shelf">正在整理書櫃…</string>
+    <string name="library_sort_action">排序</string>
+    <string name="library_sort_by">排序方式</string>
+    <string name="library_sort_direction">排序方向</string>
+    <string name="library_sort_ascending">升冪</string>
+    <string name="library_sort_descending">降冪</string>
+
+    <string name="library_empty_title">書櫃還是空的</string>
+    <string name="library_empty_body">選擇一個存放漫畫的資料夾，應用程式只會建立索引，不會複製或移動你的檔案。</string>
+    <string name="library_add_folder">新增資料夾</string>
+    <string name="library_empty_hint">之後可在「設定 → 儲存空間」中管理或移除目錄。</string>
+    <string name="library_no_results_title">沒有找到漫畫</string>
+    <string name="library_no_results_search">換個關鍵字試試。</string>
+    <string name="library_no_results_filter">這個篩選下暫時沒有內容。</string>
+
+    <string name="library_importing">正在匯入</string>
+    <string name="library_import_scanning">正在掃描資料夾…</string>
+    <string name="library_import_failed_one">匯入失敗：%1$s</string>
+    <string name="library_import_done_failed">已索引 %1$d 本；%2$d 項失敗：%3$s</string>
+    <string name="library_import_done">已索引 %1$d 本，EPUB/MOBI/AZW3 可直接閱讀</string>
+    <string name="library_import_empty">沒有找到可匯入的漫畫</string>
+    <string name="library_import_progress_percent">%1$d%%</string>
+
+    <string name="library_layout_title">版面</string>
+    <string name="library_layout_mode">版面模式</string>
+    <string name="library_layout_columns">欄數  %1$s</string>
+    <string name="library_layout_columns_auto">自動</string>
+    <string name="library_layout_columns_custom">自訂 · %1$d 欄</string>
+    <string name="library_layout_title_size">書名字型大小  %1$dsp</string>
+    <string name="library_layout_meta_visible">顯示標籤</string>
+    <string name="library_layout_meta_visible_supporting">書卡下方的格式 / 大小 / 頁數 / 進度 / 最近閱讀</string>
+    <string name="library_layout_meta_size">標籤字型大小  %1$dsp</string>
+    <string name="library_layout_meta_fields">標籤內容</string>
+
+    <string name="library_book_meta_pages">%1$d 頁 · %2$s · %3$s</string>
+    <string name="library_book_meta_format">%1$s · %2$s</string>
+    <string name="library_book_percent">%1$d%%</string>
+
+    <string name="library_action_start_reading">開始閱讀</string>
+    <string name="library_action_continue_page">繼續閱讀 · 第 %1$d 頁</string>
+    <string name="library_action_continue_percent">繼續閱讀 · 讀至 %1$d%%</string>
+    <string name="library_action_mark_read">標為已讀</string>
+    <string name="library_action_mark_unread">標為未讀</string>
+    <string name="library_action_rename">重新命名</string>
+    <string name="library_action_remove">移出書櫃</string>
+
+    <string name="library_rename_title">重新命名</string>
+    <string name="library_rename_label">書名</string>
+    <string name="library_save">儲存</string>
+    <string name="library_cancel">取消</string>
+    <string name="library_remove_title">移出書櫃？</string>
+    <string name="library_remove_body">只會移除書櫃索引和封面快取，不會刪除你的原始檔案。</string>
+    <string name="library_remove_confirm">移出</string>
+
+    <string name="library_deleted">《%1$s》已移出書櫃</string>
+    <string name="library_delete_failed">操作失敗：無法移出《%1$s》</string>
+    <string name="library_title_empty">書名不能為空</string>
+    <string name="library_title_unchanged">書名沒有變更</string>
+    <string name="library_renamed">已重新命名為《%1$s》</string>
+    <string name="library_rename_failed">重新命名失敗</string>
+    <string name="library_marked_read">《%1$s》已標為讀完</string>
+    <string name="library_marked_unread">《%1$s》已標為未讀</string>
+    <string name="library_update_failed">操作失敗：無法更新《%1$s》</string>
+    <string name="library_refresh_partial">重新整理完成，%1$d 項無法讀取：%2$s（%3$s）</string>
+    <string name="library_refresh_failed">重新整理失敗：%1$s</string>
+    <string name="library_error_unknown">未知錯誤</string>
+
+    <string name="search_title">搜尋</string>
+    <string name="search_placeholder">搜尋書名或作者</string>
+    <string name="search_clear">清除搜尋</string>
+    <string name="search_back">返回</string>
+    <string name="search_hint_title">搜尋你的書櫃</string>
+    <string name="search_hint_body">輸入書名或作者，在 %1$d 本藏書中尋找。</string>
+    <string name="search_empty_title">書櫃還是空的</string>
+    <string name="search_empty_body">回到書櫃，先新增一個漫畫資料夾。</string>
+    <string name="search_no_results_title">沒有找到「%1$s」</string>
+    <string name="search_no_results_body">換個關鍵字試試，或清除搜尋查看全部藏書。</string>
+
+    <plurals name="library_result_count">
+        <item quantity="other">找到 %1$d 本</item>
+    </plurals>
+</resources>

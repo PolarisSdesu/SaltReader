@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 載入/終止狀態 -->
+    <string name="reader_loading_opening">正在開啟…</string>
+    <string name="reader_loading_preparing">正在準備…</string>
+    <string name="reader_loading_parsing_ebook">正在解析電子書…</string>
+    <string name="reader_unavailable_title">無法開啟</string>
+    <string name="reader_unavailable_message">這本書已經不在書櫃上。</string>
+    <string name="reader_empty_title">沒有可讀的頁面</string>
+    <string name="reader_empty_message">在這本書中找不到支援的圖片或頁面。</string>
+    <string name="reader_failed_title">無法開啟這本書</string>
+    <string name="reader_failed_message">檔案可能已損壞或格式不受支援。</string>
+    <string name="reader_retry">重試</string>
+    <string name="reader_back_to_library">回到書櫃</string>
+
+    <!-- 工具列/無障礙 -->
+    <string name="reader_back">返回</string>
+    <string name="reader_reading_area">閱讀區域</string>
+    <string name="reader_action_previous_page">上一頁</string>
+    <string name="reader_action_next_page">下一頁</string>
+    <string name="reader_show_controls">顯示工具列</string>
+    <string name="reader_hide_controls">隱藏工具列</string>
+    <string name="reader_settings_title">閱讀設定</string>
+    <string name="reader_switch_to_vertical">切換為縱向捲動</string>
+    <string name="reader_switch_to_paged">切換為橫向翻頁</string>
+
+    <!-- 頁碼/滑桿 -->
+    <string name="reader_page_indicator">%1$d / %2$d</string>
+    <string name="reader_page_number">第 %1$d 頁</string>
+    <string name="reader_page_failed">第 %1$d 頁無法顯示</string>
+    <string name="reader_page_slider_label">第 %1$d / %2$d 頁</string>
+    <string name="reader_percent">%1$d%%</string>
+    <string name="reader_font_size_value">%1$d sp</string>
+
+    <!-- 閱讀設定面板 -->
+    <string name="reader_tab_mode">閱讀模式</string>
+    <string name="reader_tab_general">一般</string>
+    <string name="reader_tab_filters">濾鏡</string>
+    <string name="reader_mode_paged">橫向翻頁</string>
+    <string name="reader_mode_vertical">縱向捲動</string>
+    <string name="reader_section_mode">閱讀模式</string>
+    <string name="reader_section_direction">橫向翻頁方向</string>
+    <string name="reader_direction_ltr">從左到右</string>
+    <string name="reader_direction_rtl">從右到左</string>
+    <string name="reader_section_background">背景顏色</string>
+    <string name="reader_background_auto">自動</string>
+    <string name="reader_background_white">純白</string>
+    <string name="reader_background_ink">純黑</string>
+    <string name="reader_background_custom">自訂</string>
+    <string name="reader_font_size">字級</string>
+    <string name="reader_show_page_number">顯示頁碼</string>
+    <string name="reader_keep_screen_on">保持螢幕常亮</string>
+    <string name="reader_volume_keys">音量鍵翻頁</string>
+    <string name="reader_grayscale">灰階模式</string>
+    <string name="reader_invert_colors">反色</string>
+    <string name="reader_text_filters_note">文字閱讀器使用主題與背景配色，灰階/反色僅對圖片書生效。</string>
+</resources>

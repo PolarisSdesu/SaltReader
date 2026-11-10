@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Utility copy. formatRelativeTime() currently returns "" for a never-opened
+      book (it is a Context-free util); this string is reserved for the UI layer
+      that renders the "never opened" metadata state once the label is localized.
+    -->
+    <string name="util_never_opened">Not opened yet</string>
+</resources>

@@ -12,13 +12,21 @@ const val READER_FONT_SIZE_MIN_SP = 14
 const val READER_FONT_SIZE_MAX_SP = 28
 const val READER_FONT_SIZE_DEFAULT_SP = 18
 
+/** Book-card metadata label font size. */
+const val LIBRARY_META_TEXT_MIN_SP = 10
+const val LIBRARY_META_TEXT_MAX_SP = 18
+const val LIBRARY_META_TEXT_DEFAULT_SP = 12
+
+val DEFAULT_LIBRARY_META_FIELDS: Set<LibraryMetaField> =
+    setOf(LibraryMetaField.FORMAT, LibraryMetaField.PAGES, LibraryMetaField.SIZE)
+
 data class AppSettings(
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
-    val dynamicColor: Boolean = false,
+    val dynamicColor: Boolean = true,
     val amoledBlack: Boolean = false,
     val readerMode: ReaderMode = ReaderMode.PAGED,
     val readingDirection: ReadingDirection = ReadingDirection.LTR,
-    val readerBackground: ReaderBackground = ReaderBackground.WHITE,
+    val readerBackground: ReaderBackground = ReaderBackground.AUTO,
     val customBackgroundColor: Long = 0xFFFDFCFF,
     val keepScreenOn: Boolean = true,
     val showPageNumber: Boolean = false,
@@ -32,6 +40,9 @@ data class AppSettings(
     val libraryTitleSizeSp: Int = 20,
     val librarySortAscending: Boolean = false,
     val librarySort: LibrarySort = LibrarySort.RECENT,
+    val libraryMetaVisible: Boolean = true,
+    val libraryMetaTextSizeSp: Int = LIBRARY_META_TEXT_DEFAULT_SP,
+    val libraryMetaFields: Set<LibraryMetaField> = DEFAULT_LIBRARY_META_FIELDS,
 )
 
 class SettingsRepository(context: Context) {
@@ -42,11 +53,11 @@ class SettingsRepository(context: Context) {
 
     private fun read(): AppSettings = AppSettings(
         themeMode = prefs.enum("theme_mode", ThemeMode.SYSTEM),
-        dynamicColor = prefs.getBoolean("dynamic_color", false),
+        dynamicColor = prefs.getBoolean("dynamic_color", true),
         amoledBlack = prefs.getBoolean("amoled_black", false),
         readerMode = prefs.enum("reader_mode", ReaderMode.PAGED),
         readingDirection = prefs.enum("reading_direction", ReadingDirection.LTR),
-        readerBackground = prefs.enum("reader_background", ReaderBackground.WHITE),
+        readerBackground = prefs.enum("reader_background", ReaderBackground.AUTO),
         customBackgroundColor = prefs.getLong("custom_background_color", 0xFFFDFCFF),
         keepScreenOn = prefs.getBoolean("keep_screen_on", true),
         showPageNumber = prefs.getBoolean("show_page_number", false),
@@ -60,6 +71,12 @@ class SettingsRepository(context: Context) {
         libraryTitleSizeSp = prefs.getInt("library_title_size", 20),
         librarySortAscending = prefs.getBoolean("library_sort_ascending", false),
         librarySort = prefs.enum("library_sort", LibrarySort.RECENT),
+        libraryMetaVisible = prefs.getBoolean("library_meta_visible", true),
+        libraryMetaTextSizeSp = prefs.getInt("library_meta_text_size", LIBRARY_META_TEXT_DEFAULT_SP)
+            .coerceIn(LIBRARY_META_TEXT_MIN_SP, LIBRARY_META_TEXT_MAX_SP),
+        libraryMetaFields = parseMetaFields(
+            prefs.getString("library_meta_fields", DEFAULT_LIBRARY_META_FIELDS.joinToString(",") { it.name }),
+        ),
     )
 
     /**
@@ -97,13 +114,31 @@ class SettingsRepository(context: Context) {
             editor.putBoolean("library_sort_ascending", next.librarySortAscending)
         }
         if (next.librarySort != old.librarySort) editor.putString("library_sort", next.librarySort.name)
+        if (next.libraryMetaVisible != old.libraryMetaVisible) {
+            editor.putBoolean("library_meta_visible", next.libraryMetaVisible)
+        }
+        if (next.libraryMetaTextSizeSp != old.libraryMetaTextSizeSp) {
+            editor.putInt("library_meta_text_size", next.libraryMetaTextSizeSp)
+        }
+        if (next.libraryMetaFields != old.libraryMetaFields) {
+            editor.putString("library_meta_fields", next.libraryMetaFields.joinToString(",") { it.name })
+        }
         editor.apply()
     }
 }
 
 private fun AppSettings.normalized(): AppSettings = copy(
     readerFontSizeSp = readerFontSizeSp.coerceIn(READER_FONT_SIZE_MIN_SP, READER_FONT_SIZE_MAX_SP),
+    libraryMetaTextSizeSp = libraryMetaTextSizeSp.coerceIn(LIBRARY_META_TEXT_MIN_SP, LIBRARY_META_TEXT_MAX_SP),
 )
+
+private fun parseMetaFields(raw: String?): Set<LibraryMetaField> {
+    if (raw.isNullOrBlank()) return DEFAULT_LIBRARY_META_FIELDS
+    val parsed = raw.split(',').mapNotNull { name ->
+        runCatching { LibraryMetaField.valueOf(name.trim()) }.getOrNull()
+    }.toSet()
+    return parsed.ifEmpty { emptySet() }
+}
 
 private inline fun <reified T : Enum<T>> android.content.SharedPreferences.enum(key: String, fallback: T): T =
     runCatching { enumValueOf<T>(getString(key, fallback.name) ?: fallback.name) }.getOrDefault(fallback)

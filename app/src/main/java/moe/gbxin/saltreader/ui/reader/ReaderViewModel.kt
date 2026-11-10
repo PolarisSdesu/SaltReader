@@ -30,24 +30,33 @@ import moe.gbxin.saltreader.data.ReadingDirection
  * What the reader can show right now.
  *
  * - [Loading] while the library index is still publishing, or while the image page source is being
- *   prepared ([Loading.message] says which).
+ *   prepared ([Loading.reason] says which; the UI maps it to a localized string).
  * - [Missing] only when the index is ready and the book is definitively gone.
  * - [Ready] once [ComicPageSource.prepare] has reported the real page count. This count is the
  *   authoritative one (it can differ from the estimate stored in the index, e.g. remote ZIP reads),
  *   so it is carried here instead of being read from the book record.
  * - [Failed] when preparing the book failed (corrupt file / unsupported format); UI offers a retry.
  */
+/** Why the reader is still loading. The UI maps each reason to a localized string. */
+enum class ReaderLoadingReason {
+    /** Library index not published yet, or the book is not in it yet. */
+    INDEX,
+
+    /** Image page source being prepared (remote ZIP / PDF renderer / provider open). */
+    PREPARING,
+}
+
 sealed interface ReaderUiState {
-    data class Loading(val message: String = "正在打开…") : ReaderUiState
+    data class Loading(val reason: ReaderLoadingReason = ReaderLoadingReason.INDEX) : ReaderUiState
     data object Missing : ReaderUiState
     data class Ready(val book: ComicBook, val pageCount: Int) : ReaderUiState
     data object Failed : ReaderUiState
 
     /**
-     * Reflowable text book (EPUB/MOBI/AZW3): chapters are being parsed / extracted on IO.
-     * The message is deliberately generic so the UI does not need to know the container format.
+     * Reflowable text book (EPUB/MOBI/AZW3): chapters are being parsed / extracted on IO. The UI
+     * shows a single generic "parsing e-book" message so it never has to know the container format.
      */
-    data class TextLoading(val message: String = "正在解析电子书…") : ReaderUiState
+    data object TextLoading : ReaderUiState
 
     /** Reflowable text book ready to render; [chapters] are already sanitized HTML. */
     data class TextReady(val book: ComicBook, val chapters: List<EbookChapter>) : ReaderUiState
@@ -132,7 +141,7 @@ class ReaderViewModel(
         // Reflowable text books (EPUB/MOBI/AZW3) never go through the image page source.
         if (indexed.reflowable) {
             return when (text) {
-                TextLoadState.Idle, TextLoadState.Loading -> ReaderUiState.TextLoading()
+                TextLoadState.Idle, TextLoadState.Loading -> ReaderUiState.TextLoading
                 is TextLoadState.Done -> ReaderUiState.TextReady(indexed, text.chapters)
                 TextLoadState.Failed -> ReaderUiState.TextFailed
             }
@@ -140,8 +149,8 @@ class ReaderViewModel(
         return when (prepare) {
             // Book is indexed but its image page source has not started opening yet: same message as
             // while preparing so the loading state is consistent for image books.
-            PrepareState.Idle -> ReaderUiState.Loading("正在准备…")
-            PrepareState.Running -> ReaderUiState.Loading("正在准备…")
+            PrepareState.Idle -> ReaderUiState.Loading(ReaderLoadingReason.PREPARING)
+            PrepareState.Running -> ReaderUiState.Loading(ReaderLoadingReason.PREPARING)
             is PrepareState.Done -> ReaderUiState.Ready(indexed, prepare.pageCount)
             PrepareState.Failed -> ReaderUiState.Failed
         }

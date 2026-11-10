@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
+import androidx.annotation.StringRes
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -23,6 +24,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import moe.gbxin.saltreader.R
 import org.rr.mobi4java.MobiReader
 import java.io.File
 import java.util.UUID
@@ -142,20 +144,25 @@ class LibraryRepository(private val context: Context) {
         onProgress: (Float, String) -> Unit = { _, _ -> },
     ): ImportReport = withContext(Dispatchers.IO) {
         if (!DocumentsContract.isTreeUri(uri)) {
-            return@withContext ImportReport(failures = listOf(ImportFailure("目录", "请选择一个文件夹")))
+            return@withContext ImportReport(failures = listOf(failure(R.string.data_source_folder, DataMessage.SELECT_FOLDER_FAILED)))
         }
         val tree = runCatching { SafTree(context, uri) }.getOrNull()
-            ?: return@withContext ImportReport(failures = listOf(ImportFailure("目录", "无法访问该文件夹")))
+            ?: return@withContext ImportReport(
+                failures = listOf(failure(R.string.data_source_folder, DataMessage.FOLDER_ACCESS_FAILED)),
+            )
         val persistable = takePersistableReadPermission(context, uri)
         val root = tree.rootEntry()
-            ?: return@withContext ImportReport(failures = listOf(ImportFailure("目录", "无法读取该文件夹")))
+            ?: return@withContext ImportReport(
+                failures = listOf(failure(R.string.data_source_folder, DataMessage.FOLDER_READ_FAILED)),
+            )
 
         val result = try {
             scanTree(tree, 0f..1f, onProgress)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            return@withContext ImportReport(failures = listOf(ImportFailure(root.name, e.message ?: "扫描失败")))
+            Log.e(TAG, "扫描目录失败：${root.name}", e)
+            return@withContext ImportReport(failures = listOf(failure(root.name, DataMessage.SCAN_FAILED)))
         }
         if (!result.completed) {
             return@withContext ImportReport(failures = result.failures)
@@ -166,11 +173,11 @@ class LibraryRepository(private val context: Context) {
 
         val failures = result.failures.toMutableList()
         if (!persistable) {
-            failures += ImportFailure(root.name, "无法持久保存该目录的访问权限，重启后需要重新添加")
+            failures += failure(root.name, DataMessage.PERMISSION_NOT_PERSISTED)
         }
-        if (!persisted) failures += ImportFailure(root.name, "索引已更新，但保存 books.json 失败")
+        if (!persisted) failures += failure(root.name, DataMessage.INDEX_SAVE_FAILED)
         if (result.scanned.isEmpty() && failures.isEmpty()) {
-            failures += ImportFailure(root.name, "没有找到 CBZ、ZIP、PDF、EPUB、MOBI 或图片文件夹")
+            failures += failure(root.name, DataMessage.NO_SUPPORTED_BOOKS)
         }
         ImportReport(result.scanned, failures)
     }
@@ -181,24 +188,26 @@ class LibraryRepository(private val context: Context) {
     ): ImportReport = withContext(Dispatchers.IO) {
         val roots = rootsStore.all()
         if (roots.isEmpty()) {
-            return@withContext ImportReport(failures = listOf(ImportFailure("书架", "还没有可刷新的漫画目录")))
+            return@withContext ImportReport(
+                failures = listOf(failure(R.string.data_source_library, DataMessage.NO_REFRESHABLE_ROOTS)),
+            )
         }
         val failures = ArrayList<ImportFailure>()
         for ((index, rootInfo) in roots.withIndex()) {
             coroutineContext.ensureActive()
             val span = 1f / roots.size
             val start = index * span
-            onProgress(start, "正在刷新 ${rootInfo.displayName}")
+            onProgress(start, context.getString(R.string.data_progress_refreshing, rootInfo.displayName))
 
             val uri = runCatching { Uri.parse(rootInfo.treeUri) }.getOrNull()
             if (uri == null || !DocumentsContract.isTreeUri(uri)) {
-                failures += ImportFailure(rootInfo.displayName, "目录地址无效")
+                failures += failure(rootInfo.displayName, DataMessage.INVALID_ROOT)
                 continue
             }
             takePersistableReadPermission(context, uri)
             val tree = runCatching { SafTree(context, uri) }.getOrNull()
             if (tree == null) {
-                failures += ImportFailure(rootInfo.displayName, "无法访问该目录")
+                failures += failure(rootInfo.displayName, DataMessage.ROOT_UNREADABLE)
                 continue
             }
             val result = try {
@@ -206,17 +215,18 @@ class LibraryRepository(private val context: Context) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                failures += ImportFailure(rootInfo.displayName, e.message ?: "刷新失败")
+                Log.e(TAG, "刷新目录失败：${rootInfo.displayName}", e)
+                failures += failure(rootInfo.displayName, DataMessage.REFRESH_FAILED)
                 continue
             }
             failures += result.failures
             // 目录枚举失败时整棵 tree 放弃合并，避免把仍存在的书记录删掉。
             if (!result.completed) continue
             if (!mergeTreeResult(result)) {
-                failures += ImportFailure(rootInfo.displayName, "保存 books.json 失败")
+                failures += failure(rootInfo.displayName, DataMessage.SAVE_FAILED)
             }
         }
-        onProgress(1f, "完成")
+        onProgress(1f, context.getString(R.string.data_progress_done))
         ImportReport(emptyList(), failures)
     }
 
@@ -262,13 +272,18 @@ class LibraryRepository(private val context: Context) {
         val failures = ArrayList<ImportFailure>()
         val root = tree.rootEntry()
         if (root == null) {
-            return TreeScanResult(treeUri, emptyList(), listOf(ImportFailure("目录", "无法读取该文件夹")), false)
+            return TreeScanResult(
+                treeUri,
+                emptyList(),
+                listOf(failure(R.string.data_source_folder, DataMessage.FOLDER_READ_FAILED)),
+                false,
+            )
         }
-        onProgress(progress.start, "正在扫描 ${root.name}…")
+        onProgress(progress.start, context.getString(R.string.data_progress_scanning, root.name))
 
         val candidates = ArrayList<ScanCandidate>()
         if (!walkTree(tree, root, 0, candidates, failures)) {
-            if (failures.isEmpty()) failures += ImportFailure(root.name, "无法读取目录")
+            if (failures.isEmpty()) failures += failure(root.name, DataMessage.DIRECTORY_UNREADABLE)
             return TreeScanResult(treeUri, emptyList(), failures, false)
         }
 
@@ -283,7 +298,7 @@ class LibraryRepository(private val context: Context) {
             val fraction = if (total == 0) 1f else index.toFloat() / total
             onProgress(
                 progress.start + (progress.endInclusive - progress.start) * fraction,
-                "已索引 ${index + 1}/$total",
+                context.getString(R.string.data_progress_indexed, index + 1, total),
             )
             try {
                 val book = indexCandidate(treeUri, candidate, existing[candidate.documentPath], failures)
@@ -291,10 +306,11 @@ class LibraryRepository(private val context: Context) {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                failures += ImportFailure(candidate.name, e.message ?: "无法读取")
+                Log.w(TAG, "索引失败：${candidate.name}", e)
+                failures += failure(candidate.name, DataMessage.READ_FAILED)
             }
         }
-        onProgress(progress.endInclusive, "完成")
+        onProgress(progress.endInclusive, context.getString(R.string.data_progress_done))
         return TreeScanResult(treeUri, scanned, failures, true)
     }
 
@@ -309,7 +325,7 @@ class LibraryRepository(private val context: Context) {
         if (depth > MAX_SCAN_DEPTH) return true
         val children = tree.children(dir.documentId, dir.documentPath)
         if (children == null) {
-            failures += ImportFailure(dir.name, "无法读取目录")
+            failures += failure(dir.name, DataMessage.DIRECTORY_UNREADABLE)
             return false
         }
 
@@ -397,17 +413,20 @@ class LibraryRepository(private val context: Context) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            failures += ImportFailure(candidate.name, e.message ?: "无法读取")
+            Log.w(TAG, "索引失败：${candidate.name}", e)
+            failures += failure(candidate.name, DataMessage.READ_FAILED)
             return old
         }
         val pageCount = indexed.pageCount
         if (pageCount <= 0) {
             indexed.cover?.recycle()
-            failures += ImportFailure(candidate.name, "没有找到可读页面")
+            failures += failure(candidate.name, DataMessage.NO_READABLE_PAGES)
             return old
         }
 
-        val title = titleFromName(candidate.name)
+        val title = old?.title
+            ?: titleFromName(candidate.name)
+            ?: context.getString(R.string.data_untitled_comic)
         val type = indexed.kind ?: candidate.kind
         val progressOffset = if (indexed.reflowable) {
             (old?.progressOffset ?: 0L).coerceIn(0L, max(0L, indexed.charCount))
@@ -421,7 +440,7 @@ class LibraryRepository(private val context: Context) {
         }
         val book = ComicBook(
             id = id,
-            title = old?.title ?: title,
+            title = title,
             author = old?.author,
             description = old?.description,
             kind = type,
@@ -872,6 +891,17 @@ class LibraryRepository(private val context: Context) {
         false
     }
 
+    /** 错误码 → 当前语言文案。 */
+    private fun message(code: DataMessage): String = context.getString(code.resId)
+
+    /** ImportFailure 的来源是运行时名称（文件夹名等，不翻译）。 */
+    private fun failure(sourceName: String, code: DataMessage): ImportFailure =
+        ImportFailure(sourceName, message(code))
+
+    /** ImportFailure 的来源本身也是固定文案（"目录"/"书架"）。 */
+    private fun failure(@StringRes sourceResId: Int, code: DataMessage): ImportFailure =
+        ImportFailure(context.getString(sourceResId), message(code))
+
     private fun schedulePersist() {
         persistSignal.trySend(Unit)
     }
@@ -1004,12 +1034,13 @@ class LibraryRepository(private val context: Context) {
     private fun shouldSkipDirectory(name: String): Boolean =
         name.startsWith(".") || name.equals("Android", ignoreCase = true) || name.equals("LOST.DIR", ignoreCase = true)
 
-    private fun titleFromName(name: String): String {
+    /** 无 Context 的纯函数：只做文件名清洗，空标题返回 null，由调用方映射资源文案。 */
+    private fun titleFromName(name: String): String? {
         val ext = name.substringAfterLast('.', "").lowercase()
         val base = if (ext in BOOK_EXTENSIONS) name.substringBeforeLast('.') else name
         return base.replace('_', ' ').replace('.', ' ').trim()
-            .ifBlank { "未命名漫画" }
-            .take(120)
+            .takeIf { it.isNotBlank() }
+            ?.take(120)
     }
 
     private fun accentFor(title: String): Long {

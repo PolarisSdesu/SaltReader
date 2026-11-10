@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 設定各頁、儲存空間管理、關於頁與顏色選擇器。 -->
+<resources>
+    <!-- 通用頂列 / 導覽 -->
+    <string name="settings_back">返回</string>
+    <string name="settings_title">設定</string>
+
+    <!-- 設定首頁 -->
+    <string name="settings_home_section_personalization">個人化</string>
+    <string name="settings_home_section_data">資料</string>
+    <string name="settings_home_section_about">關於</string>
+    <string name="settings_home_about">關於 Salt Reader</string>
+
+    <!-- 外觀 -->
+    <string name="settings_appearance_title">外觀</string>
+    <string name="settings_appearance_section_theme">主題</string>
+    <string name="settings_appearance_theme_mode">主題模式</string>
+    <string name="settings_appearance_section_color">顏色</string>
+    <string name="settings_appearance_dynamic_color">動態配色</string>
+    <string name="settings_appearance_dynamic_color_supporting">跟隨系統桌布配色（僅 Android 12+）</string>
+    <string name="settings_appearance_amoled">純黑模式</string>
+    <string name="settings_appearance_amoled_supporting">深色模式下使用 AMOLED 純黑</string>
+
+    <!-- 閱讀器 -->
+    <string name="settings_reader_title">閱讀器</string>
+    <string name="settings_reader_section_layout">版面配置</string>
+    <string name="settings_reader_reading_mode">閱讀模式</string>
+    <string name="settings_reader_paging_direction">橫向翻頁方向</string>
+    <string name="settings_reader_section_display">顯示</string>
+    <string name="settings_reader_paper_color">紙張顏色</string>
+    <string name="settings_reader_show_page_number">顯示頁碼</string>
+    <string name="settings_reader_show_page_number_supporting">在頁面底部顯示目前頁碼</string>
+    <string name="settings_reader_keep_screen_on">保持螢幕常亮</string>
+    <string name="settings_reader_keep_screen_on_supporting">閱讀時螢幕不會自動熄滅</string>
+    <string name="settings_reader_volume_key_paging">音量鍵翻頁</string>
+    <string name="settings_reader_volume_key_paging_supporting">音量鍵切換上一頁 / 下一頁</string>
+    <string name="settings_reader_section_filter">濾鏡</string>
+    <string name="settings_reader_grayscale">灰階模式</string>
+    <string name="settings_reader_grayscale_supporting">移除色彩</string>
+    <string name="settings_reader_invert">反轉顏色</string>
+    <string name="settings_reader_invert_supporting">適合夜間閱讀</string>
+
+    <!-- 閱讀模式 / 方向 / 背景選項 -->
+    <string name="settings_theme_system">跟隨系統</string>
+    <string name="settings_theme_light">淺色</string>
+    <string name="settings_theme_dark">深色</string>
+    <string name="settings_reader_mode_paged">橫向翻頁</string>
+    <string name="settings_reader_mode_vertical">縱向捲動</string>
+    <string name="settings_direction_ltr">由左至右</string>
+    <string name="settings_direction_rtl">由右至左</string>
+    <string name="settings_background_auto">自動</string>
+    <string name="settings_background_white">純白</string>
+    <string name="settings_background_ink">純黑</string>
+    <string name="settings_background_custom">自訂</string>
+
+    <!-- 儲存空間 -->
+    <string name="settings_storage_title">儲存空間</string>
+    <string name="settings_storage_section_library">書櫃</string>
+    <plurals name="settings_storage_indexed_books">
+        <item quantity="other">已建立索引 %1$d 本書</item>
+    </plurals>
+    <plurals name="settings_storage_reflowable_books">
+        <item quantity="other">%1$d 本文字書</item>
+    </plurals>
+    <plurals name="settings_storage_indexed_pages">
+        <item quantity="other">%1$d 頁</item>
+    </plurals>
+    <string name="settings_storage_refreshing">重新整理中…</string>
+    <string name="settings_storage_refresh_index">重新整理索引</string>
+    <string name="settings_storage_scanning">正在掃描…</string>
+    <plurals name="settings_storage_scan_indexed">
+        <item quantity="other">已索引 %1$d 本</item>
+    </plurals>
+    <string name="settings_storage_scan_no_comics">找不到漫畫</string>
+    <string name="settings_storage_scan_failed">掃描失敗：%1$s</string>
+    <string name="settings_unknown_error">未知的錯誤</string>
+    <string name="settings_storage_root_removed">已移除「%1$s」</string>
+    <string name="settings_storage_root_remove_failed">移除失敗：%1$s</string>
+    <string name="settings_storage_cache_cleared">已清除快取，釋放 %1$s</string>
+    <string name="settings_storage_cache_empty">沒有可清除的快取</string>
+    <string name="settings_storage_cache_clear_failed">清除失敗：%1$s</string>
+    <string name="settings_storage_section_folders">資料夾</string>
+    <string name="settings_storage_add_folder">新增資料夾</string>
+    <string name="settings_storage_no_folders">尚未新增資料夾</string>
+    <string name="settings_storage_remove_hint">僅刪除索引，不影響原始檔案。</string>
+    <string name="settings_storage_section_cache">快取</string>
+    <string name="settings_storage_clear_cache">清除快取</string>
+    <string name="settings_storage_clearing">正在清除…</string>
+    <string name="settings_storage_cache_usage">目前佔用 %1$s</string>
+    <string name="settings_storage_remove_folder">移除資料夾 %1$s</string>
+
+    <!-- 關於 -->
+    <string name="settings_about_title">關於</string>
+    <string name="settings_about_section_app">應用程式</string>
+    <string name="settings_about_version">版本</string>
+    <string name="settings_about_package">套件名稱</string>
+
+    <!-- 顏色選擇器 -->
+    <string name="settings_color_dialog_title">自訂背景</string>
+    <string name="settings_color_invalid_hex">請輸入 #RRGGBB 格式的顏色</string>
+    <string name="settings_color_hex_label">十六進位</string>
+    <string name="settings_color_save">儲存</string>
+    <string name="settings_color_cancel">取消</string>
+
+    <!-- 封面無障礙描述 -->
+    <string name="settings_cover_content_description">《%1$s》封面</string>
+</resources>

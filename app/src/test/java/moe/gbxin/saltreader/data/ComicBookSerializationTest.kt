@@ -94,7 +94,7 @@ class ComicBookSerializationTest {
         assertTrue(restored.reflowable)
         assertEquals(15_000L, restored.progressOffset)
         assertEquals(30_000L, restored.charCount)
-        assertEquals("读至 50%", restored.pageLabel)
+        assertEquals(0.5f, restored.progress, 1e-6f)
     }
 
     @Test

@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Settings pages, storage management, about page and the shared color picker. -->
+<resources>
+    <!-- Shared scaffold / navigation -->
+    <string name="settings_back">Back</string>
+    <string name="settings_title">Settings</string>
+
+    <!-- Settings home -->
+    <string name="settings_home_section_personalization">Personalization</string>
+    <string name="settings_home_section_data">Data</string>
+    <string name="settings_home_section_about">About</string>
+    <string name="settings_home_about">About Salt Reader</string>
+
+    <!-- Appearance -->
+    <string name="settings_appearance_title">Appearance</string>
+    <string name="settings_appearance_section_theme">Theme</string>
+    <string name="settings_appearance_theme_mode">Theme mode</string>
+    <string name="settings_appearance_section_color">Color</string>
+    <string name="settings_appearance_dynamic_color">Dynamic color</string>
+    <string name="settings_appearance_dynamic_color_supporting">Follows the system wallpaper palette (Android 12+)</string>
+    <string name="settings_appearance_amoled">Pure black mode</string>
+    <string name="settings_appearance_amoled_supporting">Uses true AMOLED black in dark mode</string>
+
+    <!-- Reader settings -->
+    <string name="settings_reader_title">Reader</string>
+    <string name="settings_reader_section_layout">Layout</string>
+    <string name="settings_reader_reading_mode">Reading mode</string>
+    <string name="settings_reader_paging_direction">Horizontal page direction</string>
+    <string name="settings_reader_section_display">Display</string>
+    <string name="settings_reader_paper_color">Paper color</string>
+    <string name="settings_reader_show_page_number">Show page number</string>
+    <string name="settings_reader_show_page_number_supporting">Shows the current page number at the bottom</string>
+    <string name="settings_reader_keep_screen_on">Keep screen on</string>
+    <string name="settings_reader_keep_screen_on_supporting">The screen stays on while reading</string>
+    <string name="settings_reader_volume_key_paging">Volume key paging</string>
+    <string name="settings_reader_volume_key_paging_supporting">Volume keys turn to the previous/next page</string>
+    <string name="settings_reader_section_filter">Filters</string>
+    <string name="settings_reader_grayscale">Grayscale</string>
+    <string name="settings_reader_grayscale_supporting">Removes color</string>
+    <string name="settings_reader_invert">Invert colors</string>
+    <string name="settings_reader_invert_supporting">Suited to night reading</string>
+
+    <!-- Reading mode / direction / background option labels -->
+    <string name="settings_theme_system">Follow system</string>
+    <string name="settings_theme_light">Light</string>
+    <string name="settings_theme_dark">Dark</string>
+    <string name="settings_reader_mode_paged">Horizontal paging</string>
+    <string name="settings_reader_mode_vertical">Vertical scrolling</string>
+    <string name="settings_direction_ltr">Left to right</string>
+    <string name="settings_direction_rtl">Right to left</string>
+    <string name="settings_background_auto">Auto</string>
+    <string name="settings_background_white">White</string>
+    <string name="settings_background_ink">Black</string>
+    <string name="settings_background_custom">Custom</string>
+
+    <!-- Storage -->
+    <string name="settings_storage_title">Storage</string>
+    <string name="settings_storage_section_library">Library</string>
+    <plurals name="settings_storage_indexed_books">
+        <item quantity="one">%1$d indexed book</item>
+        <item quantity="other">%1$d indexed books</item>
+    </plurals>
+    <plurals name="settings_storage_reflowable_books">
+        <item quantity="one">%1$d text book</item>
+        <item quantity="other">%1$d text books</item>
+    </plurals>
+    <plurals name="settings_storage_indexed_pages">
+        <item quantity="one">%1$d page</item>
+        <item quantity="other">%1$d pages</item>
+    </plurals>
+    <string name="settings_storage_refreshing">Refreshing…</string>
+    <string name="settings_storage_refresh_index">Refresh index</string>
+    <string name="settings_storage_scanning">Scanning…</string>
+    <plurals name="settings_storage_scan_indexed">
+        <item quantity="one">%1$d book indexed</item>
+        <item quantity="other">%1$d books indexed</item>
+    </plurals>
+    <string name="settings_storage_scan_no_comics">No comics found</string>
+    <string name="settings_storage_scan_failed">Scan failed: %1$s</string>
+    <string name="settings_unknown_error">Unknown error</string>
+    <string name="settings_storage_root_removed">Removed “%1$s”</string>
+    <string name="settings_storage_root_remove_failed">Remove failed: %1$s</string>
+    <string name="settings_storage_cache_cleared">Cache cleared, freed %1$s</string>
+    <string name="settings_storage_cache_empty">No cache to clear</string>
+    <string name="settings_storage_cache_clear_failed">Clear failed: %1$s</string>
+    <string name="settings_storage_section_folders">Folders</string>
+    <string name="settings_storage_add_folder">Add folder</string>
+    <string name="settings_storage_no_folders">No folders added yet</string>
+    <string name="settings_storage_remove_hint">Removes the index only; original files are untouched.</string>
+    <string name="settings_storage_section_cache">Cache</string>
+    <string name="settings_storage_clear_cache">Clear cache</string>
+    <string name="settings_storage_clearing">Clearing…</string>
+    <string name="settings_storage_cache_usage">Currently using %1$s</string>
+    <string name="settings_storage_remove_folder">Remove folder %1$s</string>
+
+    <!-- About -->
+    <string name="settings_about_title">About</string>
+    <string name="settings_about_section_app">App</string>
+    <string name="settings_about_version">Version</string>
+    <string name="settings_about_package">Package name</string>
+
+    <!-- Color picker dialog -->
+    <string name="settings_color_dialog_title">Custom background</string>
+    <string name="settings_color_invalid_hex">Enter a color in #RRGGBB format</string>
+    <string name="settings_color_hex_label">Hex</string>
+    <string name="settings_color_save">Save</string>
+    <string name="settings_color_cancel">Cancel</string>
+
+    <!-- Cover content description -->
+    <string name="settings_cover_content_description">Cover of %1$s</string>
+</resources>
