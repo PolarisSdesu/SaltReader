@@ -21,6 +21,7 @@ The reader is written with Jetpack Compose and Material 3 Expressive. Images are
 Salt Reader lets you:
 
 - Add library folders through SAF; originals are indexed in place and never copied.
+- Fast by design: archives are indexed from their central directory without being unpacked, pages are decoded only when visible, and the whole viewport scales on the GPU for smooth pinch zoom.
 - Read CBZ/ZIP archives directly from the granted folder, including large files.
 - Read image EPUBs straight from their spine, and reflow text EPUB/MOBI/AZW3 in a native reader.
 - Open PDFs through the system `PdfRenderer` and image folders in natural order.
