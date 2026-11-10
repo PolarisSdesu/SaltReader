@@ -9,6 +9,8 @@ Salt Reader 是一个本地优先的 Android 漫画与电子书阅读器。
 
 支持 CBZ/ZIP、图片型与文字型 EPUB、MOBI/AZW3、PDF 以及图片文件夹。
 
+<br clear="all" />
+
 ## 关于
 
 多数漫画阅读器要么把书库复制到应用私有目录，要么申请宽泛的存储权限。Salt Reader 两者都不做：你通过 Android 的 SAF（存储访问框架）授权一个文件夹，应用只在你授权的范围内原地索引原始文件。

@@ -9,6 +9,8 @@ It reads your files where they are: no importing, no conversion, no cloud and no
 
 It supports CBZ/ZIP, image and text EPUB, MOBI/AZW3, PDF and folders of images.
 
+<br clear="all" />
+
 ## About
 
 Most comic readers either copy your library into app-private storage or ask for broad storage permissions. Salt Reader does neither: you grant access to a folder through Android's Storage Access Framework, and the app indexes the original files in place using only the access you granted.
