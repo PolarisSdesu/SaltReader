@@ -127,4 +127,5 @@
     <string name="settings_licenses_apache">授權條款全文</string>
     <string name="settings_licenses_apache_full">檢視 Apache License 2.0 全文</string>
     <string name="settings_licenses_close">關閉</string>
+    <string name="settings_appearance_display_language">顯示語言</string>
 </resources>

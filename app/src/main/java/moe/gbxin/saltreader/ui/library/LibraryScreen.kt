@@ -8,6 +8,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -484,32 +485,46 @@ private fun BookCard(
         fontSize = metaTextSizeSp.sp,
         lineHeight = (metaTextSizeSp + 4).sp,
     )
+    val cardShape = RoundedCornerShape(20.dp)
+    val cardColors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+    val cardBorder = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f))
     if (listMode) {
         Card(
             modifier = modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
+            shape = cardShape,
+            colors = cardColors,
+            border = cardBorder,
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         ) {
             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                ComicCover(book, coverFile, Modifier.width(64.dp).aspectRatio(0.68f), radius = 8)
-                Spacer(Modifier.width(16.dp))
+                ComicCover(book, coverFile, Modifier.width(64.dp).aspectRatio(0.68f), radius = 10)
+                Spacer(Modifier.width(14.dp))
                 Column(Modifier.weight(1f)) {
                     Text(book.title, style = titleStyle, maxLines = 2, overflow = TextOverflow.Ellipsis)
                     if (meta.isNotEmpty()) {
                         Spacer(Modifier.height(4.dp))
-                        Text(meta, style = metaStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(
+                            meta,
+                            style = metaStyle,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
                     }
                 }
             }
         }
     } else {
-        Column(
-            modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
+        // One cohesive card: the cover and the title/meta block share a single rounded container
+        // instead of the cover floating on the page background.
+        Card(
+            modifier = modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
+            shape = cardShape,
+            colors = cardColors,
+            border = cardBorder,
+            elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         ) {
-            Card(
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow),
-                elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
-            ) {
+            Column(Modifier.fillMaxWidth()) {
                 Box(Modifier.fillMaxWidth().aspectRatio(0.68f)) {
                     ComicCover(book, coverFile, Modifier.fillMaxSize(), radius = 0)
                     if (!book.finished && (book.currentPage > 0 || book.progressOffset > 0L)) {
@@ -521,18 +536,25 @@ private fun BookCard(
                         )
                     }
                 }
-            }
-            if (!coverOnly) {
-                Spacer(Modifier.height(8.dp))
-                Text(
-                    book.title,
-                    style = titleStyle,
-                    maxLines = 3,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                if (meta.isNotEmpty()) {
-                    Spacer(Modifier.height(3.dp))
-                    Text(meta, style = metaStyle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (!coverOnly) {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 10.dp)) {
+                        Text(
+                            book.title,
+                            style = titleStyle,
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        if (meta.isNotEmpty()) {
+                            Spacer(Modifier.height(3.dp))
+                            Text(
+                                meta,
+                                style = metaStyle,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                 }
             }
         }

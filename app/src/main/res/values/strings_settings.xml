@@ -131,4 +131,5 @@
     <string name="settings_licenses_apache">License texts</string>
     <string name="settings_licenses_apache_full">View full Apache License 2.0</string>
     <string name="settings_licenses_close">Close</string>
+    <string name="settings_appearance_display_language">Display language</string>
 </resources>

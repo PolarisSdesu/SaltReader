@@ -262,32 +262,7 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(innerPadding).verticalScroll(rememberScrollState())
                 .padding(start = 16.dp, end = 16.dp, bottom = 32.dp),
         ) {
-            SettingsSectionLabel(stringResource(R.string.settings_appearance_section_theme))
-            SettingsCard {
-                SettingsChoiceGroup(
-                    title = stringResource(R.string.settings_appearance_theme_mode),
-                    options = ThemeMode.entries.toList(),
-                    selected = settings.themeMode,
-                    labelRes = { it.labelRes() },
-                ) { mode -> app.settings.update { it.copy(themeMode = mode) } }
-            }
-            SettingsSectionLabel(stringResource(R.string.settings_appearance_section_color))
-            SettingsCard {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    SettingsSwitchRow(
-                        icon = Icons.Outlined.Palette,
-                        title = stringResource(R.string.settings_appearance_dynamic_color),
-                        supporting = stringResource(R.string.settings_appearance_dynamic_color_supporting),
-                        checked = settings.dynamicColor,
-                    ) { app.settings.update { it.copy(dynamicColor = it.dynamicColor.not()) } }
-                }
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.DarkMode,
-                    title = stringResource(R.string.settings_appearance_amoled),
-                    supporting = stringResource(R.string.settings_appearance_amoled_supporting),
-                    checked = settings.amoledBlack,
-                ) { app.settings.update { it.copy(amoledBlack = it.amoledBlack.not()) } }
-            }
+            SettingsSectionLabel(stringResource(R.string.settings_appearance_section_language))
             SettingsCard {
                 val context = LocalContext.current
                 // Recomputed on every composition so a locale configuration change updates the
@@ -305,7 +280,7 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
                         SettingsIcon(Icons.Outlined.Language)
                         Spacer(Modifier.width(16.dp))
                         Text(
-                            stringResource(R.string.settings_appearance_section_language),
+                            stringResource(R.string.settings_appearance_display_language),
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.weight(1f),
                         )
@@ -337,6 +312,32 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
                         }
                     }
                 }
+            }
+            SettingsSectionLabel(stringResource(R.string.settings_appearance_section_theme))
+            SettingsCard {
+                SettingsChoiceGroup(
+                    title = stringResource(R.string.settings_appearance_theme_mode),
+                    options = ThemeMode.entries.toList(),
+                    selected = settings.themeMode,
+                    labelRes = { it.labelRes() },
+                ) { mode -> app.settings.update { it.copy(themeMode = mode) } }
+            }
+            SettingsSectionLabel(stringResource(R.string.settings_appearance_section_color))
+            SettingsCard {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.Palette,
+                        title = stringResource(R.string.settings_appearance_dynamic_color),
+                        supporting = stringResource(R.string.settings_appearance_dynamic_color_supporting),
+                        checked = settings.dynamicColor,
+                    ) { app.settings.update { it.copy(dynamicColor = it.dynamicColor.not()) } }
+                }
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.DarkMode,
+                    title = stringResource(R.string.settings_appearance_amoled),
+                    supporting = stringResource(R.string.settings_appearance_amoled_supporting),
+                    checked = settings.amoledBlack,
+                ) { app.settings.update { it.copy(amoledBlack = it.amoledBlack.not()) } }
             }
         }
     }

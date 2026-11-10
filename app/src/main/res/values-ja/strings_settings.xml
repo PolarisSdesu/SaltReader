@@ -41,7 +41,7 @@
     <string name="settings_reader_invert_supporting">夜間の閲覧に最適</string>
 
     <!-- 表示モード / 方向 / 背景の選択肢 -->
-    <string name="settings_theme_system">システムに従う</string>
+    <string name="settings_theme_system">システム</string>
     <string name="settings_theme_light">ライト</string>
     <string name="settings_theme_dark">ダーク</string>
     <string name="settings_reader_mode_paged">横めくり</string>
@@ -104,7 +104,7 @@
     <!-- 表紙のアクセシビリティ説明 -->
     <string name="settings_cover_content_description">%1$s の表紙</string>
     <string name="settings_appearance_section_language">言語</string>
-    <string name="settings_language_system">システムに従う</string>
+    <string name="settings_language_system">システム</string>
     <string name="settings_language_zh_cn">简体中文</string>
     <string name="settings_language_zh_tw">繁體中文</string>
     <string name="settings_language_en">English</string>
@@ -127,4 +127,5 @@
     <string name="settings_licenses_apache">ライセンス全文</string>
     <string name="settings_licenses_apache_full">Apache License 2.0 の全文を表示</string>
     <string name="settings_licenses_close">閉じる</string>
+    <string name="settings_appearance_display_language">表示言語</string>
 </resources>
