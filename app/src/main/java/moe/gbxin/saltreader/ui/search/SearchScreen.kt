@@ -122,6 +122,8 @@ fun SearchScreen(onOpenBook: (ComicBook) -> Unit, onBack: () -> Unit) {
     Scaffold(
         modifier = Modifier.nestedScroll(scrollBehavior.nestedScrollConnection),
         containerColor = MaterialTheme.colorScheme.background,
+        // Content runs edge-to-edge behind the gesture bar; the list adds the inset as padding.
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             LargeFlexibleTopAppBar(
                 title = { Text(stringResource(R.string.search_title), maxLines = 1) },
