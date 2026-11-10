@@ -12,17 +12,6 @@
         <item name="android:fontFamily">sans</item>
     </style>
 
-    <!-- No window/activity transition animation: opening the reader must not slide the screen. -->
-    <style name="Animation.SaltReader.None" parent="@android:style/Animation.Activity">
-        <item name="android:activityOpenEnterAnimation">@null</item>
-        <item name="android:activityOpenExitAnimation">@null</item>
-        <item name="android:activityCloseEnterAnimation">@null</item>
-        <item name="android:activityCloseExitAnimation">@null</item>
-    </style>
-
-    <style name="Theme.SaltReader.Reader" parent="@style/Theme.SaltReader">
-        <item name="android:windowAnimationStyle">@style/Animation.SaltReader.None</item>
-    </style>
 
     <style name="Theme.SaltReader.Starting" parent="Theme.SplashScreen">
         <item name="windowSplashScreenBackground">@color/splash_background</item>

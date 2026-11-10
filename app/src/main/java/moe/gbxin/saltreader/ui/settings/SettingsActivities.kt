@@ -18,6 +18,7 @@ import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.ColumnScope
@@ -97,6 +98,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.DpOffset
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
@@ -269,7 +271,7 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
                 // summary without recreating the activity.
                 val language = currentAppLanguage(context)
                 var menuOpen by remember { mutableStateOf(false) }
-                Box(Modifier.fillMaxWidth()) {
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
                     Row(
                         Modifier
                             .fillMaxWidth()
@@ -295,7 +297,14 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
                             tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                    val menuWidth = 200.dp
+                    DropdownMenu(
+                        expanded = menuOpen,
+                        onDismissRequest = { menuOpen = false },
+                        // Align the popup with the row's trailing edge instead of its leading edge.
+                        offset = DpOffset(x = (maxWidth - menuWidth).coerceAtLeast(0.dp), y = 0.dp),
+                        modifier = Modifier.width(menuWidth),
+                    ) {
                         SUPPORTED_APP_LANGUAGES.forEach { tag ->
                             DropdownMenuItem(
                                 text = { Text(stringResource(languageLabelRes(tag))) },
@@ -315,12 +324,56 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
             }
             SettingsSectionLabel(stringResource(R.string.settings_appearance_section_theme))
             SettingsCard {
-                SettingsChoiceGroup(
-                    title = stringResource(R.string.settings_appearance_theme_mode),
-                    options = ThemeMode.entries.toList(),
-                    selected = settings.themeMode,
-                    labelRes = { it.labelRes() },
-                ) { mode -> app.settings.update { it.copy(themeMode = mode) } }
+                var themeMenuOpen by remember { mutableStateOf(false) }
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clickable { themeMenuOpen = true }
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        SettingsIcon(Icons.Outlined.LightMode)
+                        Spacer(Modifier.width(16.dp))
+                        Text(
+                            stringResource(R.string.settings_appearance_theme_mode),
+                            style = MaterialTheme.typography.titleMedium,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            stringResource(settings.themeMode.labelRes()),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Icon(
+                            Icons.Filled.ArrowDropDown,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    val menuWidth = 200.dp
+                    DropdownMenu(
+                        expanded = themeMenuOpen,
+                        onDismissRequest = { themeMenuOpen = false },
+                        offset = DpOffset(x = (maxWidth - menuWidth).coerceAtLeast(0.dp), y = 0.dp),
+                        modifier = Modifier.width(menuWidth),
+                    ) {
+                        ThemeMode.entries.forEach { mode ->
+                            DropdownMenuItem(
+                                text = { Text(stringResource(mode.labelRes())) },
+                                leadingIcon = if (mode == settings.themeMode) {
+                                    { Icon(Icons.Filled.Check, contentDescription = null) }
+                                } else {
+                                    null
+                                },
+                                onClick = {
+                                    themeMenuOpen = false
+                                    app.settings.update { it.copy(themeMode = mode) }
+                                },
+                            )
+                        }
+                    }
+                }
             }
             SettingsSectionLabel(stringResource(R.string.settings_appearance_section_color))
             SettingsCard {
@@ -572,10 +625,8 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
             item {
                 SettingsCard {
                     Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Column(Modifier.weight(1f)) {
-                                Text(
-                                    pluralStringResource(
+                        Text(
+                            pluralStringResource(
                                         R.plurals.settings_storage_indexed_books,
                                         books.size,
                                         books.size,
@@ -603,14 +654,15 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                                     )
                                 }
                                 stats += formatBytes(appDataBytes)
-                                Text(
-                                    stats.joinToString(" · "),
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            }
-                            FilledTonalButton(
-                                enabled = !scanning && roots.isNotEmpty(),
+                        Text(
+                            stats.joinToString(" · "),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Spacer(Modifier.height(12.dp))
+                        FilledTonalButton(
+                            modifier = Modifier.align(Alignment.End),
+                            enabled = !scanning && roots.isNotEmpty(),
                                 onClick = { launchScan { p -> app.library.refreshLibrary(p) } },
                             ) {
                                 Text(
@@ -621,7 +673,6 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                                     },
                                 )
                             }
-                        }
                         // Fixed-height status slot: scanning progress and the result message share the
                         // same space, so the card never jumps when a refresh starts or finishes.
                         Spacer(Modifier.height(10.dp))
