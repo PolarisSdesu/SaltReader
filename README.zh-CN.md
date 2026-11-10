@@ -1,31 +1,55 @@
-# Salt Reader
+# Salt Reader ![构建状态](https://github.com/PolarisSdesu/SaltReader/workflows/Android%20CI/badge.svg?branch=main)
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
-本地优先的 Android 漫画 / 电子书阅读器，Jetpack Compose + Material 3 Expressive。包名 `moe.gbxin.saltreader`。
+<img src="readme/logo.png" align="left" width="120" hspace="10" vspace="10">
 
-- 通过 SAF 授权目录读取，只索引原文件，不复制、不转换
-- 不申请存储、全盘或网络权限
-- 支持 CBZ / ZIP / EPUB / MOBI / AZW3 / PDF / 图片文件夹
-- 中英日多语言，支持动态取色与浅色 / 深色 / AMOLED 主题
+Salt Reader 是一个本地优先的 Android 漫画与电子书阅读器。  
+它直接读取你设备上的文件：不导入、不转换、不上云、无追踪。
+
+支持 CBZ/ZIP、图片型与文字型 EPUB、MOBI/AZW3、PDF 以及图片文件夹。
+
+Salt Reader 没有上架 Google Play，可以从源码构建，或安装由本仓库构建的 APK。
+
+## 关于
+
+多数漫画阅读器要么把书库复制到应用私有目录，要么申请宽泛的存储权限。Salt Reader 两者都不做：你通过 Android 的 SAF（存储访问框架）授权一个文件夹，应用只在你授权的范围内原地索引原始文件。
+
+阅读器使用 Jetpack Compose 与 Material 3 Expressive 编写。图片按需解码；文字书交给系统 WebView 重排，因此字号、分页/滚动和进度都不需要转换格式即可工作。
 
 ## 功能
 
-- **书库**：SAF 目录索引、下拉刷新增量更新、全部 / 在读 / 未读筛选、搜索、布局与书卡标签自定义
-- **图像阅读器**：横向翻页 / 纵向滚动、RTL、点击分区翻页、双指缩放、页码滑杆、进度持久化
-- **文字阅读器**：EPUB / MOBI / AZW3 由原生 WebView 重排，字号调节、分页 / 滚动、字符偏移进度
-- **PDF**：系统 `PdfRenderer` 按需渲染
-- **设置**：外观（主题、动态取色、显示语言）、阅读器、存储、开源许可、关于
+Salt Reader 可以：
 
-## 支持格式
+- 通过 SAF 添加书库目录，原地索引原始文件，不复制。
+- 直接从授权目录读取 CBZ/ZIP，包括大文件。
+- 按 spine 直接读取图片型 EPUB；文字型 EPUB/MOBI/AZW3 在原生阅读器中重排。
+- 通过系统 `PdfRenderer` 打开 PDF，按自然序打开图片文件夹。
+- 横向翻页或纵向连续滚动，支持 RTL、点击分区翻页、双指缩放和页码滑杆。
+- 搜索书库，按全部 / 在读 / 未读筛选，自定义布局与书卡标签。
+- 跟随系统深浅色、Material You 动态取色，可选 AMOLED 纯黑模式。
+- 使用 English、简体中文、繁體中文或日本語界面。
+- 不申请存储或网络权限：只能访问你明确授权的目录。
 
-| 格式 | 读取方式 |
-|---|---|
-| CBZ / ZIP | 自研 `RemoteZipReader` 直读中央目录，按页解压 |
-| 图片型 EPUB | 按 spine 顺序直读图片条目 |
-| 文字型 EPUB / MOBI / AZW3 | 抽取正文交给原生 WebView 重排 |
-| PDF | 系统 `PdfRenderer` |
-| 图片文件夹 | SAF 目录直读，自然序 |
+## 截图
+
+[<img src="readme/screenshot-library.png" width="220" hspace="10" vspace="10">](readme/screenshot-library.png)
+[<img src="readme/screenshot-reader.png" width="220" hspace="10" vspace="10">](readme/screenshot-reader.png)
+[<img src="readme/screenshot-settings.png" width="220" hspace="10" vspace="10">](readme/screenshot-settings.png)
+
+## 权限
+
+Salt Reader 不声明存储、全盘或网络权限。它能读取的内容全部来自你在系统文件选择器中授权的目录，授权可随时撤销。
+
+文字阅读器会阻止网络加载与远程资源，只渲染本地书籍内容。
+
+## 参与贡献
+
+Salt Reader 是一个小型开源项目，欢迎参与：
+
+- [反馈问题或提出建议](https://github.com/PolarisSdesu/SaltReader/issues)。
+- 改进翻译（English、简体中文、繁體中文、日本語 文案位于 `app/src/main/res/values*/`）。
+- 提交代码。请保持现有风格，并确保 `./gradlew :app:testDebugUnitTest` 通过。
 
 ## 构建
 
@@ -38,14 +62,7 @@ export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :app:testDebugUnitTest # JVM 单元测试
 ```
 
-release 签名读取被 git 忽略的 `keystore.properties` 或 `SALTREADER_*` 环境变量；缺失时产出未签名 APK。
+## 第三方组件
 
-## 技术栈
-
-Kotlin 2.3.21 · AGP 9.4 · Gradle 9.7.1 · Compose BOM 2026.09 · Material 3 1.5 · `compileSdk 37` / `minSdk 26`。代码结构见 `app/src/main/java/moe/gbxin/saltreader/`（`data` / `ui` / `util`）。
-
-## 版本与文档
-
-- 版本以 `version.properties` 为唯一来源，用 `scripts/bump_version.py` 或 `./gradlew bumpVersion -Paction=alpha` 递增。
-- 详细设计文档：`docs/`（SAF 架构、i18n、版本管理）。
-- 第三方组件声明：`THIRD_PARTY_NOTICES.md`。
+Salt Reader 构建在 AndroidX、Compose 与 Kotlin 生态之上，并包含一份 vendored 的 MOBI 解析器。
+完整列表与许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
