@@ -58,6 +58,19 @@ private class EmptyPageSource(override val pageCount: Int) : ComicPageSource {
     override fun close() = Unit
 }
 
+/**
+ * 打开书籍文档：优先用索引阶段记录的 document URI（省一次逐级 SAF 目录枚举），
+ * 记录缺失或已失效时回退到按路径重新解析。
+ */
+internal fun openBookDocument(context: Context, book: ComicBook): RemoteZipReader? {
+    book.documentUri?.let { raw ->
+        val uri = runCatching { Uri.parse(raw) }.getOrNull()
+        if (uri != null) RemoteZipReader.open(context, uri)?.let { return it }
+    }
+    val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
+    return RemoteZipReader.open(context, uri)
+}
+
 /** 页面源工厂：同步构造、零 I/O；具体打开动作推迟到第一次 prepare/loadPage。 */
 internal object ComicPageSourceFactory {
     fun open(book: ComicBook, context: Context): ComicPageSource {
@@ -96,8 +109,7 @@ private class RemoteZipArchivePageSource(
     private fun ensureParsed(): List<RemoteZipReader.Entry>? = synchronized(lock) {
         if (closed) return null
         pages?.let { return it }
-        val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
-        val opened = RemoteZipReader.open(context, uri) ?: return null
+        val opened = openBookDocument(context, book) ?: return null
         val list = runCatching { opened.imageEntries() }.getOrNull().orEmpty()
         if (list.isEmpty()) {
             opened.close()
@@ -187,8 +199,7 @@ private class EpubImagePageSource(
     private fun ensureParsed(): List<RemoteZipReader.Entry?>? = synchronized(lock) {
         if (closed) return null
         pages?.let { return it }
-        val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
-        val opened = RemoteZipReader.open(context, uri) ?: return null
+        val opened = openBookDocument(context, book) ?: return null
         val cacheFile = epubPageMapCacheFile(context, book.id, book.modifiedAt, book.sizeBytes)
 
         fun mapNames(names: List<String?>): List<RemoteZipReader.Entry?> =
@@ -292,8 +303,15 @@ private class SafPdfPageSource(
     private fun ensureOpen(): PdfRenderer? = synchronized(lock) {
         if (closed) return null
         renderer?.let { return it }
-        val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
-        val fd = runCatching { context.contentResolver.openFileDescriptor(uri, "r") }.getOrNull() ?: return null
+        val opener: (Uri) -> android.os.ParcelFileDescriptor? = { uri ->
+            runCatching { context.contentResolver.openFileDescriptor(uri, "r") }.getOrNull()
+        }
+        val fd = book.documentUri?.let { raw ->
+            runCatching { Uri.parse(raw) }.getOrNull()?.let(opener)
+        } ?: run {
+            val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
+            opener(uri)
+        } ?: return null
         val pdf = try {
             PdfRenderer(fd)
         } catch (t: Exception) {

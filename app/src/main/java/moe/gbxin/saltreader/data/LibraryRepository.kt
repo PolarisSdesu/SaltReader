@@ -496,6 +496,7 @@ class LibraryRepository(private val context: Context) {
             kind = type,
             treeUri = treeUri,
             documentPath = candidate.documentPath,
+            documentUri = candidate.uri.toString(),
             pageCount = pageCount,
             sizeBytes = candidate.sizeBytes,
             addedAt = old?.addedAt ?: System.currentTimeMillis(),
@@ -1204,7 +1205,8 @@ class LibraryRepository(private val context: Context) {
         val bitmap = provided ?: generateCover(book) ?: return false
         return try {
             coversDir.mkdirs()
-            writeFileAtomically(coverFile(book)) { out ->
+            // 封面是派生数据：不 fsync，批量导入时省掉每本一次刷盘。
+            writeFileAtomically(coverFile(book), sync = false) { out ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 88, out)
             }
             true

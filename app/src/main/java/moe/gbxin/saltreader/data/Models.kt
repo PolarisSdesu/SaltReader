@@ -56,6 +56,11 @@ data class ComicBook(
     val treeUri: String,
     /** Document path relative to the tree root. "" = the tree root itself. */
     val documentPath: String = "",
+    /**
+     * 索引阶段解析出的 document URI（可空，旧索引没有这个字段）。
+     * 打开书 / 页面源时先用它，省掉重新逐级枚举 SAF 目录；失效时回退到 [documentPath]。
+     */
+    val documentUri: String? = null,
     val pageCount: Int,
     val sizeBytes: Long = 0L,
     val addedAt: Long,

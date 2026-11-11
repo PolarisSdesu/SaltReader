@@ -526,15 +526,15 @@ private fun BookCard(
     onLongClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val titleStyle = MaterialTheme.typography.titleLarge.copy(
-        fontSize = titleSizeSp.sp,
-        lineHeight = (titleSizeSp + 6).sp,
-    )
+    // 卡片每次重组都 copy() 一个 TextStyle 会持续分配对象；样式只随字号/主题变化。
+    val typography = MaterialTheme.typography
+    val titleStyle = remember(typography, titleSizeSp) {
+        typography.titleLarge.copy(fontSize = titleSizeSp.sp, lineHeight = (titleSizeSp + 6).sp)
+    }
     val meta = if (showMeta) bookMetaLabel(book, metaFields) else ""
-    val metaStyle = MaterialTheme.typography.bodySmall.copy(
-        fontSize = metaTextSizeSp.sp,
-        lineHeight = (metaTextSizeSp + 4).sp,
-    )
+    val metaStyle = remember(typography, metaTextSizeSp) {
+        typography.bodySmall.copy(fontSize = metaTextSizeSp.sp, lineHeight = (metaTextSizeSp + 4).sp)
+    }
     if (listMode) {
         Card(
             modifier = modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick),
