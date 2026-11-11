@@ -1051,28 +1051,14 @@ private fun LibraryRow(library: OpenSourceLibrary) {
 private const val REPO_URL = "https://github.com/PolarisSdesu/SaltReader"
 
 /**
- * About page, modelled after PiliPlus' layout: identity, version/build provenance, links,
- * storage/cache status, and a local-first privacy note. Tapping the logo five times opens a
- * hidden debug-info dialog (copyable device/build details for bug reports).
+ * About page with app identity, version/build provenance and project links. Tapping the logo five
+ * times opens a hidden debug-info dialog (copyable device/build details for bug reports).
  */
 @Composable
 private fun AboutSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current
-    val app = context.applicationContext as SaltReaderApplication
-    val scope = rememberCoroutineScope()
-    val books by app.library.books.collectAsStateWithLifecycle()
-    var cacheBytes by remember { mutableLongStateOf(0L) }
-    var rootsCount by remember { mutableIntStateOf(0) }
     var showDebug by remember { mutableStateOf(false) }
     var logoPresses by remember { mutableIntStateOf(0) }
-
-    LaunchedEffect(Unit) {
-        val snapshot = withContext(Dispatchers.IO) {
-            app.library.roots().size to app.library.appDataBytes()
-        }
-        rootsCount = snapshot.first
-        cacheBytes = snapshot.second
-    }
 
     fun openUrl(url: String) {
         val launched = runCatching {
@@ -1108,9 +1094,6 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
             appendLine("abi=${Build.SUPPORTED_ABIS.firstOrNull().orEmpty()}")
         }
     }
-    val booksText = stringResource(R.string.about_books_value, books.size, rootsCount)
-    val cacheText = stringResource(R.string.about_cache_value, formatBytes(cacheBytes))
-
     SettingsScaffold(stringResource(R.string.settings_about_title), onBack) { innerPadding ->
         Column(
             Modifier.fillMaxSize().padding(innerPadding).verticalScroll(rememberScrollState())
@@ -1192,49 +1175,6 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                     enabled = true,
                     supporting = stringResource(R.string.about_updates_desc),
                 ) { openUrl("$REPO_URL/releases") }
-                SettingsDivider()
-                SettingsActionRow(
-                    icon = Icons.AutoMirrored.Outlined.MenuBook,
-                    title = stringResource(R.string.about_licenses),
-                    enabled = true,
-                    supporting = stringResource(R.string.about_licenses_desc),
-                ) { context.startActivity(Intent(context, LicensesSettingsActivity::class.java)) }
-            }
-            SettingsSectionLabel(stringResource(R.string.about_section_storage))
-            SettingsCard {
-                SettingsInfoRow(stringResource(R.string.about_books), booksText)
-                SettingsDivider()
-                SettingsActionRow(
-                    icon = Icons.Outlined.Delete,
-                    title = stringResource(R.string.settings_storage_clear_cache),
-                    enabled = cacheBytes > 0L,
-                    supporting = cacheText,
-                ) {
-                    scope.launch {
-                        val freed = withContext(Dispatchers.IO) { app.library.clearCaches() }
-                        cacheBytes = withContext(Dispatchers.IO) { app.library.appDataBytes() }
-                        Toast.makeText(
-                            context,
-                            context.getString(R.string.settings_about_cache_cleared, formatBytes(freed)),
-                            Toast.LENGTH_SHORT,
-                        ).show()
-                    }
-                }
-            }
-            SettingsSectionLabel(stringResource(R.string.about_section_privacy))
-            SettingsCard {
-                Column(Modifier.fillMaxWidth().padding(16.dp)) {
-                    Text(
-                        stringResource(R.string.about_privacy_title),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                    Spacer(Modifier.height(6.dp))
-                    Text(
-                        stringResource(R.string.about_privacy_body),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
             }
         }
     }

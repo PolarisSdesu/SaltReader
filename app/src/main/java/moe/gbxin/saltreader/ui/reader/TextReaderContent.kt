@@ -20,6 +20,7 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -113,6 +114,7 @@ import moe.gbxin.saltreader.data.ReaderPageInfo
 import moe.gbxin.saltreader.data.ReadingDirection
 import moe.gbxin.saltreader.ui.components.BatteryIndicator
 import moe.gbxin.saltreader.ui.components.CustomColorPickerDialog
+import moe.gbxin.saltreader.ui.components.SaltLoading
 import moe.gbxin.saltreader.ui.settings.ReaderSettingsActivity
 import moe.gbxin.saltreader.ui.theme.pageBackgroundColor
 import org.json.JSONObject
@@ -325,6 +327,12 @@ internal fun TextReaderContent(
     val bridge = remember { TextJavascriptBridge { event -> events.tryEmit(event) } }
     val holder = remember { WebViewHolder() }
     var pageFinishedToken by remember { mutableIntStateOf(0) }
+    var firstLayoutRendered by remember(book.id) { mutableStateOf(false) }
+    val firstRenderAlpha = animateFloatAsState(
+        targetValue = if (firstLayoutRendered) 1f else 0f,
+        animationSpec = tween(durationMillis = 150),
+        label = "text reader first render",
+    )
     var lastAppliedOptionsJson by remember(book.id) { mutableStateOf<String?>(null) }
 
     var lastSentOffset by remember { mutableLongStateOf(-1L) }
@@ -566,6 +574,7 @@ internal fun TextReaderContent(
             }
             when (event) {
                 is TextReaderEvent.State -> {
+                    firstLayoutRendered = true
                     jumpVeil = false
                     localRatio.value = event.ratio
                     val global = globalRatio(event.ratio)
@@ -843,7 +852,9 @@ internal fun TextReaderContent(
                     holder.webView = this
                 }
             },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { alpha = firstRenderAlpha.value },
             onRelease = { webView ->
                 if (holder.webView === webView) holder.webView = null
                 runCatching { webView.removeJavascriptInterface(BRIDGE_NAME) }
@@ -860,6 +871,15 @@ internal fun TextReaderContent(
                 val initialHtml = html.replace(TEXT_READER_BOOTSTRAP_PLACEHOLDER, bootstrap)
                 webView.loadDataWithBaseURL(null, initialHtml, "text/html", "utf-8", null)
             }
+        }
+
+        AnimatedVisibility(
+            visible = !firstLayoutRendered,
+            enter = fadeIn(tween(durationMillis = 90)),
+            exit = fadeOut(tween(durationMillis = 150)),
+            modifier = Modifier.align(Alignment.Center),
+        ) {
+            SaltLoading(sizeDp = 36)
         }
 
         // Paged mode deliberately leaves touch handling to the WebView: the CSS-column strip is a

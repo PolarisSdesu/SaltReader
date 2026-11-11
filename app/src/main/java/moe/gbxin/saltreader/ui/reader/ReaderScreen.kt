@@ -2,6 +2,8 @@ package moe.gbxin.saltreader.ui.reader
 
 import android.app.Activity
 import android.content.Intent
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.util.Size
@@ -46,6 +48,8 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -129,8 +133,9 @@ import moe.gbxin.saltreader.ui.theme.pageBackgroundColor
  * Reader entry point. Renders the top-level states instead of assuming the book is already usable:
  * [ReaderUiState.Loading] while the index is publishing or the image page source is being prepared,
  * [ReaderUiState.TextLoading] while a reflowable book's chapters are parsed, [ReaderUiState.Missing]
- * only when the book is definitively gone, [ReaderUiState.Failed] with a retry when opening the file
- * failed, and the actual reader once the page count / chapters are ready.
+ * only when the book is definitively gone,
+ * [ReaderUiState.Failed] with a retry when opening the file failed, and the actual reader once the
+ * page count / chapters are ready.
  */
 @Composable
 fun ReaderScreen(
@@ -143,83 +148,112 @@ fun ReaderScreen(
     val settings by app.settings.state.collectAsStateWithLifecycle()
     val uiState by vm.uiState.collectAsStateWithLifecycle()
     val tallPages by vm.tallPages.collectAsStateWithLifecycle()
+    val textReaderBackground = pageBackgroundColor(
+        settings.readerBackground,
+        settings.customBackgroundColor,
+        isSystemInDarkTheme(),
+    )
 
-    when (val state = uiState) {
-        is ReaderUiState.Loading -> ReaderLoading(
-            message = stringResource(
-                when (state.reason) {
-                    ReaderLoadingReason.INDEX -> R.string.reader_loading_opening
-                    ReaderLoadingReason.PREPARING -> R.string.reader_loading_preparing
-                },
-            ),
-            modifier = modifier,
-        )
-
-        ReaderUiState.Missing -> {
-            // The book vanished from the index while the reader was open; show why, then return to
-            // the shelf. The button lets the reader leave immediately.
-            LaunchedEffect(Unit) {
-                delay(1_600)
-                onBack()
+    AnimatedContent(
+        targetState = uiState,
+        modifier = modifier,
+        transitionSpec = {
+            fadeIn(tween(durationMillis = 180)) togetherWith fadeOut(tween(durationMillis = 120))
+        },
+        contentKey = { state ->
+            when (state) {
+                is ReaderUiState.Loading -> "loading"
+                ReaderUiState.TextLoading, is ReaderUiState.TextReady -> "text"
+                is ReaderUiState.Ready -> "ready"
+                ReaderUiState.Missing -> "missing"
+                is ReaderUiState.Failed, is ReaderUiState.TextFailed -> "failed"
             }
-            ReaderMessage(
-                title = stringResource(R.string.reader_unavailable_title),
-                message = stringResource(R.string.reader_unavailable_message),
+        },
+        label = "reader state",
+    ) { state ->
+        when (state) {
+            is ReaderUiState.Loading -> ReaderLoading(
+                message = stringResource(
+                    when (state.reason) {
+                        ReaderLoadingReason.INDEX -> R.string.reader_loading_opening
+                        ReaderLoadingReason.PREPARING -> R.string.reader_loading_preparing
+                    },
+                ),
+                modifier = modifier,
+            )
+
+            ReaderUiState.Missing -> {
+                // The book vanished from the index while the reader was open; show why, then return to
+                // the shelf. The button lets the reader leave immediately.
+                LaunchedEffect(Unit) {
+                    delay(1_600)
+                    onBack()
+                }
+                ReaderMessage(
+                    title = stringResource(R.string.reader_unavailable_title),
+                    message = stringResource(R.string.reader_unavailable_message),
+                    onBack = onBack,
+                    modifier = modifier,
+                )
+            }
+
+            ReaderUiState.TextLoading -> Box(
+                modifier.fillMaxSize().background(textReaderBackground),
+                contentAlignment = Alignment.Center,
+            ) {
+                SaltLoading(sizeDp = 36)
+            }
+
+            is ReaderUiState.TextFailed -> ReaderFailed(
+                errorLog = state.errorLog,
+                background = textReaderBackground,
+                onRetry = vm::retryLoadChapters,
                 onBack = onBack,
                 modifier = modifier,
             )
-        }
 
-        ReaderUiState.TextLoading -> ReaderLoading(
-            message = stringResource(R.string.reader_loading_parsing_ebook),
-            modifier = modifier,
-        )
+            is ReaderUiState.TextReady -> TextReaderContent(
+                vm = vm,
+                book = state.book,
+                chapters = state.chapters,
+                settings = settings,
+                onBack = onBack,
+                volumePageEvents = volumePageEvents,
+                modifier = modifier,
+                onSettingsChange = { transform -> app.settings.update(transform) },
+            )
 
-        ReaderUiState.TextFailed -> ReaderFailed(
-            onRetry = vm::retryLoadChapters,
-            onBack = onBack,
-            modifier = modifier,
-        )
+            is ReaderUiState.Failed -> ReaderFailed(
+                errorLog = state.errorLog,
+                background = textReaderBackground,
+                onRetry = vm::retryPrepare,
+                onBack = onBack,
+                modifier = modifier,
+            )
 
-        is ReaderUiState.TextReady -> TextReaderContent(
-            vm = vm,
-            book = state.book,
-            chapters = state.chapters,
-            settings = settings,
-            onBack = onBack,
-            volumePageEvents = volumePageEvents,
-            modifier = modifier,
-            onSettingsChange = { transform -> app.settings.update(transform) },
-        )
-
-        ReaderUiState.Failed -> ReaderFailed(
-            onRetry = vm::retryPrepare,
-            onBack = onBack,
-            modifier = modifier,
-        )
-
-        is ReaderUiState.Ready -> {
-            if (state.pageCount <= 0) {
-                // Prepared book with no readable pages: this is not "page 1 failed", there is simply
-                // nothing to display. Never render the pager with a fake single page.
-                ReaderMessage(
-                    title = stringResource(R.string.reader_empty_title),
-                    message = stringResource(R.string.reader_empty_message),
-                    onBack = onBack,
-                    modifier = modifier,
-                )
-            } else {
-                ReaderContent(
-                    vm = vm,
-                    book = state.book,
-                    pageCount = state.pageCount,
-                    tallPages = tallPages,
-                    settings = settings,
-                    onBack = onBack,
-                    volumePageEvents = volumePageEvents,
-                    modifier = modifier,
-                    onSettingsChange = { transform -> app.settings.update(transform) },
-                )
+            is ReaderUiState.Ready -> {
+                if (state.pageCount <= 0) {
+                    // Prepared book with no readable pages: this is not "page 1 failed", there is simply
+                    // nothing to display. Never render the pager with a fake single page.
+                    ReaderMessage(
+                        title = stringResource(R.string.reader_empty_title),
+                        message = stringResource(R.string.reader_empty_message),
+                        onBack = onBack,
+                        modifier = modifier,
+                    )
+                } else {
+                    ReaderContent(
+                        vm = vm,
+                        book = state.book,
+                        pageCount = state.pageCount,
+                        tallPages = tallPages,
+                        settings = settings,
+                        onBack = onBack,
+                        volumePageEvents = volumePageEvents,
+                        modifier = modifier,
+                        onSettingsChange = { transform -> app.settings.update(transform) },
+                    )
+                }
             }
         }
     }
@@ -270,12 +304,16 @@ private fun ReaderMessage(
 
 @Composable
 private fun ReaderFailed(
+    errorLog: String,
+    background: Color,
     onRetry: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val context = LocalContext.current
+    val foreground = if (background.luminance() < 0.5f) Color.White else Color.Black
     Box(
-        modifier.fillMaxSize().background(MaterialTheme.colorScheme.background),
+        modifier.fillMaxSize().background(background),
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
@@ -284,9 +322,40 @@ private fun ReaderFailed(
             Text(
                 stringResource(R.string.reader_failed_message),
                 style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = foreground.copy(alpha = 0.72f),
             )
-            Spacer(Modifier.height(20.dp))
+            Spacer(Modifier.height(16.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(0.88f),
+                colors = CardDefaults.cardColors(containerColor = foreground.copy(alpha = 0.08f)),
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        stringResource(R.string.reader_error_details),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = foreground,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        errorLog.lineSequence().firstOrNull { it.isNotBlank() } ?: errorLog,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = foreground.copy(alpha = 0.78f),
+                        maxLines = 3,
+                    )
+                    TextButton(onClick = {
+                        val clipboard = context.getSystemService(ClipboardManager::class.java)
+                        clipboard?.setPrimaryClip(ClipData.newPlainText("Salt Reader error log", errorLog))
+                        android.widget.Toast.makeText(
+                            context,
+                            context.getString(R.string.reader_error_log_copied),
+                            android.widget.Toast.LENGTH_SHORT,
+                        ).show()
+                    }) {
+                        Text(stringResource(R.string.reader_copy_error_log), color = foreground)
+                    }
+                }
+            }
+            Spacer(Modifier.height(12.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 FilledTonalButton(onClick = onRetry) { Text(stringResource(R.string.reader_retry)) }
                 TextButton(onClick = onBack) { Text(stringResource(R.string.reader_back_to_library)) }

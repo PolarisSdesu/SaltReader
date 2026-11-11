@@ -56,7 +56,7 @@ sealed interface ReaderUiState {
     data class Loading(val reason: ReaderLoadingReason = ReaderLoadingReason.INDEX) : ReaderUiState
     data object Missing : ReaderUiState
     data class Ready(val book: ComicBook, val pageCount: Int) : ReaderUiState
-    data object Failed : ReaderUiState
+    data class Failed(val errorLog: String) : ReaderUiState
 
     /**
      * Reflowable text book (EPUB/MOBI/AZW3): chapters are being parsed / extracted on IO. The UI
@@ -68,7 +68,7 @@ sealed interface ReaderUiState {
     data class TextReady(val book: ComicBook, val chapters: List<EbookChapter>) : ReaderUiState
 
     /** Reflowable text book failed to load (corrupt file / extraction error) - retryable. */
-    data object TextFailed : ReaderUiState
+    data class TextFailed(val errorLog: String) : ReaderUiState
 }
 
 /** Internal chapter-loading progress for reflowable books. */
@@ -76,7 +76,7 @@ private sealed interface TextLoadState {
     data object Idle : TextLoadState
     data object Loading : TextLoadState
     data class Done(val chapters: List<EbookChapter>) : TextLoadState
-    data object Failed : TextLoadState
+    data class Failed(val errorLog: String) : TextLoadState
 }
 
 /** Internal preparation progress for the image page source of the currently open book. */
@@ -84,7 +84,7 @@ private sealed interface PrepareState {
     data object Idle : PrepareState
     data object Running : PrepareState
     data class Done(val pageCount: Int) : PrepareState
-    data object Failed : PrepareState
+    data class Failed(val errorLog: String) : PrepareState
 }
 
 /**
@@ -174,7 +174,7 @@ class ReaderViewModel(
             return when (text) {
                 TextLoadState.Idle, TextLoadState.Loading -> ReaderUiState.TextLoading
                 is TextLoadState.Done -> ReaderUiState.TextReady(indexed, text.chapters)
-                TextLoadState.Failed -> ReaderUiState.TextFailed
+                is TextLoadState.Failed -> ReaderUiState.TextFailed(text.errorLog)
             }
         }
         return when (prepare) {
@@ -183,7 +183,7 @@ class ReaderViewModel(
             PrepareState.Idle -> ReaderUiState.Loading(ReaderLoadingReason.PREPARING)
             PrepareState.Running -> ReaderUiState.Loading(ReaderLoadingReason.PREPARING)
             is PrepareState.Done -> ReaderUiState.Ready(indexed, prepare.pageCount)
-            PrepareState.Failed -> ReaderUiState.Failed
+            is PrepareState.Failed -> ReaderUiState.Failed(prepare.errorLog)
         }
     }
 
@@ -285,11 +285,12 @@ class ReaderViewModel(
             textState.value = TextLoadState.Loading
             // Data layer returns an empty list when extraction fails (contract), so an empty result
             // is treated as a retryable failure instead of an empty book.
-            val chapters = runCatching { repo.loadEbookChapters(indexed) }.getOrNull()
-            textState.value = if (chapters.isNullOrEmpty()) {
-                TextLoadState.Failed
-            } else {
-                TextLoadState.Done(chapters)
+            val result = runCatching { repo.loadEbookChapters(indexed) }
+            val chapters = result.getOrNull()
+            textState.value = when {
+                result.isFailure -> TextLoadState.Failed(result.exceptionOrNull().orEmptyStackTrace())
+                chapters.isNullOrEmpty() -> TextLoadState.Failed("Chapter extraction returned no content.")
+                else -> TextLoadState.Done(chapters)
             }
         }
     }
@@ -299,7 +300,7 @@ class ReaderViewModel(
         if (prepareJob?.isActive == true) return
         prepareJob = viewModelScope.launch(Dispatchers.IO) {
             prepareState.value = PrepareState.Running
-            val pageCount: Int? = runCatching {
+            val result = runCatching {
                 val pageSource = ensureSource(indexed) ?: return@runCatching null
                 val count = pageSource.prepare().takeIf { it > 0 }
                 if (count != null) {
@@ -308,9 +309,12 @@ class ReaderViewModel(
                     }
                 }
                 count
-            }.getOrNull()
+            }
+            val pageCount = result.getOrNull()
             if (pageCount == null) {
-                prepareState.value = PrepareState.Failed
+                val error = result.exceptionOrNull()?.orEmptyStackTrace()
+                    ?: "Page source could not be opened or returned no readable pages."
+                prepareState.value = PrepareState.Failed(error)
             } else {
                 prepareState.value = PrepareState.Done(pageCount)
                 // Backfill the real count so the shelf page label / progress use it too.
@@ -318,6 +322,9 @@ class ReaderViewModel(
             }
         }
     }
+
+    private fun Throwable?.orEmptyStackTrace(): String =
+        this?.stackTraceToString()?.takeIf(String::isNotBlank) ?: "No exception details were provided."
 
     /** 页像素尺寸（只读图片头，带缓存）；仅条漫分块渲染使用。 */
     suspend fun pageSize(index: Int): Size? {

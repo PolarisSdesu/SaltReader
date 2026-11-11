@@ -3,13 +3,15 @@
     <!-- Loading / terminal states -->
     <string name="reader_loading_opening">Opening…</string>
     <string name="reader_loading_preparing">Preparing…</string>
-    <string name="reader_loading_parsing_ebook">Parsing e-book…</string>
     <string name="reader_unavailable_title">Cannot open</string>
     <string name="reader_unavailable_message">This book is no longer in your library.</string>
     <string name="reader_empty_title">No readable pages</string>
     <string name="reader_empty_message">No supported images or pages were found in this book.</string>
     <string name="reader_failed_title">Cannot open this book</string>
     <string name="reader_failed_message">The file may be corrupt or in an unsupported format.</string>
+    <string name="reader_error_details">Error details</string>
+    <string name="reader_copy_error_log">Copy error log</string>
+    <string name="reader_error_log_copied">Error log copied</string>
     <string name="reader_retry">Retry</string>
     <string name="reader_back_to_library">Back to library</string>
 

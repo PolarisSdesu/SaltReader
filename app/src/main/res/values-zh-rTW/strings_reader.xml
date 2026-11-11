@@ -3,13 +3,15 @@
     <!-- 載入/終止狀態 -->
     <string name="reader_loading_opening">正在開啟…</string>
     <string name="reader_loading_preparing">正在準備…</string>
-    <string name="reader_loading_parsing_ebook">正在解析電子書…</string>
     <string name="reader_unavailable_title">無法開啟</string>
     <string name="reader_unavailable_message">這本書已經不在書櫃上。</string>
     <string name="reader_empty_title">沒有可讀的頁面</string>
     <string name="reader_empty_message">在這本書中找不到支援的圖片或頁面。</string>
     <string name="reader_failed_title">無法開啟這本書</string>
     <string name="reader_failed_message">檔案可能已損壞或格式不受支援。</string>
+    <string name="reader_error_details">錯誤詳細資料</string>
+    <string name="reader_copy_error_log">複製錯誤記錄</string>
+    <string name="reader_error_log_copied">已複製錯誤記錄</string>
     <string name="reader_retry">重試</string>
     <string name="reader_back_to_library">回到書櫃</string>
 

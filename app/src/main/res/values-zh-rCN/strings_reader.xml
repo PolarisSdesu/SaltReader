@@ -3,13 +3,15 @@
     <!-- 加载/终止状态 -->
     <string name="reader_loading_opening">正在打开…</string>
     <string name="reader_loading_preparing">正在准备…</string>
-    <string name="reader_loading_parsing_ebook">正在解析电子书…</string>
     <string name="reader_unavailable_title">无法打开</string>
     <string name="reader_unavailable_message">这本书已经不在书架上。</string>
     <string name="reader_empty_title">没有可读的页面</string>
     <string name="reader_empty_message">这本书里没有找到支持的图片或页面。</string>
     <string name="reader_failed_title">无法打开这本书</string>
     <string name="reader_failed_message">文件可能已损坏或格式不受支持。</string>
+    <string name="reader_error_details">错误详情</string>
+    <string name="reader_copy_error_log">复制错误日志</string>
+    <string name="reader_error_log_copied">已复制错误日志</string>
     <string name="reader_retry">重试</string>
     <string name="reader_back_to_library">回到书架</string>
 

@@ -3,13 +3,15 @@
     <!-- 読み込み/終了状態 -->
     <string name="reader_loading_opening">開いています…</string>
     <string name="reader_loading_preparing">準備しています…</string>
-    <string name="reader_loading_parsing_ebook">電子書籍を解析しています…</string>
     <string name="reader_unavailable_title">開けません</string>
     <string name="reader_unavailable_message">この本はライブラリにありません。</string>
     <string name="reader_empty_title">表示できるページがありません</string>
     <string name="reader_empty_message">この本には対応する画像やページが見つかりませんでした。</string>
     <string name="reader_failed_title">この本を開けません</string>
     <string name="reader_failed_message">ファイルが破損しているか、対応していない形式の可能性があります。</string>
+    <string name="reader_error_details">エラーの詳細</string>
+    <string name="reader_copy_error_log">エラーログをコピー</string>
+    <string name="reader_error_log_copied">エラーログをコピーしました</string>
     <string name="reader_retry">再試行</string>
     <string name="reader_back_to_library">ライブラリに戻る</string>
 
