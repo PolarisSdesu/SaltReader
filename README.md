@@ -1,4 +1,4 @@
-# Salt Reader ![Build status](https://github.com/PolarisSdesu/SaltReader/workflows/Android%20CI/badge.svg?branch=main)
+# Salt Reader ![Build status](https://github.com/PolarisSdesu/SaltReader/actions/workflows/android.yml/badge.svg?branch=main)
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
