@@ -40,9 +40,15 @@ import moe.gbxin.saltreader.data.ComicBook
  * 容量随进程堆自适应：1/8 堆，最多 64MB；小屏设备不会因为固定 32MB 而频繁抖动，大堆设备也
  * 不会把封面长期霸占内存。
  */
-private val COVER_CACHE_BYTES: Int = (Runtime.getRuntime().maxMemory() / 8)
-    .coerceAtMost(64L * 1024 * 1024)
-    .toInt()
+private val COVER_CACHE_BYTES: Int = run {
+    // 低内存设备（<=256MB 堆）更保守，避免封面把可用的页缓存/解码空间挤掉。
+    val heap = Runtime.getRuntime().maxMemory()
+    if (heap <= 256L * 1024L * 1024L) {
+        (heap / 12).coerceAtMost(24L * 1024L * 1024L)
+    } else {
+        (heap / 8).coerceAtMost(48L * 1024L * 1024L)
+    }.toInt()
+}
 
 /** Grid/list covers are small; decoding at ~2x the view size keeps them crisp without huge bitmaps. */
 private const val DEFAULT_TARGET_WIDTH_PX = 640

@@ -145,7 +145,16 @@ class ReaderViewModel(
 
     private val textState = MutableStateFlow<TextLoadState>(TextLoadState.Idle)
 
-    private val maxCacheBytes = (Runtime.getRuntime().maxMemory() / 6L).coerceAtMost(96L * 1024L * 1024L)
+    private val maxCacheBytes = run {
+        // 低内存设备按堆的 1/8（上限 64MB），普通设备 1/6（上限 96MB）：
+        // 单页解码上限 16MB，留出至少 4 页缓存即可，避免 OOM 时把进程拖死。
+        val heap = Runtime.getRuntime().maxMemory()
+        if (heap <= 256L * 1024L * 1024L) {
+            (heap / 8L).coerceAtMost(64L * 1024L * 1024L)
+        } else {
+            (heap / 6L).coerceAtMost(96L * 1024L * 1024L)
+        }
+    }
     private val cache = object : LruCache<String, Bitmap>(maxCacheBytes.toInt()) {
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
