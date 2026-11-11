@@ -277,3 +277,15 @@ A 负责的实现：
   CSS 改用 JS 维护的 `--app-vh`（`window.innerHeight` 的 px 值，resize 时更新），
   不再依赖 `vh`；`100vw` 可继续使用。
 - 进度持久化仍在 `ON_PAUSE` / `ON_STOP` 时 flush，和图片阅读器一致。
+
+## 第六轮：超长条漫分块解码
+
+- 首页页高宽比 > 3 的书（条漫/Webtoon）在**纵向模式**改用分块渲染：`ComicPageSource.pageSize()`
+  先读图片头得到显示高度，`openRegionPage()` 返回 `RegionPage`（持有压缩字节的
+  `BitmapRegionDecoder`），垂直页只解码当前视口上下各留 0.75 屏的切片，滚动到新的
+  0.75 屏区间才重新解码一块。
+- 清晰度优先：切片按「高度裁剪到 12MB 像素预算」而不是提高 `inSampleSize`，保证 narrow-tall 图
+  在屏幕宽度上仍是原始分辨率；普通比例页完全走原来的整页解码路径（零额外 I/O）。
+- `ReaderViewModel` 缓存页尺寸（`pageSize(index)`），并在 `prepare()` 后设置 `tallPages`
+  供 UI 选择渲染路径；切片由 Compose 侧负责 `close()`，页面源保持无状态。
+- 实测 800×6000 测试 CBZ：滚动连续、满宽、无缝隙，janky 0.93%（90th 16ms / 99th 23ms）。

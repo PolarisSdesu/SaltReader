@@ -3,6 +3,8 @@ package moe.gbxin.saltreader.data
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.BitmapRegionDecoder
+import android.graphics.Rect
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.ImageDecoder
@@ -11,6 +13,7 @@ import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.util.Size
 import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -33,23 +36,80 @@ import kotlin.math.sqrt
  * - [loadPage] 可能做阻塞 I/O，内部统一切到 Dispatchers.IO；
  * - [close] 释放文件句柄/渲染器。
  */
+/**
+ * 可按区域解码的一页（超长条漫分块渲染用）。
+ *
+ * 解码器只持有该页的压缩字节，按需解出可见区域，避免一张 800×20000 的页面整块解码成
+ * 几十 MB 的位图；调用方负责串行访问并在不再需要时 [close]。
+ */
+class RegionPage internal constructor(
+    val width: Int,
+    val height: Int,
+    private val decoder: BitmapRegionDecoder,
+) : Closeable {
+    fun decodeRegion(rect: Rect, sample: Int): Bitmap? = runCatching {
+        decoder.decodeRegion(
+            rect,
+            BitmapFactory.Options().apply {
+                inSampleSize = sample.coerceAtLeast(1)
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            },
+        )
+    }.getOrNull()
+
+    override fun close() {
+        runCatching { decoder.recycle() }
+    }
+}
+
 interface ComicPageSource : Closeable {
     val pageCount: Int
 
     suspend fun prepare(): Int = pageCount
 
     suspend fun loadPage(index: Int, targetWidth: Int): Bitmap?
+
+    /** 页的像素尺寸（只读图片头，不整页解码）；不支持分块渲染的源返回 null。 */
+    suspend fun pageSize(index: Int): Size? = null
+
+    /** 打开按区域解码的页；源不支持时返回 null（调用方回退到整页解码）。 */
+    suspend fun openRegionPage(index: Int): RegionPage? = null
 }
 
 /** 内部阻塞式读取接口：同一文件内的页面源互相复用真正干活的实现，避免二次调度。 */
 private interface BlockingPageSource {
     fun loadBlocking(index: Int, targetWidth: Int): Bitmap?
+    fun pageSizeBlocking(index: Int): Size? = null
+    fun openRegionPageBlocking(index: Int): RegionPage? = null
 }
 
 /** 所有页面源的公共基类：惰性打开逻辑在子类中，loadPage 统一在 IO 线程执行。 */
 private abstract class LazyPageSource(override val pageCount: Int) : ComicPageSource, BlockingPageSource {
     final override suspend fun loadPage(index: Int, targetWidth: Int): Bitmap? =
         withContext(Dispatchers.IO) { loadBlocking(index, targetWidth) }
+
+    final override suspend fun pageSize(index: Int): Size? =
+        withContext(Dispatchers.IO) { pageSizeBlocking(index) }
+
+    final override suspend fun openRegionPage(index: Int): RegionPage? =
+        withContext(Dispatchers.IO) { openRegionPageBlocking(index) }
+}
+
+/** 一页的原始字节（可能来自合并读取的大缓冲区，用区间表示）。 */
+private class PageBytes(val bytes: ByteArray, val offset: Int, val length: Int)
+
+private fun pageBytesSize(page: PageBytes): Size? = runCatching {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(page.bytes, page.offset, page.length, options)
+    if (options.outWidth > 0 && options.outHeight > 0) Size(options.outWidth, options.outHeight) else null
+}.getOrNull()
+
+private fun pageBytesOpenRegion(page: PageBytes): RegionPage? {
+    val size = pageBytesSize(page) ?: return null
+    val decoder = runCatching {
+        BitmapRegionDecoder.newInstance(page.bytes, page.offset, page.length, false)
+    }.getOrNull() ?: return null
+    return RegionPage(size.width, size.height, decoder)
 }
 
 /** 书元数据无效（或文字型书没有页图）时返回空源，保证 pageSource() 不抛异常。 */
@@ -102,6 +162,10 @@ private class RemoteZipArchivePageSource(
     private var pages: List<RemoteZipReader.Entry>? = null
     private var closed = false
 
+    /** 条漫分块渲染会先查尺寸再按区域解码，缓存最近一页的字节避免重复读取。 */
+    @Volatile
+    private var lastPageBytes: Pair<Int, PageBytes>? = null
+
     override suspend fun prepare(): Int = withContext(Dispatchers.IO) {
         ensureParsed()?.size ?: pageCount
     }
@@ -120,13 +184,26 @@ private class RemoteZipArchivePageSource(
         list
     }
 
-    override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
+    private fun readPageBytes(index: Int): PageBytes? {
+        lastPageBytes?.let { (cachedIndex, cached) -> if (cachedIndex == index) return cached }
         val list = ensureParsed() ?: return null
         val opened = reader ?: return null
         val entry = list.getOrNull(index) ?: return null
         val view = runCatching { opened.readEntryView(entry, PageIndexing.MAX_PAGE_BYTES) }.getOrNull() ?: return null
-        return decodePage(view.bytes, targetWidth, view.offset, view.length)
+        val page = PageBytes(view.bytes, view.offset, view.length)
+        lastPageBytes = index to page
+        return page
     }
+
+    override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
+        val page = readPageBytes(index) ?: return null
+        return decodePage(page.bytes, targetWidth, page.offset, page.length)
+    }
+
+    override fun pageSizeBlocking(index: Int): Size? = readPageBytes(index)?.let(::pageBytesSize)
+
+    override fun openRegionPageBlocking(index: Int): RegionPage? =
+        readPageBytes(index)?.let(::pageBytesOpenRegion)
 
     override fun close() {
         synchronized(lock) {
@@ -191,6 +268,8 @@ private class EpubImagePageSource(
     // 而不是把后续页整体前移、打乱页码。
     private var pages: List<RemoteZipReader.Entry?>? = null
     private var closed = false
+    @Volatile
+    private var lastPageBytes: Pair<Int, PageBytes>? = null
 
     override suspend fun prepare(): Int = withContext(Dispatchers.IO) {
         ensureParsed()?.size ?: pageCount
@@ -231,13 +310,26 @@ private class EpubImagePageSource(
         else epubMapJson.decodeFromString<EpubPageMap>(file.readText(Charsets.UTF_8)).pages
     }.getOrNull()
 
-    override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
+    private fun readPageBytes(index: Int): PageBytes? {
+        lastPageBytes?.let { (cachedIndex, cached) -> if (cachedIndex == index) return cached }
         val mapping = ensureParsed() ?: return null
         val opened = reader ?: return null
         val entry = mapping.getOrNull(index) ?: return null
         val view = runCatching { opened.readEntryView(entry, PageIndexing.MAX_PAGE_BYTES) }.getOrNull() ?: return null
-        return decodePage(view.bytes, targetWidth, view.offset, view.length)
+        val page = PageBytes(view.bytes, view.offset, view.length)
+        lastPageBytes = index to page
+        return page
     }
+
+    override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
+        val page = readPageBytes(index) ?: return null
+        return decodePage(page.bytes, targetWidth, page.offset, page.length)
+    }
+
+    override fun pageSizeBlocking(index: Int): Size? = readPageBytes(index)?.let(::pageBytesSize)
+
+    override fun openRegionPageBlocking(index: Int): RegionPage? =
+        readPageBytes(index)?.let(::pageBytesOpenRegion)
 
     override fun close() {
         synchronized(lock) {
@@ -257,6 +349,8 @@ private class SafFolderPageSource(
     private val lock = Any()
     private var pages: List<Uri>? = null
     private var closed = false
+    @Volatile
+    private var lastPageBytes: Pair<Int, PageBytes>? = null
 
     private fun ensurePages(): List<Uri>? = synchronized(lock) {
         if (closed) return null
@@ -274,13 +368,26 @@ private class SafFolderPageSource(
     }
 
     override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
+        val page = readPageBytes(index) ?: return null
+        return decodePage(page.bytes, targetWidth, page.offset, page.length)
+    }
+
+    private fun readPageBytes(index: Int): PageBytes? {
+        lastPageBytes?.let { (cachedIndex, cached) -> if (cachedIndex == index) return cached }
         val list = ensurePages() ?: return null
         val uri = list.getOrNull(index) ?: return null
         val bytes = runCatching {
             context.contentResolver.openInputStream(uri)?.use { readBounded(it) }
         }.getOrNull() ?: return null
-        return decodePage(bytes, targetWidth)
+        val page = PageBytes(bytes, 0, bytes.size)
+        lastPageBytes = index to page
+        return page
     }
+
+    override fun pageSizeBlocking(index: Int): Size? = readPageBytes(index)?.let(::pageBytesSize)
+
+    override fun openRegionPageBlocking(index: Int): RegionPage? =
+        readPageBytes(index)?.let(::pageBytesOpenRegion)
 
     override fun close() {
         synchronized(lock) {

@@ -1,6 +1,9 @@
 package moe.gbxin.saltreader.ui.reader
 
 import android.app.Activity
+import android.graphics.Bitmap
+import android.graphics.Rect
+import android.util.Size
 import android.view.WindowManager
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
@@ -105,7 +108,9 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
@@ -127,11 +132,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.roundToInt
 import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.SaltReaderApplication
@@ -140,6 +148,7 @@ import moe.gbxin.saltreader.data.ComicBook
 import moe.gbxin.saltreader.data.READER_FONT_SIZE_MAX_SP
 import moe.gbxin.saltreader.data.READER_FONT_SIZE_MIN_SP
 import moe.gbxin.saltreader.data.ReaderBackground
+import moe.gbxin.saltreader.data.RegionPage
 import moe.gbxin.saltreader.data.ReaderMode
 import moe.gbxin.saltreader.data.ReadingDirection
 import moe.gbxin.saltreader.ui.components.CustomColorPickerDialog
@@ -163,6 +172,7 @@ fun ReaderScreen(
     val app = LocalContext.current.applicationContext as SaltReaderApplication
     val settings by app.settings.state.collectAsStateWithLifecycle()
     val uiState by vm.uiState.collectAsStateWithLifecycle()
+    val tallPages by vm.tallPages.collectAsStateWithLifecycle()
 
     when (val state = uiState) {
         is ReaderUiState.Loading -> ReaderLoading(
@@ -233,6 +243,7 @@ fun ReaderScreen(
                     vm = vm,
                     book = state.book,
                     pageCount = state.pageCount,
+                    tallPages = tallPages,
                     settings = settings,
                     onBack = onBack,
                     volumePageEvents = volumePageEvents,
@@ -320,6 +331,7 @@ private fun ReaderContent(
     vm: ReaderViewModel,
     book: ComicBook,
     pageCount: Int,
+    tallPages: Boolean,
     settings: AppSettings,
     onBack: () -> Unit,
     volumePageEvents: Flow<Int>?,
@@ -669,7 +681,7 @@ private fun ReaderContent(
                             }
                         },
                 ) {
-                    Box(
+                    BoxWithConstraints(
                         Modifier
                             .fillMaxSize()
                             .graphicsLayer {
@@ -679,6 +691,7 @@ private fun ReaderContent(
                                 translationY = verticalOffset.y
                             },
                     ) {
+                        val viewportHeightPx = constraints.maxHeight
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.fillMaxSize(),
@@ -691,6 +704,8 @@ private fun ReaderContent(
                                     targetWidth = pageTarget,
                                     colorFilter = pageFilter,
                                     animateAppear = allowPageFade,
+                                    tallBook = tallPages,
+                                    viewportHeightPx = viewportHeightPx,
                                 )
                             }
                         }
@@ -963,7 +978,13 @@ private fun VerticalPage(
     targetWidth: Int,
     colorFilter: ColorFilter?,
     animateAppear: Boolean,
+    tallBook: Boolean,
+    viewportHeightPx: Int,
 ) {
+    if (tallBook && viewportHeightPx > 0) {
+        TallVerticalPage(vm, index, colorFilter, viewportHeightPx)
+        return
+    }
     val state = rememberPageState(vm, index, targetWidth)
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         when (state) {
@@ -985,6 +1006,115 @@ private fun VerticalPage(
             }
         }
     }
+}
+
+/**
+ * 条漫页的分块渲染：只解出当前可见区域（上下各留一段缓冲），滚出缓冲后重新解一块。
+ * 这样 800×20000 的长图既不会整块解码成几十 MB 位图，也不会因为降采样而糊。
+ */
+private data class RegionSlice(val bitmap: Bitmap, val topPx: Float, val heightPx: Float)
+
+@Composable
+private fun TallVerticalPage(
+    vm: ReaderViewModel,
+    index: Int,
+    colorFilter: ColorFilter?,
+    viewportHeightPx: Int,
+) {
+    val size by produceState<Size?>(null, vm, index) { value = vm.pageSize(index) }
+    val pageSize = size
+    if (pageSize == null) {
+        BoxWithConstraints(Modifier.fillMaxWidth()) {
+            Box(Modifier.fillMaxWidth().height(maxWidth * 1.45f)) { PagePlaceholder(index) }
+        }
+        return
+    }
+    val density = LocalDensity.current
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        val widthPx = constraints.maxWidth.toFloat()
+        val pageHeightPx = widthPx * (pageSize.height.toFloat() / pageSize.width.toFloat())
+        val pageHeightDp = with(density) { pageHeightPx.toDp() }
+        var regionPage by remember(index) { mutableStateOf<RegionPage?>(null) }
+        var slice by remember(index) { mutableStateOf<RegionSlice?>(null) }
+        // Scroll position is only quantised into buckets, so scrolling does not recompose per frame.
+        var bucket by remember(index) { mutableIntStateOf(-1) }
+
+        LaunchedEffect(index) { regionPage = vm.openRegionPage(index) }
+        DisposableEffect(index) {
+            onDispose {
+                regionPage?.close()
+                regionPage = null
+            }
+        }
+
+        val rp = regionPage
+        LaunchedEffect(rp, bucket, pageHeightPx) {
+            val page = rp ?: return@LaunchedEffect
+            if (bucket < 0 || pageHeightPx <= 0f) return@LaunchedEffect
+            val scale = pageSize.height / pageHeightPx
+            val viewport = viewportHeightPx.toFloat()
+            val viewportImagePx = viewport * scale
+            val bucketTopDisplay = bucket * viewport * 0.75f
+            val marginDisplay = viewport * 0.75f
+            val top = ((bucketTopDisplay - marginDisplay) * scale).toInt().coerceIn(0, pageSize.height - 1)
+            val bottom = ((bucketTopDisplay + viewport + marginDisplay) * scale).toInt()
+                .coerceIn(top + 1, pageSize.height)
+            // 优先保持解码清晰度：区域过高时裁剪缓冲区高度，而不是提高 inSampleSize。
+            val maxPixels = 12L * 1024L * 1024L / 4L
+            val maxChunkHeight = (maxPixels / pageSize.width).toInt()
+                .coerceAtLeast(viewportImagePx.toInt().coerceAtLeast(1))
+            val chunkBottom = min(bottom, top + maxChunkHeight).coerceAtLeast(top + 1)
+            val rect = Rect(0, top, pageSize.width, chunkBottom)
+            val sample = regionSample(rect.width(), rect.height())
+            val decoded = withContext(Dispatchers.IO) { page.decodeRegion(rect, sample) }
+            if (decoded != null) {
+                slice = RegionSlice(decoded, top / scale, rect.height() / scale)
+            }
+        }
+
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(pageHeightDp)
+                .onGloballyPositioned { coordinates ->
+                    val topInWindow = coordinates.positionInWindow().y
+                    val visibleTop = (-topInWindow).coerceIn(0f, pageHeightPx)
+                    val next = if (viewportHeightPx > 0) {
+                        (visibleTop / (viewportHeightPx * 0.75f)).toInt()
+                    } else {
+                        0
+                    }
+                    if (next != bucket) bucket = next
+                },
+        ) {
+            val current = slice
+            if (current != null) {
+                Image(
+                    bitmap = current.bitmap.asImageBitmap(),
+                    contentDescription = stringResource(R.string.reader_page_number, index + 1),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(with(density) { current.heightPx.toDp() })
+                        .offset(y = with(density) { current.topPx.toDp() }),
+                    contentScale = ContentScale.FillWidth,
+                    colorFilter = colorFilter,
+                )
+            } else {
+                PagePlaceholder(index)
+            }
+        }
+    }
+}
+
+/** 单块区域解码的采样：保证区域位图不超过约 12MB，同时尽量保持清晰。 */
+private fun regionSample(width: Int, height: Int): Int {
+    var sample = 1
+    while (sample < 8) {
+        val pixels = (width.toLong() / sample) * (height.toLong() / sample)
+        if (pixels * 4L <= 12L * 1024L * 1024L) break
+        sample *= 2
+    }
+    return sample
 }
 
 /** Fades a freshly decoded page in over ~150ms; cached pages appear with the same subtle fade. */

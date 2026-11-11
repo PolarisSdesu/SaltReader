@@ -2,6 +2,7 @@ package moe.gbxin.saltreader.ui.reader
 
 import android.app.Application
 import android.graphics.Bitmap
+import android.util.Size
 import android.util.LruCache
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
@@ -29,6 +30,7 @@ import moe.gbxin.saltreader.data.ComicBook
 import moe.gbxin.saltreader.data.ComicPageSource
 import moe.gbxin.saltreader.data.EbookChapter
 import moe.gbxin.saltreader.data.ReadingDirection
+import moe.gbxin.saltreader.data.RegionPage
 
 /**
  * What the reader can show right now.
@@ -125,6 +127,13 @@ class ReaderViewModel(
      * page flips / fast scrolling cannot queue up a backlog of decode work.
      */
     private var prefetchJob: Job? = null
+
+    /** 条漫判定：首屏页高宽比很大时，垂直模式改用按区域解码的分块渲染。 */
+    private val _tallPages = MutableStateFlow(false)
+    val tallPages: StateFlow<Boolean> = _tallPages
+
+    /** 页尺寸缓存（只读图片头）；分块渲染需要先知道每页的显示高度。 */
+    private val pageSizes = LruCache<Int, Size>(64)
 
     /** Runs the one-time `prepare()` for this book; guarded against duplicate starts. */
     private var prepareJob: Job? = null
@@ -283,7 +292,13 @@ class ReaderViewModel(
             prepareState.value = PrepareState.Running
             val pageCount: Int? = runCatching {
                 val pageSource = ensureSource(indexed) ?: return@runCatching null
-                pageSource.prepare().takeIf { it > 0 }
+                val count = pageSource.prepare().takeIf { it > 0 }
+                if (count != null) {
+                    runCatching { pageSource.pageSize(0) }.getOrNull()?.let { size ->
+                        _tallPages.value = size.height > size.width * TALL_PAGE_ASPECT_RATIO
+                    }
+                }
+                count
             }.getOrNull()
             if (pageCount == null) {
                 prepareState.value = PrepareState.Failed
@@ -292,6 +307,25 @@ class ReaderViewModel(
                 // Backfill the real count so the shelf page label / progress use it too.
                 runCatching { repo.updatePageCount(bookId, pageCount) }
             }
+        }
+    }
+
+    /** 页像素尺寸（只读图片头，带缓存）；仅条漫分块渲染使用。 */
+    suspend fun pageSize(index: Int): Size? {
+        pageSizes.get(index)?.let { return it }
+        val ready = uiState.value as? ReaderUiState.Ready ?: return null
+        return withContext(Dispatchers.IO) {
+            val src = ensureSource(ready.book) ?: return@withContext null
+            runCatching { src.pageSize(index) }.getOrNull()?.also { pageSizes.put(index, it) }
+        }
+    }
+
+    /** 打开按区域解码的页；调用方负责在离开组合时 close。 */
+    suspend fun openRegionPage(index: Int): RegionPage? {
+        val ready = uiState.value as? ReaderUiState.Ready ?: return null
+        return withContext(Dispatchers.IO) {
+            val src = ensureSource(ready.book) ?: return@withContext null
+            runCatching { src.openRegionPage(index) }.getOrNull()
         }
     }
 
@@ -436,6 +470,9 @@ class ReaderViewModel(
     private companion object {
         /** 同时解码的页数上限：过大只会增加内存峰值，2 足以覆盖相邻页预取。 */
         const val DECODE_CONCURRENCY = 2
+
+        /** 页高宽比超过该值即视为条漫，垂直模式改用分块解码。 */
+        const val TALL_PAGE_ASPECT_RATIO = 3f
     }
 
     class Factory(private val application: Application, private val bookId: String) : ViewModelProvider.Factory {
