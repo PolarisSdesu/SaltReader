@@ -121,6 +121,9 @@ new build is actually published.
 
 - Real-world EPUBs can be partially corrupt (e.g. entries whose local header is zeroed). The
   reader surfaces such pages as load errors; don't assume a central directory entry is readable.
+- MOBI/AZW3 files using HUFF/CDIC compression are still rejected by the vendored parser (it throws
+  `UnsupportedEncodingException`). Adding support needs real AZW3 samples to verify against; do not
+  implement it blind.
 - Some SAF providers don't support seek; `RemoteZipReader.open` returns null and indexing falls
   back to a slow streaming `ZipInputStream` pass. Keep that fallback.
 - `material-icons-extended` makes cold R8 very slow. If release build time becomes a problem and
