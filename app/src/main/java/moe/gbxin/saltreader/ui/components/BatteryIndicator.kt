@@ -52,19 +52,21 @@ internal fun BatteryIndicator(
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
 
-    val icon = when {
-        status.charging -> R.drawable.battery_android_frame_bolt
-        status.percent >= 100 -> R.drawable.battery_android_full
-        else -> when (((status.percent * 6 + 99) / 100).coerceIn(1, 6)) {
-            1 -> R.drawable.battery_android_1
-            2 -> R.drawable.battery_android_2
-            3 -> R.drawable.battery_android_3
-            4 -> R.drawable.battery_android_4
-            5 -> R.drawable.battery_android_5
-            else -> R.drawable.battery_android_6
+    val icon = if (status.charging) {
+        R.drawable.battery_android_frame_bolt
+    } else {
+        when (((status.percent * 6 + 99) / 100).coerceIn(1, 6)) {
+            1 -> R.drawable.battery_android_frame_1
+            2 -> R.drawable.battery_android_frame_2
+            3 -> R.drawable.battery_android_frame_3
+            4 -> R.drawable.battery_android_frame_4
+            5 -> R.drawable.battery_android_frame_5
+            else -> R.drawable.battery_android_frame_6
         }
     }
-    val iconSize = with(LocalDensity.current) { textSizeSp.sp.toDp() }
+    // Material Symbols keep the battery silhouette inside roughly half of their 24dp viewport.
+    // Scale the viewport to 1.5x the text size so the visible glyph matches the digits' cap height.
+    val iconSize = with(LocalDensity.current) { (textSizeSp.sp * 1.5f).toDp() }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Icon(
             painter = painterResource(icon),

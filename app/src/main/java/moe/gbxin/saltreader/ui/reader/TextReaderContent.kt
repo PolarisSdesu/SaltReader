@@ -325,6 +325,7 @@ internal fun TextReaderContent(
     val bridge = remember { TextJavascriptBridge { event -> events.tryEmit(event) } }
     val holder = remember { WebViewHolder() }
     var pageFinishedToken by remember { mutableIntStateOf(0) }
+    var lastAppliedOptionsJson by remember(book.id) { mutableStateOf<String?>(null) }
 
     var lastSentOffset by remember { mutableLongStateOf(-1L) }
     var lastSentAt by remember { mutableLongStateOf(0L) }
@@ -682,6 +683,8 @@ internal fun TextReaderContent(
     }
     LaunchedEffect(pageFinishedToken, optionsJson) {
         if (pageFinishedToken == 0) return@LaunchedEffect
+        if (lastAppliedOptionsJson == optionsJson) return@LaunchedEffect
+        lastAppliedOptionsJson = optionsJson
         runJs("window.__reader && window.__reader.apply($optionsJson, ${localRatio.value});")
     }
 
@@ -835,7 +838,10 @@ internal fun TextReaderContent(
         LaunchedEffect(html) {
             val webView = holder.webView ?: return@LaunchedEffect
             if (html.isNotEmpty()) {
-                webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+                val bootstrap = """{"options":$optionsJson,"ratio":${localRatio.value}}"""
+                lastAppliedOptionsJson = optionsJson
+                val initialHtml = html.replace(TEXT_READER_BOOTSTRAP_PLACEHOLDER, bootstrap)
+                webView.loadDataWithBaseURL(null, initialHtml, "text/html", "utf-8", null)
             }
         }
 
@@ -1246,6 +1252,7 @@ private const val CHAPTER_LOAD_THROTTLE_MS = 300L
 private const val STALE_EVENT_GUARD_MS = 600L
 
 private const val BRIDGE_NAME = "SaltReader"
+private const val TEXT_READER_BOOTSTRAP_PLACEHOLDER = "__SALT_READER_BOOTSTRAP__"
 
 /**
  * 注入到 WebView 的 CSS。发布者样式表在数据层已经被剥离，这里负责中文小说的排版基调；
@@ -1257,6 +1264,7 @@ private val HTML_HEAD = """
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<script>window.__saltReaderBootstrap = __SALT_READER_BOOTSTRAP__;</script>
 <style>
 /* --app-vh is maintained from JS: some WebView builds resolve `vh` to 0.
    The reading area follows WeChat Reading: ~30dp side margins, 1.8 line height and a small
@@ -1779,6 +1787,9 @@ private val HTML_TAIL = """
     append: appendChapters,
     prepend: prependChapters
   };
+  if (window.__saltReaderBootstrap) {
+    apply(window.__saltReaderBootstrap.options, window.__saltReaderBootstrap.ratio);
+  }
 })();
 </script>
 </body>
