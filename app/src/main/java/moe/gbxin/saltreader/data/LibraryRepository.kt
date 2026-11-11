@@ -96,6 +96,12 @@ class LibraryRepository(private val context: Context) {
     private val _ready = MutableStateFlow(false)
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
 
+    /**
+     * 封面生成计数器：启动时先发布书架、后台补缺失封面，补完递增，UI 用它刷新封面缓存。
+     */
+    private val _coversRevision = MutableStateFlow(0)
+    val coversRevision: StateFlow<Int> = _coversRevision.asStateFlow()
+
     /** 进度变更的合并信号：CONFLATED 保证只保留“还有未落盘变更”这一事实。 */
     private val persistSignal = Channel<Unit>(Channel.CONFLATED)
 
@@ -147,11 +153,19 @@ class LibraryRepository(private val context: Context) {
 
         // 权限失效的条目不留在书架上，其派生数据也一并清掉。
         dropped.forEach { removeDerivedFiles(it) }
-        // 封面是派生数据且绝大多数已经存在：并发补齐，避免串行打开文档拖慢启动。
-        ensureCovers(kept)
         // 旧版本拍平转换留下的缓存目录不再使用。
         obsoleteCacheDirs.forEach { dir -> if (dir.exists()) runCatching { dir.deleteRecursively() } }
+        // 先发布书架：封面是派生数据，缺失最多显示占位图，不应阻塞书架/阅读入口。
         _ready.value = true
+        if (kept.isNotEmpty()) {
+            scope.launch {
+                runCatching { ensureCovers(kept) }
+                    .onSuccess { generated ->
+                        if (generated) _coversRevision.value += 1
+                    }
+                    .onFailure { Log.w(TAG, "后台补封面失败", it) }
+            }
+        }
         Unit
     }
 
@@ -1177,8 +1191,10 @@ class LibraryRepository(private val context: Context) {
         return total
     }
 
-    private suspend fun ensureCovers(books: List<ComicBook>) {
+    /** @return 是否实际生成过封面（UI 据此决定是否刷新封面缓存）。 */
+    private suspend fun ensureCovers(books: List<ComicBook>): Boolean {
         // 封面绝大多数已经存在（索引阶段就写好了）；缺失时并发补齐，避免串行打开文档拖慢启动。
+        val generated = java.util.concurrent.atomic.AtomicBoolean(false)
         coroutineScope {
             val limiter = Semaphore(COVER_WORKERS)
             books.map { book ->
@@ -1190,11 +1206,12 @@ class LibraryRepository(private val context: Context) {
                         val cover = coverFile(book)
                         // 只补缺失封面，已在的不重复解码。
                         if (cover.exists() && cover.length() > 512L) return@withPermit
-                        writeCover(book)
+                        if (writeCover(book)) generated.set(true)
                     }
                 }
             }.awaitAll()
         }
+        return generated.get()
     }
 
     /**

@@ -68,10 +68,14 @@ private fun coverCacheKey(file: File, targetWidthPx: Int): String =
  * on [Dispatchers.IO]; the file system is never touched synchronously beyond that stat.
  */
 @Composable
-fun rememberCoverBitmap(file: File, targetWidthPx: Int = DEFAULT_TARGET_WIDTH_PX): ImageBitmap? {
-    // remember 只在 file/目标宽度变化时做一次 stat + 查表；命中即作为初始值同步返回，消除首帧闪烁。
-    val cached = remember(file, targetWidthPx) { peekCoverBitmap(file, targetWidthPx) }
-    val bitmap by produceState<ImageBitmap?>(initialValue = cached, file, targetWidthPx) {
+fun rememberCoverBitmap(
+    file: File,
+    targetWidthPx: Int = DEFAULT_TARGET_WIDTH_PX,
+    revision: Int = 0,
+): ImageBitmap? {
+    // remember 只在 file/目标宽度/封面修订号变化时做一次 stat + 查表；命中即同步返回，消除首帧闪烁。
+    val cached = remember(file, targetWidthPx, revision) { peekCoverBitmap(file, targetWidthPx) }
+    val bitmap by produceState<ImageBitmap?>(initialValue = cached, file, targetWidthPx, revision) {
         // produceState 的 initialValue 只在首次生效，key 变化时要显式写回当前 composition 的命中值；
         // 未命中才在 IO 线程解码。
         value = cached ?: withContext(Dispatchers.IO) {
@@ -118,8 +122,10 @@ fun ComicCover(
     showTitleFallback: Boolean = true,
     /** 目标解码宽度（px）：调用方按实际显示尺寸传入，避免网格封面按 640px 解码浪费内存。 */
     targetWidthPx: Int = DEFAULT_TARGET_WIDTH_PX,
+    /** 封面修订号：启动后台补完封面后递增，触发已组合卡片重新读封面。 */
+    revision: Int = 0,
 ) {
-    val bitmap = rememberCoverBitmap(coverFile, targetWidthPx)
+    val bitmap = rememberCoverBitmap(coverFile, targetWidthPx, revision)
     val shape = RoundedCornerShape(radius.dp)
     val accent = book.accent?.let { Color(it) } ?: MaterialTheme.colorScheme.primaryContainer
     // Contrast-aware fallback foreground: dynamic color primaries can be light in dark themes.
