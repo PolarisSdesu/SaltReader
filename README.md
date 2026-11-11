@@ -14,7 +14,7 @@ It reads your files in place and supports CBZ/ZIP, image and text EPUB, MOBI/AZW
 
 Most comic readers either copy your library into app-private storage or ask for broad storage permissions. Salt Reader does neither: you grant access to a folder through Android's Storage Access Framework, and the app indexes the original files in place using only the access you granted.
 
-The reader is written with Jetpack Compose and Material 3 Expressive. Images are decoded on demand; text books are reflowed by the platform WebView, so font size, paged/scroll layout and progress work without converting anything to another format.
+The reader is written with Jetpack Compose and Material 3 Expressive. Images are decoded on demand; text books are reflowed by the platform WebView, so font size, line spacing, page margins, paged/scroll layout, chapter navigation and progress work without converting anything to another format.
 
 ## Features
 
@@ -23,11 +23,12 @@ Salt Reader lets you:
 - Add library folders through SAF; originals are indexed in place and never copied.
 - Fast by design: archives are indexed from their central directory without being unpacked, pages are decoded only when visible, and the whole viewport scales on the GPU for smooth pinch zoom.
 - Read CBZ/ZIP archives directly from the granted folder, including large files.
-- Read image EPUBs straight from their spine, and reflow text EPUB/MOBI/AZW3 in a native reader.
+- Read image EPUBs straight from their spine, and reflow text EPUB/MOBI/AZW3 in a native reader with a WeChat-Reading-style toolbar (contents / progress / theme / type panels), a chapter contents sheet, adjustable font size, line spacing, page margins, a serif/sans font picker, switchable page-number or progress indicator, finger-following page swipes and one shared reader settings screen for comics and novels.
+- See real covers for text EPUBs (read from the book's OPF) and a clean solid placeholder when a book genuinely has none.
 - Open PDFs through the system `PdfRenderer` and image folders in natural order.
 - Page through comics horizontally or scroll continuously, with RTL, tap zones, pinch zoom and a page slider.
 - Search the library, filter by all / reading / unread and customise the layout and book-card labels.
-- Follow the system light/dark theme, Material You dynamic colours and an optional AMOLED black mode.
+- Follow the system light/dark theme, Material You dynamic colours and an optional AMOLED black mode, and pick a reading paper tone (auto / white / beige / green / black / custom).
 - Use the interface in English, Simplified Chinese, Traditional Chinese or Japanese.
 - Run without storage or network permissions: the app can only see folders you explicitly granted.
 

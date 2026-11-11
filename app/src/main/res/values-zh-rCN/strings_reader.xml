@@ -21,15 +21,18 @@
     <string name="reader_show_controls">显示工具栏</string>
     <string name="reader_hide_controls">隐藏工具栏</string>
     <string name="reader_settings_title">阅读设置</string>
+    <string name="reader_more_settings">详细设置</string>
     <string name="reader_switch_to_vertical">切换为纵向滚动</string>
     <string name="reader_switch_to_paged">切换为横向翻页</string>
 
     <!-- 页码/滑杆 -->
     <string name="reader_page_indicator">%1$d / %2$d</string>
+    <string name="reader_page_indicator_size_value">%1$d sp</string>
     <string name="reader_page_number">第 %1$d 页</string>
     <string name="reader_page_failed">第 %1$d 页读不出来</string>
     <string name="reader_page_slider_label">第 %1$d / %2$d 页</string>
     <string name="reader_percent">%1$d%%</string>
+    <string name="reader_progress_combo">%1$d%% · %2$d/%3$d</string>
     <string name="reader_font_size_value">%1$d sp</string>
 
     <!-- 阅读设置面板 -->
@@ -46,12 +49,54 @@
     <string name="reader_background_auto">自动</string>
     <string name="reader_background_white">纯白</string>
     <string name="reader_background_ink">纯黑</string>
+    <string name="reader_background_sepia">米色</string>
+    <string name="reader_background_green">浅绿</string>
     <string name="reader_background_custom">自定义</string>
     <string name="reader_font_size">字号</string>
+    <string name="reader_font_family">字体</string>
+    <string name="reader_font_family_system">系统</string>
+    <string name="reader_font_family_song">宋体</string>
+    <string name="reader_font_family_hei">黑体</string>
     <string name="reader_show_page_number">显示页码</string>
     <string name="reader_keep_screen_on">保持屏幕常亮</string>
     <string name="reader_volume_keys">音量键翻页</string>
     <string name="reader_grayscale">灰度模式</string>
     <string name="reader_invert_colors">反色</string>
     <string name="reader_text_filters_note">文字阅读器使用主题与背景配色，灰度/反色仅对图片书生效。</string>
+    <!-- 阅读器底栏 / 目录 / 排版 -->
+    <string name="reader_close">关闭</string>
+    <string name="reader_toc_title">目录</string>
+    <string name="reader_toc_count">共 %1$d 章</string>
+    <string name="reader_toc_chapter_fallback">第 %1$d 章</string>
+    <string name="reader_toc_current">当前</string>
+    <string name="reader_bar_paged">翻页</string>
+    <string name="reader_bar_vertical">滚动</string>
+    <string name="reader_bar_settings">设置</string>
+    <string name="reader_progress_slider">阅读进度</string>
+    <string name="reader_section_typography">排版</string>
+    <string name="reader_section_general">通用</string>
+    <string name="reader_line_height">行距</string>
+    <string name="reader_line_height_value">%1$.1f 倍</string>
+    <string name="reader_page_margin">页边距</string>
+    <string name="reader_page_margin_value">%1$d dp</string>
+    <string name="reader_progress_label_size_value">%1$d sp</string>
+    <string name="reader_font_size_decrease">减小字号</string>
+    <string name="reader_font_size_increase">增大字号</string>
+    <string name="reader_line_height_decrease">减小行距</string>
+    <string name="reader_line_height_increase">增大行距</string>
+    <string name="reader_page_margin_decrease">减小页边距</string>
+    <string name="reader_page_margin_increase">增大页边距</string>
+    <!-- 微信读书式内嵌面板 -->
+    <string name="reader_bar_progress">进度</string>
+    <string name="reader_bar_theme">主题</string>
+    <string name="reader_theme_and_text_size">文字大小与主题</string>
+    <string name="reader_font_style">字体样式</string>
+    <string name="reader_progress_last_read">上次读到这里</string>
+    <string name="reader_level_small">小</string>
+    <string name="reader_level_medium">中</string>
+    <string name="reader_level_large">大</string>
+    <string name="reader_spacing_tight">紧</string>
+    <string name="reader_spacing_loose">松</string>
+    <string name="reader_page_info_hidden">隐藏</string>
+    <string name="reader_page_info_pages">页码</string>
 </resources>

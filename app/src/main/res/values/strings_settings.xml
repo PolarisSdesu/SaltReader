@@ -51,6 +51,8 @@
     <string name="settings_background_auto">Auto</string>
     <string name="settings_background_white">White</string>
     <string name="settings_background_ink">Black</string>
+    <string name="settings_background_sepia">Beige</string>
+    <string name="settings_background_green">Green</string>
     <string name="settings_background_custom">Custom</string>
 
     <!-- Storage -->
@@ -132,4 +134,14 @@
     <string name="settings_licenses_close">Close</string>
     <string name="settings_appearance_display_language">Display language</string>
     <string name="settings_licenses_view_full">View full text</string>
+    <string name="settings_reader_section_typography">Typography</string>
+    <string name="settings_reader_font_family">Font</string>
+    <string name="settings_reader_font_size">Font size</string>
+    <string name="settings_reader_line_spacing">Line spacing</string>
+    <string name="settings_reader_page_margin">Page margins</string>
+    <string name="settings_reader_progress_label_size">Progress text size</string>
+    <string name="settings_reader_page_info">Page indicator</string>
+    <string name="settings_reader_page_indicator_size">Page text size</string>
+    <string name="settings_reader_battery_indicator">Battery indicator</string>
+    <string name="settings_reader_battery_indicator_supporting">Show the battery icon and percentage in the lower-left corner while reading</string>
 </resources>

@@ -51,6 +51,8 @@
     <string name="settings_background_auto">自動</string>
     <string name="settings_background_white">ホワイト</string>
     <string name="settings_background_ink">ブラック</string>
+    <string name="settings_background_sepia">ベージュ</string>
+    <string name="settings_background_green">グリーン</string>
     <string name="settings_background_custom">カスタム</string>
 
     <!-- ストレージ -->
@@ -128,4 +130,14 @@
     <string name="settings_licenses_close">閉じる</string>
     <string name="settings_appearance_display_language">表示言語</string>
     <string name="settings_licenses_view_full">全文を表示</string>
+    <string name="settings_reader_section_typography">組版</string>
+    <string name="settings_reader_font_family">フォント</string>
+    <string name="settings_reader_font_size">文字サイズ</string>
+    <string name="settings_reader_line_spacing">行間</string>
+    <string name="settings_reader_page_margin">ページ余白</string>
+    <string name="settings_reader_progress_label_size">進捗ラベルの文字サイズ</string>
+    <string name="settings_reader_page_info">ページ表示</string>
+    <string name="settings_reader_page_indicator_size">ページ表示の文字サイズ</string>
+    <string name="settings_reader_battery_indicator">バッテリー表示</string>
+    <string name="settings_reader_battery_indicator_supporting">閲覧中に左下へバッテリーアイコンとパーセントを表示します</string>
 </resources>

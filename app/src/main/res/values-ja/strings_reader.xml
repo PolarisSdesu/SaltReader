@@ -21,15 +21,18 @@
     <string name="reader_show_controls">ツールバーを表示</string>
     <string name="reader_hide_controls">ツールバーを隠す</string>
     <string name="reader_settings_title">読書設定</string>
+    <string name="reader_more_settings">詳細設定</string>
     <string name="reader_switch_to_vertical">縦スクロールに切り替え</string>
     <string name="reader_switch_to_paged">横めくりに切り替え</string>
 
     <!-- ページ/スライダー -->
     <string name="reader_page_indicator">%1$d / %2$d</string>
+    <string name="reader_page_indicator_size_value">%1$d sp</string>
     <string name="reader_page_number">%1$d ページ</string>
     <string name="reader_page_failed">%1$d ページを表示できません</string>
     <string name="reader_page_slider_label">%1$d / %2$d ページ</string>
     <string name="reader_percent">%1$d%%</string>
+    <string name="reader_progress_combo">%1$d%% · %2$d/%3$d</string>
     <string name="reader_font_size_value">%1$d sp</string>
 
     <!-- 読書設定シート -->
@@ -46,12 +49,54 @@
     <string name="reader_background_auto">自動</string>
     <string name="reader_background_white">ホワイト</string>
     <string name="reader_background_ink">ブラック</string>
+    <string name="reader_background_sepia">ベージュ</string>
+    <string name="reader_background_green">グリーン</string>
     <string name="reader_background_custom">カスタム</string>
     <string name="reader_font_size">文字サイズ</string>
+    <string name="reader_font_family">フォント</string>
+    <string name="reader_font_family_system">システム</string>
+    <string name="reader_font_family_song">明朝体</string>
+    <string name="reader_font_family_hei">ゴシック体</string>
     <string name="reader_show_page_number">ページ番号を表示</string>
     <string name="reader_keep_screen_on">画面を常時点灯</string>
     <string name="reader_volume_keys">音量キーでページ送り</string>
     <string name="reader_grayscale">グレースケール</string>
     <string name="reader_invert_colors">色を反転</string>
     <string name="reader_text_filters_note">本文リーダーはテーマと背景色に従います。グレースケール/色反転は画像の本にのみ適用されます。</string>
+    <!-- リーダーバー / 目次 / 組版 -->
+    <string name="reader_close">閉じる</string>
+    <string name="reader_toc_title">目次</string>
+    <string name="reader_toc_count">全 %1$d 章</string>
+    <string name="reader_toc_chapter_fallback">第 %1$d 章</string>
+    <string name="reader_toc_current">現在</string>
+    <string name="reader_bar_paged">ページ</string>
+    <string name="reader_bar_vertical">スクロール</string>
+    <string name="reader_bar_settings">設定</string>
+    <string name="reader_progress_slider">読書の進捗</string>
+    <string name="reader_section_typography">組版</string>
+    <string name="reader_section_general">一般</string>
+    <string name="reader_line_height">行間</string>
+    <string name="reader_line_height_value">%1$.1f 倍</string>
+    <string name="reader_page_margin">ページ余白</string>
+    <string name="reader_page_margin_value">%1$d dp</string>
+    <string name="reader_progress_label_size_value">%1$d sp</string>
+    <string name="reader_font_size_decrease">文字を小さく</string>
+    <string name="reader_font_size_increase">文字を大きく</string>
+    <string name="reader_line_height_decrease">行間を狭く</string>
+    <string name="reader_line_height_increase">行間を広く</string>
+    <string name="reader_page_margin_decrease">余白を狭く</string>
+    <string name="reader_page_margin_increase">余白を広く</string>
+    <!-- 微信読書風インラインパネル -->
+    <string name="reader_bar_progress">進捗</string>
+    <string name="reader_bar_theme">テーマ</string>
+    <string name="reader_theme_and_text_size">文字サイズとテーマ</string>
+    <string name="reader_font_style">フォント</string>
+    <string name="reader_progress_last_read">前回読んだ位置</string>
+    <string name="reader_level_small">小</string>
+    <string name="reader_level_medium">中</string>
+    <string name="reader_level_large">大</string>
+    <string name="reader_spacing_tight">詰める</string>
+    <string name="reader_spacing_loose">広め</string>
+    <string name="reader_page_info_hidden">非表示</string>
+    <string name="reader_page_info_pages">ページ番号</string>
 </resources>

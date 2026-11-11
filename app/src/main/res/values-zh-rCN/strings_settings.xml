@@ -51,6 +51,8 @@
     <string name="settings_background_auto">自动</string>
     <string name="settings_background_white">纯白</string>
     <string name="settings_background_ink">纯黑</string>
+    <string name="settings_background_sepia">米色</string>
+    <string name="settings_background_green">浅绿</string>
     <string name="settings_background_custom">自定义</string>
 
     <!-- 存储 -->
@@ -128,4 +130,14 @@
     <string name="settings_licenses_close">关闭</string>
     <string name="settings_appearance_display_language">显示语言</string>
     <string name="settings_licenses_view_full">查看全文</string>
+    <string name="settings_reader_section_typography">排版</string>
+    <string name="settings_reader_font_family">字体</string>
+    <string name="settings_reader_font_size">字号</string>
+    <string name="settings_reader_line_spacing">行距</string>
+    <string name="settings_reader_page_margin">页边距</string>
+    <string name="settings_reader_progress_label_size">进度文字大小</string>
+    <string name="settings_reader_page_info">页码显示</string>
+    <string name="settings_reader_page_indicator_size">页码文字大小</string>
+    <string name="settings_reader_battery_indicator">显示电量</string>
+    <string name="settings_reader_battery_indicator_supporting">阅读时在左下角显示电池图标与百分比</string>
 </resources>

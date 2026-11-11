@@ -17,6 +17,10 @@ enum class BookKind {
 @Serializable
 enum class ReaderMode { PAGED, VERTICAL }
 
+/** What the quiet bottom-right corner label shows while the reader chrome is hidden. */
+@Serializable
+enum class ReaderPageInfo { HIDDEN, PROGRESS, PAGES }
+
 @Serializable
 enum class ReadingDirection { LTR, RTL }
 
@@ -25,6 +29,10 @@ enum class ReaderBackground {
     /** Follow the system theme: pure white in light mode, pure black in dark mode. */
     AUTO,
     WHITE,
+    /** Warm paper tone (WeChat-Reading beige). */
+    SEPIA,
+    /** Soft green paper tone. */
+    GREEN,
     INK,
     CUSTOM,
 }

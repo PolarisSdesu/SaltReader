@@ -93,6 +93,12 @@ class LibraryRepository(private val context: Context) {
     /** 自上次落盘以来进度发生过变化的书籍 id。 */
     private val dirtyProgress: MutableSet<String> = ConcurrentHashMap.newKeySet()
 
+    /**
+     * 已尝试过提取 EPUB 封面的文件指纹（id + modifiedAt + size）。
+     * 真正没有封面图的 EPUB 只解析一次，避免每次打开文字书都重新解一遍 ZIP。
+     */
+    private val epubCoverAttempts: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
     private val _ready = MutableStateFlow(false)
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
 
@@ -510,7 +516,7 @@ class LibraryRepository(private val context: Context) {
             progressOffset = progressOffset,
             charCount = indexed.charCount,
         )
-        // 文字书没有固定页封面：EPUB 用占位；MOBI 的封面在章节解析时从文档内提取。
+        // 文字书没有固定页封面：EPUB 的封面图在索引阶段从 OPF 提取；MOBI 的封面在章节解析时提取。
         if (!coverFile(book).exists()) {
             if (indexed.cover != null) {
                 writeCover(book, indexed.cover)
@@ -591,9 +597,14 @@ class LibraryRepository(private val context: Context) {
                         reflowable = false,
                     )
                 } else {
+                    // 文字书没有固定页封面，但绝大多数 EPUB 在 OPF 里声明了封面图：
+                    // 索引阶段顺手读取并解码，交给下面统一的 writeCover 落盘（零额外转换）。
+                    val coverBytes = classification.coverEntry?.let { entry ->
+                        runCatching { opened.readEntry(entry, PageIndexing.MAX_PAGE_BYTES) }.getOrNull()
+                    }
                     IndexedPages(
                         pageCount = classification.pageCount,
-                        cover = null,
+                        cover = coverBytes?.let { decodePage(it, COVER_WIDTH) },
                         kind = BookKind.TEXT,
                         reflowable = true,
                         charCount = classification.charCount,
@@ -871,7 +882,7 @@ class LibraryRepository(private val context: Context) {
         }
     }
 
-    private fun loadEpubChapters(book: ComicBook): List<EbookChapter> {
+    private suspend fun loadEpubChapters(book: ComicBook): List<EbookChapter> {
         // 章节清洗（逐章解压 + 十几遍正则 + 图片内联）是打开文字书最贵的一步；
         // 和 MOBI 一样落盘缓存，命中时直接读 JSON，二次打开几乎零成本。
         val cache = chapterCacheFile(book)
@@ -879,12 +890,23 @@ class LibraryRepository(private val context: Context) {
             val cached = runCatching {
                 json.decodeFromString<List<EbookChapter>>(cache.readText(Charsets.UTF_8))
             }.getOrNull()
-            if (!cached.isNullOrEmpty()) return cached
+            if (!cached.isNullOrEmpty()) {
+                syncEpubTextStats(book, cached)
+                // 旧版索引只给文字书生成占位封面：命中章节缓存时也补一次（封面已存在则零 I/O）。
+                ensureEpubCover(book)
+                return cached
+            }
         }
         val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return emptyList()
         val reader = RemoteZipReader.open(context, uri) ?: return emptyList()
-        val chapters = reader.use { opened -> EpubIndexer.loadChapters(opened) }
+        val chapters = reader.use { opened ->
+            val loaded = EpubIndexer.loadChapters(opened)
+            // 复用刚打开的 reader 补封面：索引阶段已写封面的书不会重复解析 OPF。
+            ensureEpubCover(book, opened)
+            loaded
+        }
         if (chapters.isNotEmpty()) {
+            syncEpubTextStats(book, chapters)
             runCatching {
                 val payload = json.encodeToString(chapters).toByteArray(Charsets.UTF_8)
                 textCacheDir.mkdirs()
@@ -895,9 +917,66 @@ class LibraryRepository(private val context: Context) {
         return chapters
     }
 
-    /** EPUB 章节缓存：派生数据，id + 指纹命名，重新索引时随旧指纹一并失效。 */
+    /**
+     * 补齐文字型 EPUB 的书架封面（旧版索引直接给文字书用了占位封面）。
+     *
+     * 只有封面文件缺失、且当前文件指纹在本进程内还没尝试过时才读 OPF；真正没有封面图的
+     * EPUB 尝试一次后记在内存里，不会每次打开都重新解 ZIP。调用方必须已在 IO 线程。
+     * [opened] 非空时复用调用方已打开的 reader（不会关闭它）。
+     */
+    private suspend fun ensureEpubCover(book: ComicBook, opened: RemoteZipReader? = null) {
+        val cover = coverFile(book)
+        if (cover.exists() && cover.length() > MIN_COVER_BYTES) return
+        val fingerprint = "${book.id}_${book.modifiedAt}_${book.sizeBytes}"
+        if (fingerprint in epubCoverAttempts) return
+        var reader = opened
+        try {
+            if (reader == null) {
+                val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return
+                reader = RemoteZipReader.open(context, uri) ?: return
+            }
+            // 能打开文档才记为已尝试：临时权限/IO 失败下次打开还能重试。
+            epubCoverAttempts.add(fingerprint)
+            val entry = runCatching { EpubIndexer.coverEntry(reader) }.getOrNull() ?: return
+            val bytes = runCatching {
+                reader.readEntry(entry, PageIndexing.MAX_PAGE_BYTES)
+            }.getOrNull() ?: return
+            val bitmap = decodePage(bytes, COVER_WIDTH) ?: return
+            writeCover(book, bitmap)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "提取 EPUB 封面失败：${book.title}", e)
+        } finally {
+            if (opened == null) reader?.close()
+        }
+    }
+
+    /**
+     * 章节提取完成后用真实可见字符数覆盖索引阶段的估算值：charCount 是文字阅读进度的唯一
+     * 权威分母；纯图片页 charCount 为 0，不计入文字进度。
+     */
+    private fun syncEpubTextStats(book: ComicBook, chapters: List<EbookChapter>) {
+        // 与 TextReaderContent 的章节权重保持完全一致：可见字符数 > 0 用它；纯图片页按 1 个字符
+        // 计入（让目录仍能定位），旧缓存（charCount=0 且非纯图片页）退回 HTML 长度。两边分母一致，
+        // 进度偏移才不会在书架与阅读器之间来回截断。
+        val charCount = chapters.sumOf { chapter ->
+            val weight = when {
+                chapter.charCount > 0 -> chapter.charCount.toLong()
+                chapter.imageOnly -> 1L
+                else -> chapter.html.length.toLong()
+            }
+            weight.coerceAtLeast(1L)
+        }.coerceAtLeast(1L)
+        updateTextStats(book.id, charCount)
+    }
+
+    /**
+     * EPUB 章节缓存：派生数据，id + 指纹命名，重新索引时随旧指纹一并失效。
+     * v2：章节结构新增 charCount/imageOnly/showHeading，旧缓存不得复用。
+     */
     private fun chapterCacheFile(book: ComicBook): File =
-        File(textCacheDir, "${book.id}_${book.modifiedAt}_${book.sizeBytes}.chapters.json")
+        File(textCacheDir, "${book.id}_${book.modifiedAt}_${book.sizeBytes}.chapters.v2.json")
 
     private suspend fun loadMobiChapters(book: ComicBook): List<EbookChapter> {
         val cache = textCacheFile(book)
@@ -1185,11 +1264,12 @@ class LibraryRepository(private val context: Context) {
                 async(Dispatchers.IO) {
                     limiter.withPermit {
                         coroutineContext.ensureActive()
-                        // 文字书没有固定页封面：EPUB 用默认占位，MOBI 的封面在解析章节时提取。
+                        // 文字书没有固定页封面：EPUB 在索引/打开时提取 OPF 封面，MOBI 的封面在
+                        // 章节解析时提取。启动阶段跳过文字书，避免逐本打开 ZIP。
                         if (book.reflowable) return@withPermit
                         val cover = coverFile(book)
                         // 只补缺失封面，已在的不重复解码。
-                        if (cover.exists() && cover.length() > 512L) return@withPermit
+                        if (cover.exists() && cover.length() > MIN_COVER_BYTES) return@withPermit
                         writeCover(book)
                     }
                 }
@@ -1209,6 +1289,7 @@ class LibraryRepository(private val context: Context) {
             writeFileAtomically(coverFile(book), sync = false) { out ->
                 bitmap.compress(Bitmap.CompressFormat.JPEG, 88, out)
             }
+            DerivedCoverRevision.notifyCoverChanged()
             true
         } catch (e: CancellationException) {
             throw e
@@ -1280,6 +1361,9 @@ class LibraryRepository(private val context: Context) {
         /** 启动补封面时的并发度（封面绝大多数已存在，这里只兜底缺失）。 */
         const val COVER_WORKERS = 2
         const val COVER_WIDTH = 480
+
+        /** 小于该字节数的封面文件视为无效（写入中断/零字节），需要重新生成。 */
+        const val MIN_COVER_BYTES = 512L
 
         val BOOK_EXTENSIONS = setOf("cbz", "zip", "pdf", "epub", "mobi", "azw", "azw3")
         val MOBI_EXTENSIONS = setOf("mobi", "azw", "azw3")

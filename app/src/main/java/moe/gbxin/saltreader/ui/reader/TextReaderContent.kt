@@ -1,70 +1,89 @@
 package moe.gbxin.saltreader.ui.reader
 
 import android.app.Activity
+import android.graphics.Bitmap
+import android.graphics.Rect
+import android.content.Intent
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.view.View
+import android.view.PixelCopy
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.annotation.Keep
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Swipe
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.ViewAgenda
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
-import androidx.compose.material3.HorizontalFloatingToolbar
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChange
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalWindowInfo
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
@@ -72,22 +91,31 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import androidx.annotation.Keep
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.launch
+import java.util.Locale
+import kotlin.math.abs
+import kotlin.math.ceil
+import kotlin.math.max
+import kotlin.math.roundToInt
+import moe.gbxin.saltreader.BuildConfig
 import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.data.AppSettings
 import moe.gbxin.saltreader.data.ComicBook
 import moe.gbxin.saltreader.data.EbookChapter
 import moe.gbxin.saltreader.data.ReaderBackground
+import moe.gbxin.saltreader.data.ReaderFontFamily
 import moe.gbxin.saltreader.data.ReaderMode
+import moe.gbxin.saltreader.data.ReaderPageInfo
 import moe.gbxin.saltreader.data.ReadingDirection
+import moe.gbxin.saltreader.ui.components.BatteryIndicator
 import moe.gbxin.saltreader.ui.components.CustomColorPickerDialog
+import moe.gbxin.saltreader.ui.settings.ReaderSettingsActivity
 import moe.gbxin.saltreader.ui.theme.pageBackgroundColor
 import org.json.JSONObject
-import java.util.Locale
-import kotlin.math.abs
-import kotlin.math.roundToInt
 
 /** Latest reported layout state of the text reader WebView. */
 private data class TextPageInfo(val page: Int, val pages: Int, val ratio: Float)
@@ -96,6 +124,9 @@ private data class TextPageInfo(val page: Int, val pages: Int, val ratio: Float)
 internal sealed interface TextReaderEvent {
     data class State(val page: Int, val pages: Int, val ratio: Float) : TextReaderEvent
     data object MiddleZone : TextReaderEvent
+
+    /** A tap at [ratio] (0..1 across the viewport); the native side maps it to page turns/chrome. */
+    data class Tap(val ratio: Float) : TextReaderEvent
 }
 
 /**
@@ -115,12 +146,25 @@ internal class TextJavascriptBridge(private val emit: (TextReaderEvent) -> Unit)
     fun onMiddle() {
         emit(TextReaderEvent.MiddleZone)
     }
+
+    @Keep
+    @JavascriptInterface
+    fun onTap(ratio: Double) {
+        emit(TextReaderEvent.Tap(ratio.toFloat().coerceIn(0f, 1f)))
+    }
 }
 
 /** Holds the current WebView without turning it into Compose state. */
 private class WebViewHolder {
     var webView: WebView? = null
 }
+
+/**
+ * Mutable value holder read from event handlers / effects without becoming Compose state.
+ * Writing these must not invalidate composition: page turns only recompose the chrome, whose
+ * lambdas read [TextPageInfo] directly.
+ */
+private class ScalarHolder(var value: Float = 0f)
 
 /**
  * Native text reader for reflowable books (EPUB text, MOBI, AZW3).
@@ -130,8 +174,12 @@ private class WebViewHolder {
  * mode is a normal vertical scroll. Compose draws the chrome; in PAGED mode a transparent Compose
  * overlay owns taps/swipes (the WebView itself does not need touch there), while in VERTICAL mode the
  * WebView keeps native scrolling and reports middle-third taps through JavaScript.
+ *
+ * Progress is a character offset over the *visible text* of the book (not over the raw HTML length):
+ * inlined base64 illustrations would otherwise dominate the offsets of image-heavy light novels.
+ * Only the chapters around the current position are injected into the WebView; chapters are appended
+ * or prepended as the reader approaches a window edge.
  */
-@OptIn(ExperimentalMaterial3ExpressiveApi::class, ExperimentalMaterial3Api::class)
 @Composable
 internal fun TextReaderContent(
     vm: ReaderViewModel,
@@ -148,45 +196,92 @@ internal fun TextReaderContent(
         settings.customBackgroundColor,
         isSystemInDarkTheme(),
     )
-    val readerTextColor =
-        if (readerBackground.luminance() < 0.5f) Color(0xFFEDE6DD) else Color(0xFF2A2622)
+    // Pure black paper (AUTO in dark mode / INK) gets pure white text instead of warm white.
+    val readerTextColor = when {
+        readerBackground == Color.Black -> Color.White
+        readerBackground.luminance() < 0.5f -> Color(0xFFEDE6DD)
+        else -> Color(0xFF2A2622)
+    }
     val direction = book.direction ?: settings.readingDirection
     val isLightThemeBackground = MaterialTheme.colorScheme.background.luminance() > 0.5f
 
-    // 已加载窗口之外的章节不进入 WebView：首屏只注入进度附近几章，滚动到边界时再追加/前插。
-    // 字符区间按实际 HTML 长度折算，进度仍以全书字符偏移持久化。
+    // 章节权重 = 可见文字字符数：内联的 base64 插图会让 html.length 膨胀几百倍，用它当分母
+    // 会让图片页吞掉几乎全部进度。旧缓存没有 charCount（=0）时退回 html.length 以保持兼容；
+    // 纯图片页按 1 个字符计，保证它仍然可以被目录定位到。
     val chapterChars = remember(chapters) {
-        LongArray(chapters.size) { chapters[it].html.length.toLong().coerceAtLeast(1L) }
+        LongArray(chapters.size) { index ->
+            val chapter = chapters[index]
+            val visible = when {
+                chapter.charCount > 0 -> chapter.charCount.toLong()
+                chapter.imageOnly -> 0L
+                else -> chapter.html.length.toLong()
+            }
+            visible.coerceAtLeast(1L)
+        }
     }
     val chapterPrefix = remember(chapterChars) {
         val prefix = LongArray(chapterChars.size + 1)
         for (i in chapterChars.indices) prefix[i + 1] = prefix[i] + chapterChars[i]
         prefix
     }
-    val totalChars = remember(book.charCount, chapterPrefix) {
-        book.charCount.takeIf { it > 0L } ?: (chapterPrefix.lastOrNull() ?: 1L)
+    // 全书字符数只认章节可见字符之和（book.charCount 是索引阶段的估算值，图片书会严重偏大）。
+    val totalChars = remember(chapterPrefix) {
+        (chapterPrefix.lastOrNull() ?: 0L).coerceAtLeast(1L)
     }
-    val progressOffset = remember(book.id, book.progressOffset) {
+    val progressOffset = remember(book.id) {
         book.progressOffset.coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L))
     }
-    val initialWindow = remember(book.id) {
-        var index = 0
-        while (index + 1 < chapterPrefix.size && chapterPrefix[index + 1] <= progressOffset) index++
+
+    val initialChunk = remember(book.id, chapters) {
+        val index = chapterIndexForOffset(progressOffset, chapterPrefix)
         val start = (index - 1).coerceAtLeast(0)
-        start to (start + CHAPTER_BATCH).coerceAtMost(chapters.size)
+        start to (start + INITIAL_CHAPTER_BATCH).coerceAtMost(chapters.size)
     }
-    var windowStart by remember(book.id) { mutableIntStateOf(initialWindow.first) }
-    var windowEnd by remember(book.id) { mutableIntStateOf(initialWindow.second) }
-    val initialLocalRatio = remember(book.id) {
-        val base = chapterPrefix.getOrElse(initialWindow.first) { 0L }
-        val span = (chapterPrefix.getOrElse(initialWindow.second) { base } - base).coerceAtLeast(1L)
-        ((progressOffset - base).toDouble() / span.toDouble()).toFloat().coerceIn(0f, 1f)
+
+    fun ratioWithinWindow(offset: Long, start: Int, end: Int): Float {
+        val base = chapterPrefix.getOrElse(start) { 0L }
+        val span = (chapterPrefix.getOrElse(end) { base } - base).coerceAtLeast(1L)
+        return ((offset - base).toDouble() / span.toDouble()).toFloat().coerceIn(0f, 1f)
     }
-    var localRatio by remember(book.id) { mutableFloatStateOf(initialLocalRatio) }
+
+    // windowStart/windowEnd: 当前已经注入 WebView 的章节区间（追加/前插会扩展它）；
+    // renderStart/renderEnd: 当前 WebView 初始 HTML 的区间（跳转时整体替换并重建 WebView）。
+    // 两者在初始化时相同，跳转时一起重设；日常滚动只动 window*（JS 侧 DOM 追加，无需重建）。
+    var windowStart by remember(book.id, initialChunk) { mutableIntStateOf(initialChunk.first) }
+    var windowEnd by remember(book.id, initialChunk) { mutableIntStateOf(initialChunk.second) }
+    var renderStart by remember(book.id, initialChunk) { mutableIntStateOf(initialChunk.first) }
+    var renderEnd by remember(book.id, initialChunk) { mutableIntStateOf(initialChunk.second) }
+    var renderToken by remember(book.id) { mutableIntStateOf(0) }
+    var jumpVeil by remember { mutableStateOf(false) }
+    var veilVisible by remember { mutableStateOf(false) }
+    // Ratio inside the loaded window; read by JS commands and the options effect.
+    val localRatio = remember(book.id) {
+        ScalarHolder(ratioWithinWindow(progressOffset, initialChunk.first, initialChunk.second))
+    }
 
     var chromeVisible by rememberSaveable { mutableStateOf(true) }
-    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var activePanel by rememberSaveable { mutableStateOf(ReaderChromePanel.NONE) }
+    LaunchedEffect(chromeVisible) {
+        if (!chromeVisible) activePanel = ReaderChromePanel.NONE
+    }
+    LaunchedEffect(jumpVeil) {
+        if (jumpVeil) {
+            kotlinx.coroutines.delay(140)
+            veilVisible = jumpVeil
+            kotlinx.coroutines.delay(600)
+            jumpVeil = false
+            veilVisible = false
+        } else {
+            veilVisible = false
+        }
+    }
     var showCustomBackground by rememberSaveable { mutableStateOf(false) }
+    val prefetchScope = rememberCoroutineScope()
+    var prefetchJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    // Fingerprint of the last page that scheduled a window prefetch, so intra-page reports do not
+    // restart the debounce coroutine over and over.
+    var lastPrefetchKey by remember(book.id) { mutableIntStateOf(Int.MIN_VALUE) }
+    var latestReportedRatio by remember { mutableFloatStateOf(0f) }
     var pageInfo by remember(book.id) {
         mutableStateOf(
             TextPageInfo(
@@ -197,12 +292,34 @@ internal fun TextReaderContent(
         )
     }
 
-    val html = remember(chapters, book.title) {
-        buildBookHtml(
-            chapters = chapters.subList(initialWindow.first, initialWindow.second),
-            bookTitle = book.title,
-            startIndex = initialWindow.first,
-        )
+    // Only recompute the top-bar chapter subtitle when the chapter actually changes, not on every
+    // 90ms progress report (keeps the top bar out of the per-scroll recomposition path).
+    val currentChapterIndex by remember(chapterPrefix, totalChars) {
+        derivedStateOf {
+            val offset = (pageInfo.ratio.toDouble() * totalChars.toDouble()).toLong()
+                .coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L))
+            chapterIndexForOffset(offset, chapterPrefix)
+        }
+    }
+
+    // Building a whole window's HTML can take tens of milliseconds on long chapters; do it off the
+    // main thread so opening / jumping never blocks the UI.
+    val html by produceState(
+        initialValue = "",
+        renderToken,
+        renderStart,
+        renderEnd,
+        chapters,
+        book.title,
+    ) {
+        value = withContext(Dispatchers.Default) {
+            buildBookHtml(
+                chapters = chapters.subList(renderStart, renderEnd),
+                bookTitle = book.title,
+                startIndex = renderStart,
+                singleChapter = chapters.size == 1,
+            )
+        }
     }
     val events = remember { MutableSharedFlow<TextReaderEvent>(extraBufferCapacity = 32) }
     val bridge = remember { TextJavascriptBridge { event -> events.tryEmit(event) } }
@@ -211,13 +328,22 @@ internal fun TextReaderContent(
 
     var lastSentOffset by remember { mutableLongStateOf(-1L) }
     var lastSentAt by remember { mutableLongStateOf(0L) }
-    val liveRatio = rememberUpdatedState(pageInfo.ratio)
-    val liveLocalRatio = rememberUpdatedState(localRatio)
+    // 跳转重建 WebView 期间旧文档可能还有排队的 onState；短暂忽略它们，避免把旧位置写回进度。
+    var staleEventGuardUntil by remember { mutableLongStateOf(0L) }
+    val liveRatio = remember(book.id, totalChars) {
+        ScalarHolder((progressOffset.toDouble() / totalChars.toDouble()).toFloat().coerceIn(0f, 1f))
+    }
     val liveTotalChars = rememberUpdatedState(totalChars)
     val liveMode = rememberUpdatedState(settings.readerMode)
     val liveDirection = rememberUpdatedState(direction)
     val view = LocalView.current
+    val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    // 解析完成后回填权威字符数，让书架进度和阅读器进度条使用同一个分母。
+    LaunchedEffect(book.id, totalChars) {
+        vm.updateTextStats(totalChars)
+    }
 
     fun runJs(script: String) {
         val webView = holder.webView ?: return
@@ -228,10 +354,21 @@ internal fun TextReaderContent(
         runJs("window.__reader && window.__reader.turn($delta);")
     }
 
+    /** Instant page turn used by the left/right tap zones (no glide). */
+    fun turnInstant(delta: Int) {
+        runJs("window.__reader && window.__reader.turnInstant($delta);")
+    }
+
+    /** Short, snappy glide used by the volume keys. */
+    fun turnFast(delta: Int) {
+        runJs("window.__reader && window.__reader.turnFast($delta);")
+    }
+
     /** [logicalDelta] is +1 for "next page" in reading order; RTL mirrors it horizontally. */
-    fun turnPage(logicalDelta: Int) {
+    fun turnPage(logicalDelta: Int, animate: Boolean = false) {
         if (liveMode.value != ReaderMode.PAGED) return
-        turnVisual(if (liveDirection.value == ReadingDirection.RTL) -logicalDelta else logicalDelta)
+        val horizontal = if (liveDirection.value == ReadingDirection.RTL) -logicalDelta else logicalDelta
+        if (animate) turnFast(horizontal) else turnInstant(horizontal)
     }
 
     fun scrollViewport(delta: Int) {
@@ -255,7 +392,7 @@ internal fun TextReaderContent(
         vm.updateTextProgress(offset)
     }
 
-    /** 窗口内比例 -> 全书比例；进度条和持久化都用全书比例。 */
+    /** 已注入窗口内的比例 -> 全书比例；进度条和持久化都用全书比例。 */
     fun globalRatio(local: Float): Float {
         val base = chapterPrefix.getOrElse(windowStart) { 0L }
         val span = (chapterPrefix.getOrElse(windowEnd) { base } - base).coerceAtLeast(1L)
@@ -263,66 +400,289 @@ internal fun TextReaderContent(
         return (offset.toDouble() / totalChars.toDouble()).toFloat().coerceIn(0f, 1f)
     }
 
+    /** 窗口边界变化后把本地比例换算到新窗口，避免追加/前插瞬间进度写错。 */
+    fun rebaseLocalRatio(oldStart: Int, oldEnd: Int, newStart: Int, newEnd: Int) {
+        val oldBase = chapterPrefix.getOrElse(oldStart) { 0L }
+        val oldSpan = (chapterPrefix.getOrElse(oldEnd) { oldBase } - oldBase).coerceAtLeast(1L)
+        val offset = oldBase + (localRatio.value.toDouble() * oldSpan).toLong()
+        localRatio.value = ratioWithinWindow(offset, newStart, newEnd)
+    }
+
+    fun windowForChapter(index: Int, batch: Int = CHAPTER_BATCH): Pair<Int, Int> {
+        val safe = index.coerceIn(0, chapters.size - 1)
+        val start = (safe - CHAPTER_START_LEAD).coerceAtLeast(0)
+        return start to (start + batch).coerceAtMost(chapters.size)
+    }
+
+    // Use the window container size (stable across system-bar visibility) rather than
+    // Configuration.screen*Dp, which changes when the chrome hides/shows the bars and would make
+    // the total page count jump around.
+    val windowInfo = LocalWindowInfo.current
+    val density = LocalDensity.current
+    val estimatedCharsPerPage = remember(
+        settings.readerFontSizeSp,
+        settings.readerLineHeight,
+        settings.readerPageMarginDp,
+        settings.readerFontFamily,
+        windowInfo.containerSize,
+        density,
+    ) {
+        val widthDp = with(density) { windowInfo.containerSize.width.toDp().value }
+        val heightDp = with(density) { windowInfo.containerSize.height.toDp().value }
+        estimateCharsPerPage(
+            fontSizeSp = settings.readerFontSizeSp,
+            lineHeightMultiplier = settings.readerLineHeight,
+            pageMarginDp = settings.readerPageMarginDp,
+            screenWidthDp = widthDp.roundToInt(),
+            screenHeightDp = heightDp.roundToInt(),
+        )
+    }
+
+    val estimatedTotalPages = remember(totalChars, estimatedCharsPerPage) {
+        ceil(totalChars.toDouble() / estimatedCharsPerPage.toDouble()).toInt().coerceAtLeast(1)
+    }
+    val liveEstimatedTotalPages = rememberUpdatedState(estimatedTotalPages)
+    val initialEstimatedPage = (pageInfo.ratio * estimatedTotalPages.toFloat())
+        .roundToInt().coerceIn(1, estimatedTotalPages)
+    var pageBase by remember(book.id) { mutableIntStateOf(initialEstimatedPage - 1) }
+    var pendingJumpPage by remember { mutableStateOf<Int?>(null) }
+    var lastPageWindowStart by remember(book.id) { mutableIntStateOf(-1) }
+
+    /**
+     * 跳到指定字符偏移：围绕目标章节重建 WebView 的初始窗口。目录选择可能落在当前窗口之外很远
+     * 的地方，所以这里同时重设 window* 与 render*，用 renderToken 强制重建 WebView，再把
+     * 目标在窗口内的比例交给 JS 恢复；立即写入进度，离开阅读器也不会丢位置。
+     */
+    fun jumpToOffset(offset: Long) {
+        val target = offset.coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L))
+        val chapter = chapterIndexForOffset(target, chapterPrefix)
+        val (start, end) = windowForChapter(chapter)
+        // The DOM may contain many chapters beyond the initial render range (append/prepend), so
+        // decide by the actually loaded window; only rebuild when the target chapter is missing.
+        val loadedRange = windowStart until windowEnd
+        val withinRenderedWindow = chapter in loadedRange && holder.webView != null
+        liveRatio.value = (target.toDouble() / totalChars.toDouble()).toFloat().coerceIn(0f, 1f)
+        pageInfo = TextPageInfo(
+            page = pageInfo.page,
+            pages = pageInfo.pages,
+            ratio = (target.toDouble() / totalChars.toDouble()).toFloat().coerceIn(0f, 1f),
+        )
+        lastSentOffset = target
+        lastSentAt = SystemClock.elapsedRealtime()
+        staleEventGuardUntil = SystemClock.elapsedRealtime() + STALE_EVENT_GUARD_MS
+        vm.updateTextProgress(target)
+        val targetPage = (
+            (target.toDouble() / totalChars.toDouble()) * liveEstimatedTotalPages.value.toDouble()
+            ).roundToInt().coerceIn(1, liveEstimatedTotalPages.value)
+        pendingJumpPage = targetPage
+        // Keep the page label in sync immediately. The WebView's restore callback is delayed and
+        // can be dropped by the stale-event guard while it is rebuilding after a distant jump.
+        pageBase = targetPage - 1 - pageInfo.page
+        if (withinRenderedWindow) {
+            // Target already exists in the loaded document: just move the native scroller. This is
+            // what keeps slider scrubbing from reflowing the whole book.
+            // JS restore expects a ratio across the whole loaded DOM, which is the window
+            // (windowStart..windowEnd) - not the initial render range.
+            localRatio.value = ratioWithinWindow(target, windowStart, windowEnd)
+            runJs("window.__reader && window.__reader.restore(${localRatio.value});")
+        } else {
+            val (jumpStart, jumpEnd) = windowForChapter(chapter, batch = JUMP_BATCH)
+            windowStart = jumpStart
+            windowEnd = jumpEnd
+            renderStart = jumpStart
+            renderEnd = jumpEnd
+            localRatio.value = ratioWithinWindow(target, jumpStart, jumpEnd)
+            jumpVeil = true
+            renderToken += 1
+        }
+    }
+
+    fun jumpToChapter(index: Int) {
+        val target = chapterPrefix.getOrElse(index.coerceIn(0, chapters.size - 1)) { 0L }
+        jumpToOffset(target)
+    }
+
+    fun jumpToFraction(fraction: Float) {
+        jumpToOffset((fraction.toDouble() * totalChars.toDouble()).toLong())
+    }
+
     /**
      * 接近已加载窗口边界时按批注入章节。章节 HTML 已经在内存里，这里只是重新交给 WebView，
      * 不触发任何文件读取；JS 侧会保持当前滚动位置。
+     *
+     * Building the payload (a few chapters, possibly with inline base64 illustrations) and quoting
+     * it for `evaluateJavascript` can take tens of milliseconds, so it runs on
+     * [Dispatchers.Default]; the main thread only flips the window bookkeeping and posts the script.
      */
     var lastChapterLoadAt by remember { mutableLongStateOf(0L) }
-    fun maybeLoadMoreChapters(ratio: Float) {
+    suspend fun maybeLoadMoreChapters(ratio: Float) {
         val now = SystemClock.elapsedRealtime()
         if (now - lastChapterLoadAt < CHAPTER_LOAD_THROTTLE_MS) return
-        if (ratio >= PREFETCH_RATIO && windowEnd < chapters.size) {
-            val nextEnd = (windowEnd + CHAPTER_BATCH).coerceAtMost(chapters.size)
+        val append = ratio >= PREFETCH_RATIO && windowEnd < chapters.size
+        val prepend = !append && ratio <= 1f - PREFETCH_RATIO && windowStart > 0
+        if (!append && !prepend) return
+        val startBefore = windowStart
+        val endBefore = windowEnd
+        val nextStart = if (prepend) (windowStart - CHAPTER_BATCH).coerceAtLeast(0) else windowStart
+        val nextEnd = if (append) (windowEnd + CHAPTER_BATCH).coerceAtMost(chapters.size) else windowEnd
+        lastChapterLoadAt = now
+        val script = withContext(Dispatchers.Default) {
             val payload = buildString {
-                for (i in windowEnd until nextEnd) {
-                    append(chapterHtml(chapters[i], i, book.title, chapters.size == 1))
+                if (append) {
+                    for (i in endBefore until nextEnd) {
+                        append(chapterHtml(chapters[i], i, book.title, chapters.size == 1))
+                    }
+                } else {
+                    for (i in nextStart until startBefore) {
+                        append(chapterHtml(chapters[i], i, book.title, chapters.size == 1))
+                    }
                 }
             }
-            if (payload.isEmpty()) return
-            lastChapterLoadAt = now
-            windowEnd = nextEnd
-            runJs("window.__reader && window.__reader.append(${JSONObject.quote(payload)});")
-        } else if (ratio <= 1f - PREFETCH_RATIO && windowStart > 0) {
-            val nextStart = (windowStart - CHAPTER_BATCH).coerceAtLeast(0)
-            val payload = buildString {
-                for (i in nextStart until windowStart) {
-                    append(chapterHtml(chapters[i], i, book.title, chapters.size == 1))
-                }
+            if (payload.isEmpty()) {
+                ""
+            } else if (append) {
+                "window.__reader && window.__reader.append(${JSONObject.quote(payload)});"
+            } else {
+                "window.__reader && window.__reader.prepend(${JSONObject.quote(payload)});"
             }
-            if (payload.isEmpty()) return
-            lastChapterLoadAt = now
-            windowStart = nextStart
-            runJs("window.__reader && window.__reader.prepend(${JSONObject.quote(payload)});")
         }
+        if (script.isEmpty()) return
+        // A jump may have rebuilt the window while the payload was being built.
+        if (windowStart != startBefore || windowEnd != endBefore) return
+        windowStart = nextStart
+        windowEnd = nextEnd
+        rebaseLocalRatio(startBefore, endBefore, windowStart, windowEnd)
+        runJs(script)
     }
 
     // WebView -> Compose events (main thread).
     LaunchedEffect(events) {
         events.collect { event ->
+            if (event is TextReaderEvent.State &&
+                SystemClock.elapsedRealtime() < staleEventGuardUntil
+            ) {
+                return@collect
+            }
             when (event) {
                 is TextReaderEvent.State -> {
-                    localRatio = event.ratio
-                    pageInfo = TextPageInfo(event.page, event.pages, globalRatio(event.ratio))
+                    jumpVeil = false
+                    localRatio.value = event.ratio
+                    val global = globalRatio(event.ratio)
+                    liveRatio.value = global
+                    pageInfo = TextPageInfo(event.page, event.pages, global)
+                    // Keep the displayed page continuous across jumps / window changes, then let it
+                    // follow the real DOM page index so every swipe adds exactly one.
+                    val totalForPages = liveEstimatedTotalPages.value
+                    val expectedFromRatio = (global * totalForPages.toFloat()).roundToInt()
+                        .coerceIn(1, totalForPages)
+                    val candidate = pageBase + event.page + 1
+                    val pending = pendingJumpPage
+                    val drifted = kotlin.math.abs(candidate - expectedFromRatio) > 3
+                    if (pending != null || windowStart != lastPageWindowStart || drifted) {
+                        val expected = (pending ?: expectedFromRatio).coerceIn(1, totalForPages)
+                        // This offset must be signed: a jump to an earlier page can map to a lower
+                        // DOM page inside the same loaded chapter window.
+                        pageBase = expected - 1 - event.page
+                        pendingJumpPage = null
+                    }
+                    lastPageWindowStart = windowStart
                     persistProgress(force = false)
-                    maybeLoadMoreChapters(event.ratio)
+                    // Grow the loaded window only after the page has actually come to rest: doing
+                    // it inside the last scroll report made the snap correction stutter at the end
+                    // of every swipe.
+                    latestReportedRatio = event.ratio
+                    // The JS side already dedupes identical reports; restart the prefetch debounce
+                    // only when the page (or window start) actually changed.
+                    val prefetchKey = event.page + windowStart * 1024
+                    if (prefetchKey != lastPrefetchKey) {
+                        lastPrefetchKey = prefetchKey
+                        prefetchJob?.cancel()
+                        prefetchJob = prefetchScope.launch {
+                            kotlinx.coroutines.delay(360)
+                            maybeLoadMoreChapters(latestReportedRatio)
+                        }
+                    }
                 }
                 TextReaderEvent.MiddleZone -> chromeVisible = !chromeVisible
+                is TextReaderEvent.Tap -> {
+                    // While a panel is open, tapping the page only dismisses it: no page turn from
+                    // the left/right thirds while the menu is expanded.
+                    if (activePanel != ReaderChromePanel.NONE) {
+                        activePanel = ReaderChromePanel.NONE
+                    } else {
+                    val third = 1f / 3f
+                    if (liveMode.value == ReaderMode.PAGED) {
+                        when {
+                            event.ratio < third ->
+                                turnPage(if (liveDirection.value == ReadingDirection.RTL) 1 else -1)
+                            event.ratio > 1f - third ->
+                                turnPage(if (liveDirection.value == ReadingDirection.RTL) -1 else 1)
+                            else -> chromeVisible = !chromeVisible
+                        }
+                    } else if (event.ratio in third..(1f - third)) {
+                        chromeVisible = !chromeVisible
+                    }
+                    }
+                }
             }
         }
     }
 
-    // Re-apply typography / colours / mode when they change, keeping the current reading ratio.
-    val optionsJson = remember(settings.readerMode, settings.readerFontSizeSp, readerBackground, readerTextColor) {
+    // Safe area (status bar / cutout / gesture bar): the page padding must clear these, like
+    // WeChat Reading, instead of using a fixed value measured from the physical screen edge.
+    // The chrome hides/shows the system bars, which changes the *current* safeDrawing insets; if we
+    // re-applied options on every change the WebView would reflow each time the toolbar is toggled.
+    // Keeping the largest inset seen for the current configuration makes page geometry independent
+    // of chrome visibility (it only updates on rotation / cutout changes).
+    val configuration = LocalConfiguration.current
+    // Deterministic characters-per-page from the typography settings: total pages must be
+    // recalculated whenever font size / line spacing / page margin / font family change.
+    val safePadding = WindowInsets.safeDrawing.asPaddingValues()
+    val currentSafeTop = safePadding.calculateTopPadding().value
+    val currentSafeBottom = safePadding.calculateBottomPadding().value
+    val currentSafeLeft = safePadding.calculateLeftPadding(LocalLayoutDirection.current).value
+    val currentSafeRight = safePadding.calculateRightPadding(LocalLayoutDirection.current).value
+    var safeTopDp by remember(configuration) { mutableFloatStateOf(currentSafeTop) }
+    var safeBottomDp by remember(configuration) { mutableFloatStateOf(currentSafeBottom) }
+    var safeLeftDp by remember(configuration) { mutableFloatStateOf(currentSafeLeft) }
+    var safeRightDp by remember(configuration) { mutableFloatStateOf(currentSafeRight) }
+    SideEffect {
+        if (currentSafeTop > safeTopDp) safeTopDp = currentSafeTop
+        if (currentSafeBottom > safeBottomDp) safeBottomDp = currentSafeBottom
+        if (currentSafeLeft > safeLeftDp) safeLeftDp = currentSafeLeft
+        if (currentSafeRight > safeRightDp) safeRightDp = currentSafeRight
+    }
+
+    val optionsJson = remember(
+        settings.readerMode,
+        settings.readerFontSizeSp,
+        settings.readerLineHeight,
+        settings.readerPageMarginDp,
+        settings.readerFontFamily,
+        readerBackground,
+        readerTextColor,
+        safeTopDp,
+        safeBottomDp,
+        safeLeftDp,
+        safeRightDp,
+    ) {
         JSONObject().apply {
             put("mode", if (settings.readerMode == ReaderMode.PAGED) "paged" else "vertical")
             put("fontSize", settings.readerFontSizeSp)
+            put("lineHeight", settings.readerLineHeight.toDouble())
+            put("pageMargin", settings.readerPageMarginDp)
+            put("fontFamily", cssFontFamily(settings.readerFontFamily))
             put("background", cssColor(readerBackground))
             put("color", cssColor(readerTextColor))
+            put("safeTop", safeTopDp.toDouble())
+            put("safeBottom", safeBottomDp.toDouble())
+            put("safeLeft", safeLeftDp.toDouble())
+            put("safeRight", safeRightDp.toDouble())
         }.toString()
     }
     LaunchedEffect(pageFinishedToken, optionsJson) {
         if (pageFinishedToken == 0) return@LaunchedEffect
-        runJs("window.__reader && window.__reader.apply($optionsJson, ${liveLocalRatio.value});")
+        runJs("window.__reader && window.__reader.apply($optionsJson, ${localRatio.value});")
     }
 
     DisposableEffect(settings.keepScreenOn) {
@@ -335,10 +695,27 @@ internal fun TextReaderContent(
     val insetsController = remember(view) {
         activityWindow?.let { WindowCompat.getInsetsController(it, view) }
     }
-    val topBarColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
-    val statusBarBackground = if (chromeVisible) blendOver(readerBackground, topBarColor) else readerBackground
-    val navigationBarBackground =
-        if (chromeVisible) blendOver(readerBackground, Color.Black.copy(alpha = 0.38f)) else readerBackground
+    // Reader chrome follows the paper colour (like WeChat Reading): a beige/white page gets a light
+    // bar with dark icons, a black page a dark bar with warm text.
+    val darkPaper = readerBackground.luminance() < 0.5f
+    val chromeBarColor = if (darkPaper) {
+        blendOver(readerBackground, Color.Black.copy(alpha = 0.62f))
+    } else {
+        blendOver(readerBackground, Color.White.copy(alpha = 0.72f))
+    }
+    val chromeContentColor = when {
+        darkPaper && readerBackground == Color.Black -> Color.White
+        darkPaper -> Color(0xFFEDE6DD)
+        else -> Color(0xFF2A2622)
+    }
+    // Both quiet corner read-outs (page label, battery) share one paper-tinted colour.
+    val pageIndicatorColor = when {
+        readerBackground == Color.Black -> Color.White.copy(alpha = 0.6f)
+        readerBackground.luminance() < 0.5f -> Color(0xFFEDE6DD).copy(alpha = 0.6f)
+        else -> Color(0xFF2A2622).copy(alpha = 0.55f)
+    }
+    val statusBarBackground = if (chromeVisible) chromeBarColor else readerBackground
+    val navigationBarBackground = if (chromeVisible) chromeBarColor else readerBackground
     DisposableEffect(insetsController) {
         insetsController?.systemBarsBehavior =
             WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -380,11 +757,9 @@ internal fun TextReaderContent(
     }
 
     LaunchedEffect(volumePageEvents) {
-        volumePageEvents?.collect { delta -> turnPage(delta) }
+        volumePageEvents?.collect { delta -> turnPage(delta, animate = true) }
     }
 
-    // 文字书按章懒加载，页码总数会随窗口增长；显示全书百分比才是稳定、不误导的进度。
-    val pageLabel = stringResource(R.string.reader_percent, (pageInfo.ratio * 100f).roundToInt().coerceIn(0, 100))
     val chromeToggleLabel =
         stringResource(if (chromeVisible) R.string.reader_hide_controls else R.string.reader_show_controls)
     val readingAreaLabel = stringResource(R.string.reader_reading_area)
@@ -413,93 +788,90 @@ internal fun TextReaderContent(
                 )
             },
     ) {
-        key(html) {
-            AndroidView(
-                factory = { context ->
-                    WebView(context).apply {
-                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
-                        this.settings.apply {
-                            javaScriptEnabled = true
-                            blockNetworkLoads = true
-                            allowFileAccess = false
-                            allowContentAccess = false
-                            // Text books may keep illustrations as sanitized local data URIs; the
-                            // network is blocked separately, so enabling image loading only shows
-                            // those inline images and never fetches remote resources.
-                            loadsImagesAutomatically = true
-                            setSupportZoom(false)
-                            builtInZoomControls = false
-                            displayZoomControls = false
-                            textZoom = 100
-                            defaultTextEncodingName = "utf-8"
-                            cacheMode = WebSettings.LOAD_NO_CACHE
-                        }
-                        isVerticalScrollBarEnabled = false
-                        isHorizontalScrollBarEnabled = false
-                        overScrollMode = View.OVER_SCROLL_NEVER
-                        addJavascriptInterface(bridge, BRIDGE_NAME)
-                        webViewClient = object : WebViewClient() {
-                            override fun onPageFinished(view: WebView?, url: String?) {
-                                pageFinishedToken += 1
-                            }
-                        }
-                        loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
-                        holder.webView = this
+        // One WebView instance for the whole reading session: jumps call loadDataWithBaseURL on it
+        // instead of destroying/recreating the view, which is the main cost of the old jump path.
+        AndroidView(
+            factory = { context ->
+                WebView(context).apply {
+                    if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    this.settings.apply {
+                        javaScriptEnabled = true
+                        blockNetworkLoads = true
+                        allowFileAccess = false
+                        allowContentAccess = false
+                        // Text books may keep illustrations as sanitized local data URIs; the
+                        // network is blocked separately, so enabling image loading only shows
+                        // those inline images and never fetches remote resources.
+                        loadsImagesAutomatically = true
+                        setSupportZoom(false)
+                        builtInZoomControls = false
+                        displayZoomControls = false
+                        textZoom = 100
+                        defaultTextEncodingName = "utf-8"
+                        cacheMode = WebSettings.LOAD_NO_CACHE
                     }
-                },
-                modifier = Modifier.fillMaxSize(),
-                onRelease = { webView ->
-                    if (holder.webView === webView) holder.webView = null
-                    runCatching { webView.removeJavascriptInterface(BRIDGE_NAME) }
-                    runCatching { webView.stopLoading() }
-                    runCatching { webView.loadUrl("about:blank") }
-                    runCatching { webView.destroy() }
-                },
-            )
+                    isVerticalScrollBarEnabled = false
+                    isHorizontalScrollBarEnabled = false
+                    overScrollMode = View.OVER_SCROLL_NEVER
+                    addJavascriptInterface(bridge, BRIDGE_NAME)
+                    webViewClient = object : WebViewClient() {
+                        override fun onPageFinished(view: WebView?, url: String?) {
+                            pageFinishedToken += 1
+                        }
+                    }
+                    holder.webView = this
+                }
+            },
+            modifier = Modifier.fillMaxSize(),
+            onRelease = { webView ->
+                if (holder.webView === webView) holder.webView = null
+                runCatching { webView.removeJavascriptInterface(BRIDGE_NAME) }
+                runCatching { webView.stopLoading() }
+                runCatching { webView.loadUrl("about:blank") }
+                runCatching { webView.destroy() }
+            },
+        )
+        LaunchedEffect(html) {
+            val webView = holder.webView ?: return@LaunchedEffect
+            if (html.isNotEmpty()) {
+                webView.loadDataWithBaseURL(null, html, "text/html", "utf-8", null)
+            }
         }
 
-        // In PAGED mode the WebView needs no touch input (we turn pages programmatically), so a
-        // transparent overlay owns taps and horizontal swipes without fighting the native view.
-        if (settings.readerMode == ReaderMode.PAGED) {
+        // Paged mode deliberately leaves touch handling to the WebView: the CSS-column strip is a
+        // native horizontal scroller, so dragging moves the current AND neighbouring page together
+        // exactly like the image pager, with GPU-accelerated scrolling. Taps are reported from JS
+        // (left/right = page turn, middle = chrome) and the scroller snaps to the nearest page when
+        // the finger lifts.
+        // Dim the page only while a settings panel is expanded, so the panel and toolbar read as
+        // one surface over the dimmed page.
+        // Out-of-window jumps rebuild the WebView; cover that reflow with the paper colour until
+        // the new page reports back.
+        if (veilVisible) {
             Box(
                 Modifier
                     .fillMaxSize()
-                    .pointerInput(settings.readerMode, direction) {
-                        awaitEachGesture {
-                            val down = awaitFirstDown(requireUnconsumed = false)
-                            var dx = 0f
-                            var dy = 0f
-                            var pressed = true
-                            while (pressed) {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                if (change.pressed) {
-                                    dx += change.positionChange().x
-                                    dy += change.positionChange().y
-                                    change.consume()
-                                } else {
-                                    pressed = false
-                                }
-                            }
-                            val slop = viewConfiguration.touchSlop
-                            when {
-                                abs(dx) > slop * 2f && abs(dx) > abs(dy) -> {
-                                    // Swipe left moves the content forward visually.
-                                    turnVisual(if (dx < 0f) 1 else -1)
-                                }
-                                abs(dx) < slop && abs(dy) < slop -> {
-                                    val third = size.width / 3f
-                                    when {
-                                        down.position.x < third ->
-                                            turnPage(if (direction == ReadingDirection.RTL) 1 else -1)
-                                        down.position.x > size.width - third ->
-                                            turnPage(if (direction == ReadingDirection.RTL) -1 else 1)
-                                        else -> chromeVisible = !chromeVisible
-                                    }
-                                }
-                            }
-                        }
-                    },
+                    .background(readerBackground),
+                contentAlignment = Alignment.Center,
+            ) {
+                CircularProgressIndicator(
+                    color = readerTextColor.copy(alpha = 0.45f),
+                    strokeWidth = 2.dp,
+                    modifier = Modifier.size(26.dp),
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = chromeVisible && activePanel != ReaderChromePanel.NONE,
+            enter = fadeIn(),
+            exit = fadeOut(),
+        ) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(readerBackground.copy(alpha = 0.5f)),
             )
         }
 
@@ -515,6 +887,9 @@ internal fun TextReaderContent(
                     persistProgress(force = true)
                     onBack()
                 },
+                subtitle = { chapters.getOrNull(currentChapterIndex)?.title?.takeIf { it.isNotBlank() } },
+                containerColor = chromeBarColor,
+                contentColor = chromeContentColor,
             )
         }
 
@@ -524,53 +899,163 @@ internal fun TextReaderContent(
             exit = fadeOut() + slideOutVertically { it / 3 },
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
-            TextReaderBottomBar(
-                mode = settings.readerMode,
-                label = pageLabel,
-                onToggleMode = {
-                    onSettingsChange {
-                        it.copy(
-                            readerMode = if (it.readerMode == ReaderMode.PAGED) ReaderMode.VERTICAL else ReaderMode.PAGED,
+            Surface(color = chromeBarColor, contentColor = chromeContentColor) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(bottom = 4.dp)
+                        .animateContentSize(),
+                ) {
+                ReaderBottomBar(
+                    progress = { pageInfo.ratio },
+                    label = {
+                        val pagesInfo = estimatedTextPage(
+                            pageInfo = pageInfo,
+                            mode = settings.readerMode,
+                            totalChars = totalChars,
+                            charsPerPage = estimatedCharsPerPage,
+                            pageBase = pageBase,
+                        )
+                        if (pagesInfo != null) {
+                            stringResource(
+                                R.string.reader_progress_combo,
+                                percentOf(pageInfo.ratio),
+                                pagesInfo.first,
+                                pagesInfo.second,
+                            )
+                        } else {
+                            stringResource(R.string.reader_percent, percentOf(pageInfo.ratio))
+                        }
+                    },
+                    onJump = { fraction -> jumpToFraction(fraction) },
+                    progressLabelSizeSp = settings.readerProgressLabelSizeSp,
+                    activePanel = activePanel,
+                    onThemeToggle = {
+                        activePanel = if (activePanel == ReaderChromePanel.THEME) {
+                            ReaderChromePanel.NONE
+                        } else {
+                            ReaderChromePanel.THEME
+                        }
+                    },
+                    onOpenToc = {
+                        activePanel = if (activePanel == ReaderChromePanel.TOC) {
+                            ReaderChromePanel.NONE
+                        } else {
+                            ReaderChromePanel.TOC
+                        }
+                    },
+                    onOpenSettings = {
+                        context.startActivity(Intent(context, ReaderSettingsActivity::class.java))
+                    },
+                    showTypography = true,
+                    onTypographyToggle = {
+                        activePanel = if (activePanel == ReaderChromePanel.TYPOGRAPHY) {
+                            ReaderChromePanel.NONE
+                        } else {
+                            ReaderChromePanel.TYPOGRAPHY
+                        }
+                    },
+                    containerColor = chromeBarColor,
+                    contentColor = chromeContentColor,
+                )
+                // Panels live inside the same flat bottom surface as the toolbar: no separate
+                // slide/expand animation, the bottom sheet simply grows to include them.
+                when (activePanel) {
+                    ReaderChromePanel.THEME -> ReaderThemePanel(
+                        settings = settings,
+                        onSettingsChange = onSettingsChange,
+                        onCustomBackground = { showCustomBackground = true },
+                        showTextSize = true,
+                        containerColor = chromeBarColor,
+                        contentColor = chromeContentColor,
+                    )
+
+                    ReaderChromePanel.TYPOGRAPHY -> ReaderTypographyPanel(
+                        settings = settings,
+                        onSettingsChange = onSettingsChange,
+                        onOpenAdvanced = {
+                            activePanel = ReaderChromePanel.NONE
+                            context.startActivity(Intent(context, ReaderSettingsActivity::class.java))
+                        },
+                        containerColor = chromeBarColor,
+                        contentColor = chromeContentColor,
+                    )
+
+                    ReaderChromePanel.TOC -> {
+                        val currentChapter = chapterIndexForOffset(
+                            (pageInfo.ratio.toDouble() * totalChars.toDouble()).toLong()
+                                .coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L)),
+                            chapterPrefix,
+                        )
+                        ReaderTocPanel(
+                            chapters = chapters,
+                            currentChapter = currentChapter,
+                            onSelect = { index ->
+                                activePanel = ReaderChromePanel.NONE
+                                jumpToChapter(index)
+                            },
+                            containerColor = chromeBarColor,
+                            contentColor = chromeContentColor,
                         )
                     }
-                },
-                onOpenSettings = { showSettings = true },
+
+                    else -> Unit
+                }
+                }
+            }
+        }
+
+        // WeChat-Reading-style page indicator: a quiet bottom-end label while the chrome is hidden.
+        // The user picks page number vs. progress in the reader settings activity.
+        AnimatedVisibility(
+            visible = !chromeVisible && settings.readerPageInfo != ReaderPageInfo.HIDDEN,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(end = 18.dp, bottom = 12.dp),
+        ) {
+            val estimatedPages = estimatedTextPage(
+                pageInfo = pageInfo,
+                mode = settings.readerMode,
+                totalChars = totalChars,
+                charsPerPage = estimatedCharsPerPage,
+                pageBase = pageBase,
+            )
+            val label = if (settings.readerPageInfo == ReaderPageInfo.PAGES && estimatedPages != null) {
+                stringResource(R.string.reader_page_indicator, estimatedPages.first, estimatedPages.second)
+            } else {
+                stringResource(R.string.reader_percent, percentOf(pageInfo.ratio))
+            }
+            Text(
+                label,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    fontSize = settings.readerPageIndicatorSizeSp.sp,
+                    fontFeatureSettings = "tnum",
+                ),
+                color = pageIndicatorColor,
             )
         }
 
+        // Quiet battery read-out in the lower-left corner, mirroring the page indicator on the right.
         AnimatedVisibility(
-            visible = !chromeVisible && settings.showPageNumber,
+            visible = !chromeVisible && settings.readerBatteryIndicator,
             enter = fadeIn(),
             exit = fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .navigationBarsPadding()
+                .padding(start = 18.dp, bottom = 12.dp),
         ) {
-            Surface(
-                shape = CircleShape,
-                color = if (readerBackground.luminance() < 0.5f) Color.Black.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.72f),
-                contentColor = if (readerBackground.luminance() < 0.5f) Color(0xFFEDE0D4) else Color(0xFF29231D),
-            ) {
-                Text(
-                    pageLabel,
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                )
-            }
+            BatteryIndicator(
+                textSizeSp = settings.readerPageIndicatorSizeSp,
+                color = pageIndicatorColor,
+            )
         }
     }
 
-    if (showSettings) {
-        ReaderControlsSheet(
-            currentPage = pageInfo.page,
-            count = pageInfo.pages.coerceAtLeast(1),
-            settings = settings,
-            direction = direction,
-            onDirection = { vm.setDirection(it) },
-            onDismiss = { showSettings = false },
-            onSettingsChange = onSettingsChange,
-            onCustomBackground = { showCustomBackground = true },
-            isTextBook = true,
-        )
-    }
     if (showCustomBackground) {
         CustomColorPickerDialog(
             initialColor = settings.customBackgroundColor,
@@ -583,48 +1068,115 @@ internal fun TextReaderContent(
     }
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+private fun percentOf(ratio: Float): Int = (ratio * 100f).roundToInt().coerceIn(0, 100)
+
+/**
+ * Recomposition-scoped wrapper for the WeChat-style progress panel: the page ratio is read here
+ * rather than in [TextReaderContent], so a page turn only recomposes the panel while it is open.
+ */
 @Composable
-private fun TextReaderBottomBar(
-    mode: ReaderMode,
-    label: String,
-    onToggleMode: () -> Unit,
-    onOpenSettings: () -> Unit,
+private fun TextReaderProgressPanel(
+    pageInfo: TextPageInfo,
+    chapterPrefix: LongArray,
+    totalChars: Long,
+    chapterCount: Int,
+    onJump: (Float) -> Unit,
+    onJumpChapter: (Int) -> Unit,
+    containerColor: Color,
+    contentColor: Color,
 ) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.38f))))
-            .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        HorizontalFloatingToolbar(expanded = true, modifier = Modifier.fillMaxWidth()) {
-            IconButton(onClick = onToggleMode) {
-                Icon(
-                    if (mode == ReaderMode.PAGED) Icons.Rounded.ViewAgenda else Icons.Rounded.Swipe,
-                    contentDescription = stringResource(
-                        if (mode == ReaderMode.PAGED) R.string.reader_switch_to_vertical
-                        else R.string.reader_switch_to_paged,
-                    ),
-                )
-            }
-            Text(
-                label,
-                style = MaterialTheme.typography.labelLarge,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.weight(1f),
-            )
-            IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Rounded.Tune, contentDescription = stringResource(R.string.reader_settings_title))
-            }
-        }
+    val ratio = pageInfo.ratio.coerceIn(0f, 1f)
+    val offset = (ratio.toDouble() * totalChars.toDouble()).toLong()
+        .coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L))
+    val chapter = chapterIndexForOffset(offset, chapterPrefix)
+    ReaderProgressPanel(
+        progress = ratio,
+        percentLabel = stringResource(R.string.reader_percent, percentOf(ratio)),
+        pageLabel = null,
+        onJump = onJump,
+        onPrevChapter = { onJumpChapter((chapter - 1).coerceAtLeast(0)) },
+        onNextChapter = { onJumpChapter((chapter + 1).coerceAtMost(chapterCount - 1)) },
+        containerColor = containerColor,
+        contentColor = contentColor,
+    )
+}
+
+/** 字符偏移 -> 章节下标：在章节前缀和上二分查找最后一个前缀 <= offset 的章节。 */
+private fun chapterIndexForOffset(offset: Long, prefix: LongArray): Int {
+    if (prefix.size <= 1) return 0
+    val last = prefix.size - 2
+    var low = 0
+    var high = last
+    while (low < high) {
+        val mid = (low + high + 1) / 2
+        if (prefix[mid] <= offset) low = mid else high = mid - 1
     }
+    return low
+}
+
+/**
+ * Estimated global page number for the reflowable reader.
+ *
+ * The book is only laid out window by window, so an exact total page count is not available; the
+ * pages-per-character ratio of the currently loaded window is applied to the whole book instead.
+ * Returns null in vertical scrolling (where page numbers are meaningless) so the caller can fall
+ * back to a percentage. The estimate is stable enough for the quiet page label and updates when the
+ * typography changes (which is exactly when WeChat Reading's page count changes too).
+ */
+private fun estimatedTextPage(
+    pageInfo: TextPageInfo,
+    mode: ReaderMode,
+    totalChars: Long,
+    charsPerPage: Float,
+    pageBase: Int,
+): Pair<Int, Int>? {
+    if (mode != ReaderMode.PAGED || totalChars <= 0L || charsPerPage <= 0f) return null
+    val totalPages = ceil(totalChars.toDouble() / charsPerPage.toDouble()).toInt().coerceAtLeast(1)
+    // pageInfo.page is the real DOM page index (each swipe = +1); pageBase anchors the loaded window
+    // to a book page so the number stays continuous after jumps.
+    val currentPage = (pageBase + pageInfo.page + 1).coerceIn(1, totalPages)
+    return currentPage to totalPages
+}
+
+/**
+ * Approximate characters that fit on one paged page for the current typography. Used only for the
+ * x / y page-number estimate: it is deterministic, so changing font size / line spacing / margins
+ * immediately recomputes the total page count instead of drifting with the loaded window.
+ */
+private fun estimateCharsPerPage(
+    fontSizeSp: Int,
+    lineHeightMultiplier: Float,
+    pageMarginDp: Int,
+    screenWidthDp: Int,
+    screenHeightDp: Int,
+): Float {
+    val usableWidth = (screenWidthDp - pageMarginDp * 2).coerceAtLeast(80)
+    val charWidth = fontSizeSp.coerceAtLeast(8).toFloat()
+    val charsPerLine = (usableWidth / charWidth).coerceAtLeast(4f)
+    // Reserve a rough 56dp for the safe-area + page padding above/below the text column.
+    val pageHeight = (screenHeightDp - 56).coerceAtLeast(120)
+    val lineHeightDp = (fontSizeSp * lineHeightMultiplier).coerceAtLeast(8f)
+    val linesPerPage = pageHeight / lineHeightDp
+    // CJK glyphs are ~1em wide; subtract a little for paragraph indents and blank lines.
+    return (charsPerLine * linesPerPage * 0.95f).coerceAtLeast(50f)
 }
 
 /** Converts a Compose colour to the `#RRGGBB` string used by the injected CSS/JS. */
 private fun cssColor(color: Color): String =
     String.format(Locale.US, "#%06X", color.toArgb() and 0xFFFFFF)
+
+/**
+ * Font stacks for the reflowable reader. Chinese novels read best in a Song face, but the exact
+ * family name differs per ROM, so each stack lists the common CJK families before the CSS generic.
+ * SYSTEM keeps the WebView default (system sans), which is what most readers expect.
+ */
+private fun cssFontFamily(family: ReaderFontFamily): String = when (family) {
+    ReaderFontFamily.SYSTEM -> ""
+    ReaderFontFamily.SONG ->
+        "\"Noto Serif CJK SC\", \"Source Han Serif SC\", \"Noto Serif SC\", \"Songti SC\", \"STSong\", SimSun, serif"
+    ReaderFontFamily.HEI ->
+        "\"Noto Sans CJK SC\", \"Source Han Sans SC\", \"Noto Sans SC\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif"
+}
 
 private fun escapeHtml(text: String): String = text
     .replace("&", "&amp;")
@@ -632,24 +1184,27 @@ private fun escapeHtml(text: String): String = text
     .replace(">", "&gt;")
 
 /**
- * Builds one HTML document for all chapters and embeds the paging/scroll/state JavaScript.
- * Chapter HTML is sanitized by the data layer (scripts/styles/links removed), so it can be
- * embedded as-is.
+ * 单章渲染：初始窗口和后续追加/前插共用同一段 HTML，保证章节 id 与顺序一致。
  *
- * Single-chapter containers (typically MOBI/AZW3) often have no in-document heading, so the book
- * title is used as the chapter heading there.
+ * [EbookChapter.showHeading] 为 false 时正文已经自带标题元素（例如 `<p class="pius1">`），
+ * 此时不再注入 h2，否则同一章会出现两个标题；纯图片页（cover/illustration）始终不注入标题。
  */
-/** 单章渲染：初始窗口和后续追加/前插共用同一段 HTML，保证章节 id 与顺序一致。 */
 private fun chapterHtml(
     chapter: EbookChapter,
     index: Int,
     bookTitle: String,
     singleChapter: Boolean,
 ): String = buildString {
-    append("<section class=\"chapter\" id=\"ch").append(index).append("\">")
-    val heading = chapter.title?.takeIf { it.isNotBlank() }
-        ?: bookTitle.takeIf { singleChapter && it.isNotBlank() }
-    heading?.let { append("<h2>").append(escapeHtml(it)).append("</h2>") }
+    append("<section class=\"chapter")
+    if (chapter.imageOnly) append(" image-only")
+    append("\" id=\"ch").append(index).append("\">")
+    val heading = if (chapter.showHeading && !chapter.imageOnly) {
+        chapter.title?.takeIf { it.isNotBlank() }
+            ?: bookTitle.takeIf { singleChapter && it.isNotBlank() }
+    } else {
+        null
+    }
+    heading?.let { append("<h2 class=\"chapter-heading\">").append(escapeHtml(it)).append("</h2>") }
     append(chapter.html)
     append("</section>")
 }
@@ -658,13 +1213,14 @@ private fun buildBookHtml(
     chapters: List<EbookChapter>,
     bookTitle: String,
     startIndex: Int = 0,
+    singleChapter: Boolean = chapters.size == 1,
 ): String {
     val body = StringBuilder()
     for ((offset, chapter) in chapters.withIndex()) {
         // 上限只用于拦截异常巨大的书（正常书远达不到）：整本 HTML 同时存在于内存和 WebView
         // 里，没有上限时超大文件会在打开瞬间把进程内存打满。
         if (body.length >= MAX_TOTAL_HTML_CHARS) break
-        body.append(chapterHtml(chapter, startIndex + offset, bookTitle, chapters.size == 1))
+        body.append(chapterHtml(chapter, startIndex + offset, bookTitle, singleChapter))
     }
     return HTML_HEAD + body + HTML_TAIL
 }
@@ -674,6 +1230,11 @@ private const val MAX_TOTAL_HTML_CHARS = 24 * 1024 * 1024
 
 /** 每次注入 WebView 的章节数：只加载阅读位置附近的窗口。 */
 private const val CHAPTER_BATCH = 3
+private const val INITIAL_CHAPTER_BATCH = 2
+private const val JUMP_BATCH = 3
+
+/** 跳转时目标章节前保留的章节数，给"上一页"留一点缓冲。 */
+private const val CHAPTER_START_LEAD = 1
 
 /** 距离已加载窗口边界多少比例时开始追加/前插。 */
 private const val PREFETCH_RATIO = 0.8f
@@ -681,8 +1242,15 @@ private const val PREFETCH_RATIO = 0.8f
 /** 追加/前插的最小间隔，避免一次滚动连续注入多批。 */
 private const val CHAPTER_LOAD_THROTTLE_MS = 300L
 
+/** 跳转后忽略旧 WebView 排队事件的时长。 */
+private const val STALE_EVENT_GUARD_MS = 600L
+
 private const val BRIDGE_NAME = "SaltReader"
 
+/**
+ * 注入到 WebView 的 CSS。发布者样式表在数据层已经被剥离，这里负责中文小说的排版基调；
+ * 同时用 `#book *` 的强制覆盖把发布者遗留的行内样式（白字、底色、文字阴影）压回阅读器主题。
+ */
 private val HTML_HEAD = """
 <!DOCTYPE html>
 <html>
@@ -690,16 +1258,80 @@ private val HTML_HEAD = """
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <style>
+/* --app-vh is maintained from JS: some WebView builds resolve `vh` to 0.
+   The reading area follows WeChat Reading: ~30dp side margins, 1.8 line height and a small
+   paragraph gap, with fixed top/bottom breathing room so text never touches the screen edges. */
+:root { --reader-line-height: 1.8; --reader-page-margin-x: 30px; --reader-font-family: sans-serif; --reader-vertical-pad-top: 20px; --reader-vertical-pad-bottom: 96px; }
 html, body { margin: 0; padding: 0; height: 100%; }
-body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
-h1, h2 { font-size: 1.35em; margin: 0.2em 22px 0.8em 22px; line-height: 1.4; }
-p { margin: 0 22px 0.9em 22px; }
-img { max-width: 100%; height: auto; }
+body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; line-height: var(--reader-line-height, 1.8); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; font-family: var(--reader-font-family, sans-serif); }
+#book { line-height: var(--reader-line-height, 1.8); font-family: var(--reader-font-family, sans-serif); }
+
+/* Chinese novel paragraph rhythm: two-character indent, justified, compact vertical gaps. */
+#book p { margin: 0 var(--reader-page-margin-x, 30px) 0.55em; text-indent: 2em; text-align: justify; line-height: var(--reader-line-height, 1.8) !important; }
+#book div, #book li, #book dd, #book dt, #book ol, #book ul, #book aside { line-height: var(--reader-line-height, 1.8) !important; }
+
+/* Publisher classes that already control alignment must not also be indented. */
+#book .center, #book .zin, #book .illus, #book .images, #book .cover, #book .message,
+#book .right, #book .left, #book .author, #book .contents, #book .mulu,
+#book h1, #book h2, #book h3, #book h4, #book h5, #book h6 { text-indent: 0; }
+#book .center, #book .illus, #book .images, #book .cover, #book .summary { text-align: center; }
+#book .right, #book .author { text-align: right; }
+#book .left { text-align: left; }
+#book .center, #book .zin, #book .illus, #book .images, #book .cover, #book .message,
+#book .author { margin-left: 0; margin-right: 0; }
+
+/* Chapter headings: strong, centered, calm spacing (no decorative extras, WeChat-Reading style). */
+#book h1, #book h2, #book h3, #book h4, #book h5, #book h6 { margin: 0.9em var(--reader-page-margin-x, 30px) 0.85em; text-align: center; font-weight: 700; line-height: 1.3 !important; }
+#book h1 { font-size: 1.6em; }
+#book h2 { font-size: 1.4em; }
+#book h3 { font-size: 1.25em; }
+#book h4, #book h5, #book h6 { font-size: 1.1em; }
+#book h2.chapter-heading { margin: 0.35em var(--reader-page-margin-x, 30px) 1.15em; letter-spacing: 0.02em; }
+
+/* Common Chinese light-novel class vocabulary (chapter number/name, titles, emphasis, notes). */
+#book .pius1, #book .pius2, #book .pius3 { text-indent: 0; text-align: center; font-weight: 700; margin-left: var(--reader-page-margin-x, 30px); margin-right: var(--reader-page-margin-x, 30px); }
+#book p.pius1, #book p.pius2, #book p.pius3 { line-height: 1.25 !important; }
+#book .pius1 { font-size: 1.05em; margin-top: 1.5em; margin-bottom: 0.1em; opacity: 0.7; }
+#book .pius2 { font-size: 1.4em; margin-top: 0; margin-bottom: 1.35em; }
+#book .pius3 { font-size: 1.3em; margin-top: 1.2em; margin-bottom: 1.2em; }
+#book .biaoti1 { text-indent: 0; text-align: center; font-weight: 700; font-size: 1.2em; margin: 0.4em var(--reader-page-margin-x, 30px) 0.9em; }
+#book .biaoti2 { text-indent: 0; text-align: left; font-weight: 700; font-size: 1.2em; margin: 0.4em 0 0.9em 3em; }
+#book .stress { font-weight: 700; font-size: 1.1em; }
+#book .meg { text-indent: 0; text-align: center; font-weight: 700; font-size: 1.3em; margin: 0.6em var(--reader-page-margin-x, 30px); }
+#book .message { text-indent: 0; margin-top: 0.2em; margin-bottom: 0.2em; }
+#book .author { font-style: italic; font-weight: 700; margin-right: 1em; }
+#book .em-dot { -webkit-text-emphasis: filled dot; text-emphasis: filled dot; -webkit-text-emphasis-position: under; text-emphasis-position: under; }
+#book .footnote, #book .duokan-footnote, #book sup img { display: inline; width: auto; height: 1.15em; max-width: 1.15em; max-height: 1.15em; vertical-align: super; margin: 0 0.1em; }
+#book .duokan-footnote-item { text-indent: 0; font-size: 0.9em; }
+#book sup { font-size: 0.75em; line-height: 1; vertical-align: super; }
+#book ruby { ruby-position: over; }
+#book rt { font-size: 0.55em; line-height: 1; }
+#book a { color: inherit !important; text-decoration: none !important; }
+
+/* Illustrations: block images are centered and never overflow the page. */
+#book img { display: block; max-width: 100%; height: auto; margin: 0.8em auto; }
+#book .illus img, #book .images img, #book .cover img { margin-left: auto; margin-right: auto; }
+/* Full-page illustrations / colour pages must fit one screen, in both reading modes. */
+#book section.chapter.image-only { text-align: center; }
+#book section.chapter.image-only img { display: block; width: auto; max-width: 100%; max-height: var(--reader-image-max-h, calc(var(--app-vh, 100%) - 112px)); margin: 8px auto; }
+#book section.chapter.image-only p { text-indent: 0; margin: 0 var(--reader-page-margin-x, 30px); }
+#book section.chapter + section.chapter { margin-top: 0.4em; }
+
+/* Publisher readability override: the reader theme owns colour/background/text-shadow, while the
+   book's font weight/size/alignment/style are kept. Publisher classes such as .co1 (.white text on
+   #FFF) would otherwise be invisible in light mode. */
+#book, #book * { color: inherit !important; text-shadow: none !important; background-color: transparent !important; background-image: none !important; }
+
+/* Paged mode (CSS columns): the column box is inset by page padding so text keeps clear of the
+   status bar and the bottom toolbar, like WeChat Reading's page margins. */
 body.paged { height: 100%; overflow: hidden; }
-body.paged #scroll { width: 100vw; height: var(--app-vh, 100%); overflow: hidden; }
-body.paged #book { height: var(--app-vh, 100%); column-width: 100vw; column-gap: 0; column-fill: auto; -webkit-column-width: 100vw; -webkit-column-gap: 0; -webkit-column-fill: auto; }
+body.paged #scroll { position: relative; width: 100vw; height: var(--app-vh, 100%); overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: pan-x; scroll-snap-type: x mandatory; -webkit-tap-highlight-color: transparent; }
+body.paged #scroll::-webkit-scrollbar { display: none; }
+body.paged #book { height: calc(var(--app-vh, 100%) - 56px); margin: 28px 0; column-width: 100vw; column-gap: 0; column-fill: auto; -webkit-column-width: 100vw; -webkit-column-gap: 0; -webkit-column-fill: auto; }
+/* Vertical mode: breathing room at the top and enough bottom padding that the last lines can be
+   scrolled clear of the floating toolbar. */
 body.vertical { height: auto; }
-body.vertical #scroll { width: 100vw; height: var(--app-vh, 100%); overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+body.vertical #scroll { width: 100vw; height: var(--app-vh, 100%); overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: var(--reader-vertical-pad-top, 20px) 0 var(--reader-vertical-pad-bottom, 96px); box-sizing: border-box; }
 body.vertical #book { height: auto; column-width: auto; }
 </style>
 </head>
@@ -714,35 +1346,169 @@ private val HTML_TAIL = """
   var scroll = document.getElementById('scroll');
   var book = document.getElementById('book');
   // Some WebView builds resolve `vh` to 0 with this viewport meta; keep an explicit height in px.
+  function applyPageWidth() {
+    // Use one integer pixel width for both the scroll viewport and the CSS columns. Mixing
+    // `100vw` (fractional layout viewport) with `scroll.clientWidth` made every page boundary
+    // drift by a fraction of a pixel, so later pages showed a sliver of the previous page.
+    var pageWidth = Math.max(1, scroll.clientWidth || window.innerWidth);
+    cachedWidth = pageWidth;
+    book.style.webkitColumnWidth = pageWidth + 'px';
+    book.style.columnWidth = pageWidth + 'px';
+    book.style.width = pageWidth + 'px';
+    return pageWidth;
+  }
   function updateViewportHeight() {
-    document.documentElement.style.setProperty('--app-vh', Math.max(1, window.innerHeight || 0) + 'px');
+    var viewportHeight = Math.max(1, window.innerHeight || 0);
+    document.documentElement.style.setProperty('--app-vh', viewportHeight + 'px');
+    // Paged mode sizes the column box in px as well; keep it in sync on rotation / multi-window.
+    // Re-flowing the columns invalidates scrollLeft, so re-align to the nearest page afterwards
+    // (otherwise a sliver of the previous page slides into view and text/images look shifted).
+    if (mode === 'paged' && typeof PAGE_PAD_TOP === 'number') {
+      var pageWidth = applyPageWidth();
+      var alignPage = Math.round(scroll.scrollLeft / pageWidth);
+      book.style.height = Math.max(1, viewportHeight - PAGE_PAD_TOP - PAGE_PAD_BOTTOM) + 'px';
+      book.style.marginTop = PAGE_PAD_TOP + 'px';
+      book.style.marginBottom = PAGE_PAD_BOTTOM + 'px';
+      requestAnimationFrame(function () {
+        refreshSnapPoints();
+        scroll.scrollLeft = alignPage * pageWidth;
+      });
+    }
   }
   updateViewportHeight();
   window.addEventListener('resize', updateViewportHeight);
   var mode = 'paged';
   var restoring = false;
   var scrollTimer = null;
+  // CSS scroll snap needs one snap target per page. The pages are CSS columns (not elements), so
+  // an absolutely-positioned marker layer provides one invisible snap point per page boundary.
+  // This lets the platform's native fling + snap physics settle pages, the same curve the image
+  // pager's Compose fling uses, without any per-frame JS.
+  var snapLayer = document.createElement('div');
+  snapLayer.id = 'snap-layer';
+  snapLayer.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:1px;pointer-events:none;';
+  scroll.appendChild(snapLayer);
+  // Page width the markers were last positioned with; appending chapters only adds markers at the
+  // end, so a refresh then only touches the new ones instead of rewriting every marker's style.
+  var snapWidth = -1;
+  function refreshSnapPoints() {
+    refreshMetrics();
+    if (mode !== 'paged') {
+      snapLayer.innerHTML = '';
+      snapWidth = -1;
+      return;
+    }
+    var w = cachedWidth;
+    var pages = cachedPages;
+    while (snapLayer.childElementCount > pages) snapLayer.removeChild(snapLayer.lastChild);
+    while (snapLayer.childElementCount < pages) {
+      var marker = document.createElement('div');
+      // `scroll-snap-stop: always` is what makes a swipe turn exactly one page: without it a fast
+      // fling skips intermediate snap points and can land several pages away (Chrome >= 75).
+      marker.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:1px;scroll-snap-align:start;scroll-snap-stop:always;pointer-events:none;';
+      marker.style.left = (snapLayer.childElementCount * w) + 'px';
+      snapLayer.appendChild(marker);
+    }
+    if (w !== snapWidth) {
+      snapWidth = w;
+      for (var i = 0; i < snapLayer.childElementCount; i++) {
+        snapLayer.children[i].style.left = (i * w) + 'px';
+      }
+    }
+  }
+  // The page keeps clear of the status bar / cutout / gesture bar: the native side passes the
+  // safe-area insets, and the padding is max(base, inset + a small gap), like WeChat Reading.
+  var SAFE_TOP = 0, SAFE_BOTTOM = 0, SAFE_LEFT = 0, SAFE_RIGHT = 0;
+  var PAGE_PAD_TOP = 28, PAGE_PAD_BOTTOM = 28;
+  function applySafeMetrics() {
+    PAGE_PAD_TOP = Math.max(28, SAFE_TOP + 8);
+    PAGE_PAD_BOTTOM = Math.max(28, SAFE_BOTTOM + 8);
+    document.documentElement.style.setProperty('--reader-vertical-pad-top', Math.max(20, SAFE_TOP + 8) + 'px');
+    document.documentElement.style.setProperty('--reader-vertical-pad-bottom', Math.max(96, SAFE_BOTTOM + 8) + 'px');
+    var vh = Math.max(1, window.innerHeight || 0);
+    document.documentElement.style.setProperty(
+      '--reader-image-max-h',
+      Math.max(120, vh - PAGE_PAD_TOP - PAGE_PAD_BOTTOM - 8) + 'px'
+    );
+    return Math.max(SAFE_LEFT, SAFE_RIGHT);
+  }
 
   function clamp(v) { return Math.min(1, Math.max(0, v || 0)); }
-  function viewportWidth() { return Math.max(1, scroll.clientWidth || window.innerWidth); }
-  function pagedPages() { return Math.max(1, Math.round(scroll.scrollWidth / viewportWidth())); }
+  // Layout reads (`clientWidth` / `scrollWidth`) force a style/layout pass, so they are cached and
+  // refreshed only when the viewport or the column layout can actually have changed. A scroll
+  // report then costs no layout work at all.
+  var cachedWidth = 0, cachedHeight = 0, cachedScrollWidth = 0, cachedScrollHeight = 0, cachedPages = 1;
+  function refreshMetrics() {
+    cachedWidth = Math.max(1, scroll.clientWidth || window.innerWidth);
+    cachedHeight = Math.max(1, scroll.clientHeight || window.innerHeight || 0);
+    cachedScrollWidth = scroll.scrollWidth;
+    cachedScrollHeight = scroll.scrollHeight;
+    cachedPages = Math.max(1, Math.round(cachedScrollWidth / cachedWidth));
+  }
+  function viewportWidth() {
+    if (!cachedWidth) refreshMetrics();
+    return cachedWidth;
+  }
+  function pagedPages() { return cachedPages; }
   function pagedPage() { return Math.round(scroll.scrollLeft / viewportWidth()); }
   function ratio() {
     if (mode === 'paged') {
-      var denom = Math.max(1, scroll.scrollWidth - scroll.clientWidth);
+      var denom = Math.max(1, cachedScrollWidth - cachedWidth);
       return clamp(scroll.scrollLeft / denom);
     }
-    var d = Math.max(1, scroll.scrollHeight - scroll.clientHeight);
+    var d = Math.max(1, cachedScrollHeight - cachedHeight);
     return clamp(scroll.scrollTop / d);
   }
-  function report() {
+  // Every onState call crosses the JS bridge and recomposes the reading chrome, so identical
+  // reports are dropped: the progress label is integer percent, the page numbers are integers.
+  var lastReportPage = -1, lastReportPages = -1, lastReportRatio = -2;
+  function report(force) {
+    // Scrolling does not change the document dimensions. Re-reading scrollWidth/scrollHeight on
+    // every throttled scroll event forces a synchronous layout; refresh them only at known layout
+    // boundaries (or for an explicit state refresh).
+    if (force || !cachedWidth) refreshMetrics();
+    // Late image decode can change the page count; a missing snap target would let a fling run past
+    // the end of the marker layer, so keep the marker count in sync with the real column layout.
+    if (mode === 'paged' && snapLayer.childElementCount !== cachedPages) refreshSnapPoints();
     var p = mode === 'paged' ? pagedPage() : 0;
-    var n = mode === 'paged' ? pagedPages() : 1;
+    var n = mode === 'paged' ? cachedPages : 1;
+    var r = ratio();
+    if (!force && p === lastReportPage && n === lastReportPages &&
+        Math.abs(r - lastReportRatio) < 0.002) {
+      return;
+    }
+    lastReportPage = p;
+    lastReportPages = n;
+    lastReportRatio = r;
     try {
       if (window['$BRIDGE_NAME'] && window['$BRIDGE_NAME'].onState) {
-        window['$BRIDGE_NAME'].onState(p, n, ratio());
+        window['$BRIDGE_NAME'].onState(p, n, r);
       }
     } catch (e) {}
+  }
+  // Inline data-URI illustrations decode asynchronously. Layout measured before they are ready
+  // gives a wrong page count / scroll height, which is exactly what full-page colour pages need,
+  // so wait for the images before restoring a position.
+  function whenImagesReady(callback) {
+    var images = book.querySelectorAll('img');
+    var pending = 0;
+    var finished = false;
+    function finish() {
+      if (finished) return;
+      finished = true;
+      requestAnimationFrame(function () {
+        requestAnimationFrame(callback);
+      });
+    }
+    function oneDone() { pending--; if (pending <= 0) finish(); }
+    for (var i = 0; i < images.length; i++) {
+      if (images[i].complete) continue;
+      pending++;
+      images[i].addEventListener('load', oneDone);
+      images[i].addEventListener('error', oneDone);
+    }
+    if (pending === 0) finish();
+    setTimeout(finish, 1500);
   }
   function setOptions(opts) {
     mode = opts.mode === 'vertical' ? 'vertical' : 'paged';
@@ -751,20 +1517,50 @@ private val HTML_TAIL = """
     document.documentElement.style.background = opts.background;
     document.body.style.color = opts.color;
     document.body.style.fontSize = opts.fontSize + 'px';
-    document.body.style.lineHeight = '1.75';
+    var lineHeight = Number(opts.lineHeight);
+    if (!isFinite(lineHeight) || lineHeight <= 0) lineHeight = 1.8;
+    document.documentElement.style.setProperty('--reader-line-height', String(lineHeight));
+    document.body.style.lineHeight = String(lineHeight);
+    var pageMargin = Number(opts.pageMargin);
+    if (!isFinite(pageMargin) || pageMargin < 8) pageMargin = 30;
+    SAFE_TOP = Number(opts.safeTop) || 0;
+    SAFE_BOTTOM = Number(opts.safeBottom) || 0;
+    SAFE_LEFT = Number(opts.safeLeft) || 0;
+    SAFE_RIGHT = Number(opts.safeRight) || 0;
+    var safeSide = applySafeMetrics();
+    pageMargin = Math.max(pageMargin, safeSide + 8);
+    document.documentElement.style.setProperty('--reader-page-margin-x', pageMargin + 'px');
+    var fontFamily = typeof opts.fontFamily === 'string' ? opts.fontFamily : '';
+    if (fontFamily) {
+      document.documentElement.style.setProperty('--reader-font-family', fontFamily);
+    } else {
+      document.documentElement.style.removeProperty('--reader-font-family');
+    }
     if (mode === 'paged') {
-      book.style.webkitColumnWidth = '100vw';
-      book.style.width = '100vw';
-      book.style.height = Math.max(1, window.innerHeight || 0) + 'px';
+      var pageWidth = applyPageWidth();
+      book.style.height = Math.max(1, (window.innerHeight || 0) - PAGE_PAD_TOP - PAGE_PAD_BOTTOM) + 'px';
+      book.style.marginTop = PAGE_PAD_TOP + 'px';
+      book.style.marginBottom = PAGE_PAD_BOTTOM + 'px';
+      scroll.style.scrollSnapType = 'x mandatory';
+      refreshSnapPoints();
     } else {
       book.style.webkitColumnWidth = 'auto';
       book.style.width = 'auto';
       book.style.height = 'auto';
+      book.style.marginTop = '0';
+      book.style.marginBottom = '0';
     }
+  }
+  function snapPageBoundary() {
+    if (mode !== 'paged') return;
+    var w = Math.max(1, scroll.clientWidth || window.innerWidth);
+    var target = Math.round(scroll.scrollLeft / w) * w;
+    if (Math.abs(target - scroll.scrollLeft) > 0.5) scroll.scrollLeft = target;
   }
   function restore(r) {
     restoring = true;
     r = clamp(r);
+    refreshMetrics();
     if (mode === 'paged') {
       var pages = pagedPages();
       var p = Math.round(r * Math.max(0, pages - 1));
@@ -772,21 +1568,64 @@ private val HTML_TAIL = """
     } else {
       scroll.scrollTop = r * Math.max(0, scroll.scrollHeight - scroll.clientHeight);
     }
-    setTimeout(function () { restoring = false; report(); }, 120);
+    setTimeout(function () {
+      restoring = false;
+      // A late column re-flow (fonts/images) can leave scrollLeft mid-page; realign before report.
+      refreshSnapPoints();
+      snapPageBoundary();
+      report(true);
+      var rectDiff = book.getBoundingClientRect().left - scroll.getBoundingClientRect().left;
+    }, 120);
   }
   function apply(opts, r) {
     updateViewportHeight();
     setOptions(opts);
-    requestAnimationFrame(function () {
-      requestAnimationFrame(function () { restore(r); });
-    });
+    whenImagesReady(function () { restore(r); });
   }
   function turn(delta) {
     if (mode !== 'paged') return;
+    refreshMetrics();
+    var pages = pagedPages();
+    var p = Math.min(pages - 1, Math.max(0, pagedPage() + delta));
+    // Native smooth scrolling + CSS scroll snap: the settle curve is the platform fling curve,
+    // which is what the image pager also uses, and it costs no per-frame JS.
+    scroll.scrollTo({ left: p * viewportWidth(), behavior: 'smooth' });
+    report();
+  }
+  // Tap zones: jump straight to the page boundary, no animation at all.
+  function turnInstant(delta) {
+    if (mode !== 'paged') return;
+    refreshMetrics();
     var pages = pagedPages();
     var p = Math.min(pages - 1, Math.max(0, pagedPage() + delta));
     scroll.scrollLeft = p * viewportWidth();
     report();
+  }
+  // Volume keys: a short, snappy glide instead of the browser's longer smooth scroll.
+  function turnFast(delta) {
+    if (mode !== 'paged') return;
+    refreshMetrics();
+    var pages = pagedPages();
+    var p = Math.min(pages - 1, Math.max(0, pagedPage() + delta));
+    var start = scroll.scrollLeft;
+    var target = p * viewportWidth();
+    if (Math.abs(target - start) < 1) {
+      report();
+      return;
+    }
+    var duration = 110;
+    var startedAt = performance.now();
+    function step(now) {
+      var t = Math.min(1, (now - startedAt) / duration);
+      var eased = 1 - Math.pow(1 - t, 2);
+      scroll.scrollLeft = start + (target - start) * eased;
+      if (t < 1) {
+        requestAnimationFrame(step);
+      } else {
+        report();
+      }
+    }
+    requestAnimationFrame(step);
   }
   function scrollViewport(delta) {
     if (mode === 'paged') {
@@ -797,48 +1636,143 @@ private val HTML_TAIL = """
       report();
     }
   }
+
+  // One swipe = one page. `scroll-snap-stop: always` is the primary guarantee; the gesture guard
+  // below also covers a direct drag that crosses more than one page, and an accidental click after
+  // a swipe (which would otherwise add a tap-turn on top of the snap).
+  var touchStartX = 0, touchStartY = 0, touchStartLeft = 0, touchIntent = 0, touching = false;
+  var gesturePage = -1, dragDistance = 0, lastScrollAt = 0, gestureClampRaf = 0;
+  /**
+   * Clamp the landing page to at most one page away from where the gesture started. Runs after the
+   * scroller has come to rest, so it never fights the native fling: a fast flick lands on the next
+   * page instead of skipping three, exactly like the image pager.
+   */
+  function watchGestureClamp() {
+    if (gestureClampRaf) return;
+    function tick() {
+      gestureClampRaf = 0;
+      if (gesturePage < 0) return;
+      if (touching) {
+        gestureClampRaf = requestAnimationFrame(tick);
+        return;
+      }
+      if (performance.now() - lastScrollAt < 130) {
+        gestureClampRaf = requestAnimationFrame(tick);
+        return;
+      }
+      var delta = pagedPage() - gesturePage;
+      if (Math.abs(delta) > 1) {
+        scroll.scrollLeft = (gesturePage + (delta > 0 ? 1 : -1)) * viewportWidth();
+        report(true);
+      }
+      gesturePage = -1;
+    }
+    gestureClampRaf = requestAnimationFrame(tick);
+  }
+  scroll.addEventListener('touchstart', function (e) {
+    if (mode !== 'paged' || e.touches.length !== 1) return;
+    touching = true;
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchStartLeft = scroll.scrollLeft;
+    touchIntent = 0;
+    dragDistance = 0;
+    gesturePage = pagedPage();
+  }, { passive: true });
+  scroll.addEventListener('touchmove', function (e) {
+    if (!touching || e.touches.length !== 1) return;
+    var dx = e.touches[0].clientX - touchStartX;
+    var dy = e.touches[0].clientY - touchStartY;
+    dragDistance = Math.max(dragDistance, Math.abs(dx) + Math.abs(dy));
+    if (Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy)) touchIntent = dx < 0 ? 1 : -1;
+  }, { passive: true });
+  scroll.addEventListener('touchend', function () {
+    if (!touching) return;
+    touching = false;
+    watchGestureClamp();
+    var intent = touchIntent;
+    touchIntent = 0;
+    if (intent === 0) return;
+    var w = viewportWidth();
+    var startPage = gesturePage >= 0 ? gesturePage : Math.round(touchStartLeft / w);
+    setTimeout(function () {
+      var left = scroll.scrollLeft;
+      // Only step in when the native snap fell back to the starting page: a real drag already
+      // moved far enough and must be left alone.
+      if (Math.abs(left - startPage * w) > w * 0.2) return;
+      var pages = pagedPages();
+      var target = Math.min(pages - 1, Math.max(0, startPage + intent));
+      scroll.scrollTo({ left: target * w, behavior: 'smooth' });
+    }, 320);
+  }, { passive: true });
+  scroll.addEventListener('touchcancel', function () {
+    touching = false;
+    touchIntent = 0;
+    watchGestureClamp();
+  }, { passive: true });
+
   scroll.addEventListener('scroll', function () {
+    lastScrollAt = performance.now();
     if (restoring) return;
-    if (scrollTimer) clearTimeout(scrollTimer);
-    scrollTimer = setTimeout(report, 180);
+    // Throttle (not debounce): the page number and progress must keep updating while the page is
+    // still moving, not only after the finger lifts.
+    if (scrollTimer) return;
+    scrollTimer = setTimeout(function () {
+      scrollTimer = null;
+      report();
+    }, 90);
   }, { passive: true });
   document.addEventListener('click', function (e) {
     // In-book links are not navigable inside the reader shell: swallow them instead of letting the
     // WebView attempt a navigation that would leave a blank page.
     var anchor = e.target && e.target.closest ? e.target.closest('a') : null;
     if (anchor) { e.preventDefault(); }
-    if (mode !== 'vertical') return;
+    // A swipe that ends over the left/right tap zone must not also turn the page.
+    if (dragDistance > 24) return;
     var x = e.clientX || 0;
     var w = window.innerWidth || 1;
-    if (x > w / 3 && x < (w * 2 / 3)) {
-      try {
-        if (window['$BRIDGE_NAME'] && window['$BRIDGE_NAME'].onMiddle) {
-          window['$BRIDGE_NAME'].onMiddle();
-        }
-      } catch (err) {}
-    }
+    try {
+      if (window['$BRIDGE_NAME'] && window['$BRIDGE_NAME'].onTap) {
+        window['$BRIDGE_NAME'].onTap(Math.min(1, Math.max(0, x / w)));
+      }
+    } catch (err) {}
   }, { passive: false });
   function appendChapters(html) {
     if (!html) return;
     book.insertAdjacentHTML('beforeend', html);
-    report();
+    refreshSnapPoints();
+    report(true);
+    // Inline illustrations decode asynchronously and add columns: the snap markers must follow,
+    // otherwise a later fling has no snap target for the new pages and can run past them.
+    whenImagesReady(function () { refreshSnapPoints(); report(true); });
   }
   function prependChapters(html) {
     if (!html) return;
-    var oldWidth = scroll.scrollWidth;
-    var oldHeight = scroll.scrollHeight;
+    var paged = mode === 'paged';
+    var oldSize = paged ? scroll.scrollWidth : scroll.scrollHeight;
+    var anchor = paged ? scroll.scrollLeft : scroll.scrollTop;
     book.insertAdjacentHTML('afterbegin', html);
-    // 保持当前阅读位置：前面插入的内容占用了新宽度/高度，补偿滚动偏移。
-    if (mode === 'paged') {
-      scroll.scrollLeft += Math.max(0, scroll.scrollWidth - oldWidth);
-    } else {
-      scroll.scrollTop += Math.max(0, scroll.scrollHeight - oldHeight);
+    // 保持当前阅读位置：前插的内容（尤其内联插图）会同步/异步地增加文档尺寸，按增量补偿滚动偏移。
+    function compensate() {
+      var size = paged ? scroll.scrollWidth : scroll.scrollHeight;
+      var added = size - oldSize;
+      if (added > 0) {
+        if (paged) scroll.scrollLeft = anchor + added;
+        else scroll.scrollTop = anchor + added;
+      }
+      // Late image loads change the page count: keep the snap targets in sync with the new DOM.
+      refreshSnapPoints();
+      report(true);
     }
-    report();
+    refreshSnapPoints();
+    compensate();
+    whenImagesReady(compensate);
   }
   window.__reader = {
     apply: apply,
     turn: turn,
+    turnInstant: turnInstant,
+    turnFast: turnFast,
     restore: restore,
     scrollViewport: scrollViewport,
     state: report,

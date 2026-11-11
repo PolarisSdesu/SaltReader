@@ -1,12 +1,15 @@
 package moe.gbxin.saltreader.ui.reader
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.util.Size
 import android.view.WindowManager
-import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
@@ -16,7 +19,6 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -32,57 +34,29 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.rounded.ArrowBack
-import androidx.compose.material.icons.rounded.Swipe
-import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material.icons.rounded.ViewAgenda
+import androidx.compose.material3.Surface
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.FilledTonalButton
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.HorizontalFloatingToolbar
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.ui.unit.DpOffset
-import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SheetValue
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.rememberBottomSheetState
-import androidx.compose.material3.rememberSliderState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -90,14 +64,12 @@ import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
@@ -105,7 +77,6 @@ import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -114,17 +85,15 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
-import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -145,14 +114,15 @@ import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.AppSettings
 import moe.gbxin.saltreader.data.ComicBook
-import moe.gbxin.saltreader.data.READER_FONT_SIZE_MAX_SP
-import moe.gbxin.saltreader.data.READER_FONT_SIZE_MIN_SP
 import moe.gbxin.saltreader.data.ReaderBackground
 import moe.gbxin.saltreader.data.RegionPage
 import moe.gbxin.saltreader.data.ReaderMode
+import moe.gbxin.saltreader.data.ReaderPageInfo
 import moe.gbxin.saltreader.data.ReadingDirection
+import moe.gbxin.saltreader.ui.components.BatteryIndicator
 import moe.gbxin.saltreader.ui.components.CustomColorPickerDialog
 import moe.gbxin.saltreader.ui.components.SaltLoading
+import moe.gbxin.saltreader.ui.settings.ReaderSettingsActivity
 import moe.gbxin.saltreader.ui.theme.pageBackgroundColor
 
 /**
@@ -346,6 +316,7 @@ private fun ReaderContent(
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialPage)
     val scope = rememberCoroutineScope()
     val view = LocalView.current
+    val context = LocalContext.current
     val density = LocalDensity.current
     val configuration = LocalConfiguration.current
     val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
@@ -355,7 +326,10 @@ private fun ReaderContent(
     // UI-only state survives rotation / process-death restore so a settings sheet that was open
     // (or a hidden toolbar) does not spring back to its default.
     var chromeVisible by rememberSaveable { mutableStateOf(true) }
-    var showSettings by rememberSaveable { mutableStateOf(false) }
+    var activePanel by rememberSaveable { mutableStateOf(ReaderChromePanel.NONE) }
+    LaunchedEffect(chromeVisible) {
+        if (!chromeVisible) activePanel = ReaderChromePanel.NONE
+    }
     var showCustomBackground by rememberSaveable { mutableStateOf(false) }
     // Zoom is transient: it is reset whenever the pager settles on a different page.
     var zoomed by remember { mutableStateOf(false) }
@@ -384,15 +358,17 @@ private fun ReaderContent(
         readerColorFilter(settings.grayscale, settings.invertColors)
     }
 
-    // System bar icons follow whatever is actually drawn behind them: the reader background when
-    // the chrome is hidden, the blended top bar / bottom scrim when it is visible.
-    val topBarColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f)
-    val statusBarBackground =
-        if (chromeVisible) blendOver(readerBackground, topBarColor) else readerBackground
-    val navigationBarBackground =
-        if (chromeVisible) blendOver(readerBackground, Color.Black.copy(alpha = 0.38f)) else readerBackground
-    val lightStatusBarIcons = statusBarBackground.luminance() > 0.5f
-    val lightNavigationBarIcons = navigationBarBackground.luminance() > 0.5f
+    // Comic chrome uses the reading background colour itself, so the menu blends into the page.
+    val chromeBarColor = readerBackground
+    val chromeContentColor = when {
+        readerBackground == Color.Black -> Color.White
+        readerBackground.luminance() < 0.5f -> Color(0xFFEDE6DD)
+        else -> Color(0xFF2A2622)
+    }
+    val statusBarBackground = chromeBarColor
+    val navigationBarBackground = chromeBarColor
+    val lightStatusBarIcons = chromeBarColor.luminance() > 0.5f
+    val lightNavigationBarIcons = lightStatusBarIcons
     val themeBackgroundIsLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
 
     val direction = book.direction ?: settings.readingDirection
@@ -554,6 +530,12 @@ private fun ReaderContent(
                 .fillMaxSize()
                 .pointerInput(settings.readerMode, direction, verticalZoomed) {
                     detectTapGestures { offset ->
+                        // While a settings panel is open, a tap on the page only dismisses that
+                        // panel; it must not turn the page (side thirds included).
+                        if (activePanel != ReaderChromePanel.NONE) {
+                            activePanel = ReaderChromePanel.NONE
+                            return@detectTapGestures
+                        }
                         // A zoomed page consumes drags; taps must not turn the page underneath it.
                         if (liveZoomed.value) return@detectTapGestures
                         val third = size.width / 3f
@@ -726,6 +708,8 @@ private fun ReaderContent(
                     vm.updateProgress(currentPageIndex())
                     onBack()
                 },
+                containerColor = chromeBarColor,
+                contentColor = chromeContentColor,
             )
         }
 
@@ -735,46 +719,103 @@ private fun ReaderContent(
             exit = fadeOut() + slideOutVertically { it / 3 },
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
-            ReaderBottomBar(
-                page = currentPageState,
-                count = count,
-                mode = settings.readerMode,
-                onGoToPage = { page -> jumpTo(page) },
-                onToggleMode = {
-                    onSettingsChange {
-                        it.copy(readerMode = if (it.readerMode == ReaderMode.PAGED) ReaderMode.VERTICAL else ReaderMode.PAGED)
-                    }
-                },
-                onOpenSettings = { showSettings = true },
-            )
+            Surface(color = chromeBarColor, contentColor = chromeContentColor) {
+                Column(
+                    Modifier
+                        .fillMaxWidth()
+                        .navigationBarsPadding()
+                        .padding(bottom = 4.dp)
+                        .animateContentSize(),
+                ) {
+                ReaderBottomBar(
+                    progress = {
+                        if (count > 1) currentPageState.value.toFloat() / (count - 1).toFloat() else 0f
+                    },
+                    label = {
+                        val percent = if (count > 1) {
+                            (currentPageState.value.toFloat() / (count - 1).toFloat() * 100f)
+                                .roundToInt()
+                                .coerceIn(0, 100)
+                        } else {
+                            0
+                        }
+                        stringResource(
+                            R.string.reader_progress_combo,
+                            percent,
+                            currentPageState.value + 1,
+                            count,
+                        )
+                    },
+                    onJump = { fraction ->
+                        jumpTo((fraction * (count - 1)).roundToInt().coerceIn(0, count - 1))
+                    },
+                    progressLabelSizeSp = settings.readerProgressLabelSizeSp,
+                    activePanel = activePanel,
+                    onThemeToggle = {
+                        activePanel = if (activePanel == ReaderChromePanel.THEME) {
+                            ReaderChromePanel.NONE
+                        } else {
+                            ReaderChromePanel.THEME
+                        }
+                    },
+                    onOpenToc = null,
+                    onOpenSettings = {
+                        context.startActivity(Intent(context, ReaderSettingsActivity::class.java))
+                    },
+                    containerColor = chromeBarColor,
+                    contentColor = chromeContentColor,
+                )
+                // Same flat bottom surface as the toolbar: no separate slide/expand animation.
+                when (activePanel) {
+                    ReaderChromePanel.THEME -> ReaderThemePanel(
+                        settings = settings,
+                        onSettingsChange = onSettingsChange,
+                        onCustomBackground = { showCustomBackground = true },
+                        containerColor = chromeBarColor,
+                        contentColor = chromeContentColor,
+                    )
+
+                    else -> Unit
+                }
+                }
+            }
         }
 
+        // WeChat-Reading-style page indicator: quiet bottom-end "x / y" while the chrome is hidden.
         AnimatedVisibility(
-            visible = !chromeVisible && settings.showPageNumber,
+            visible = !chromeVisible && settings.readerPageInfo != ReaderPageInfo.HIDDEN,
             enter = fadeIn(),
             exit = fadeOut(),
-            modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .navigationBarsPadding()
+                .padding(end = 18.dp, bottom = 12.dp),
         ) {
             PageNumberIndicator(
                 page = currentPageState,
                 count = count,
-                lightBackground = readerBackground.luminance() >= 0.5f,
+                mode = settings.readerPageInfo,
+                textSizeSp = settings.readerPageIndicatorSizeSp,
+            )
+        }
+
+        // Quiet battery read-out in the lower-left corner, mirroring the page indicator on the right.
+        AnimatedVisibility(
+            visible = !chromeVisible && settings.readerBatteryIndicator,
+            enter = fadeIn(),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .navigationBarsPadding()
+                .padding(start = 18.dp, bottom = 12.dp),
+        ) {
+            BatteryIndicator(
+                textSizeSp = settings.readerPageIndicatorSizeSp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
             )
         }
     }
 
-    if (showSettings) {
-        ReaderControlsSheet(
-            currentPage = currentPageState.value,
-            count = count,
-            settings = settings,
-            direction = direction,
-            onDirection = { vm.setDirection(it) },
-            onDismiss = { showSettings = false },
-            onSettingsChange = onSettingsChange,
-            onCustomBackground = { showCustomBackground = true },
-        )
-    }
     if (showCustomBackground) {
         CustomColorPickerDialog(
             initialColor = settings.customBackgroundColor,
@@ -797,141 +838,46 @@ internal fun blendOver(base: Color, overlay: Color): Color {
     )
 }
 
+/** 无 chrome 时的页码/进度：右下角低调文字（参考微信读书），可在设置里切换显示内容。 */
 @Composable
-internal fun ReaderTopBar(book: ComicBook, onBack: () -> Unit) {
-    Surface(
-        color = MaterialTheme.colorScheme.surface.copy(alpha = 0.94f),
-        contentColor = MaterialTheme.colorScheme.onSurface,
-    ) {
-        Row(
-            Modifier.fillMaxWidth().statusBarsPadding().height(56.dp).padding(horizontal = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.AutoMirrored.Rounded.ArrowBack, contentDescription = stringResource(R.string.reader_back))
-            }
-            Text(
-                book.title,
-                style = MaterialTheme.typography.titleMedium,
-                maxLines = 1,
-                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(horizontal = 4.dp),
-            )
-        }
+private fun PageNumberIndicator(page: State<Int>, count: Int, mode: ReaderPageInfo, textSizeSp: Int) {
+    val currentPage = page.value.coerceIn(0, (count - 1).coerceAtLeast(0))
+    val progress = if (count > 1) currentPage.toFloat() / (count - 1).toFloat() else 0f
+    val label = if (mode == ReaderPageInfo.PAGES) {
+        stringResource(R.string.reader_page_indicator, currentPage + 1, count)
+    } else {
+        stringResource(R.string.reader_percent, (progress * 100f).roundToInt().coerceIn(0, 100))
     }
+    Text(
+        label,
+        style = MaterialTheme.typography.labelMedium.copy(
+            fontSize = textSizeSp.sp,
+            fontFeatureSettings = "tnum",
+        ),
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+    )
 }
 
-@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+/**
+ * Wrapper that keeps the progress-panel state reads inside its own recomposition scope: reading
+ * [pageState] in [ReaderContent] itself would recompose the whole pager on every page turn.
+ */
 @Composable
-private fun ReaderBottomBar(
-    page: State<Int>,
+private fun ImageReaderProgressPanel(
+    pageState: State<Int>,
     count: Int,
-    mode: ReaderMode,
-    onGoToPage: (Int) -> Unit,
-    onToggleMode: () -> Unit,
-    onOpenSettings: () -> Unit,
+    onJump: (Int) -> Unit,
 ) {
-    // 只有底栏订阅翻页状态：翻页时重组的范围控制在工具条内部。
-    val currentPage = page.value
-    var pendingJump by remember { mutableStateOf<Int?>(null) }
-    var lastTickPage by remember { mutableStateOf(currentPage) }
-    val haptics = LocalHapticFeedback.current
-    val sliderMax = (count - 1).coerceAtLeast(1)
-    val toggleModeLabel = stringResource(
-        if (mode == ReaderMode.PAGED) R.string.reader_switch_to_vertical else R.string.reader_switch_to_paged,
+    val page = pageState.value.coerceIn(0, (count - 1).coerceAtLeast(0))
+    val progress = if (count > 1) page.toFloat() / (count - 1).toFloat() else 0f
+    ReaderProgressPanel(
+        progress = progress,
+        percentLabel = stringResource(R.string.reader_percent, (progress * 100f).roundToInt().coerceIn(0, 100)),
+        pageLabel = stringResource(R.string.reader_page_indicator, page + 1, count),
+        onJump = { fraction ->
+            onJump((fraction * (count - 1)).roundToInt().coerceIn(0, count - 1))
+        },
     )
-    val settingsLabel = stringResource(R.string.reader_settings_title)
-    // Material3 1.5 state-based Slider: the state is the single source of truth for the thumb.
-    val sliderState = rememberSliderState(
-        value = currentPage.toFloat().coerceIn(0f, sliderMax.toFloat()),
-        trackRange = 0f..sliderMax.toFloat(),
-    )
-    // Follow page changes made elsewhere (swipe, volume keys, tap zones) unless the user is actively
-    // dragging or a slider jump is still animating.
-    LaunchedEffect(currentPage) {
-        if (sliderState.isDragging) return@LaunchedEffect
-        val jump = pendingJump
-        if (jump == null) {
-            sliderState.value = currentPage.toFloat().coerceIn(0f, sliderMax.toFloat())
-        } else if (currentPage == jump) {
-            // 跳转动画已到达目标页，滑杆交还给翻页状态。
-            pendingJump = null
-        }
-    }
-    Box(
-        Modifier.fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.38f))))
-            .navigationBarsPadding()
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-    ) {
-        HorizontalFloatingToolbar(
-            expanded = true,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            IconButton(onClick = onToggleMode) {
-                Icon(
-                    if (mode == ReaderMode.PAGED) Icons.Rounded.ViewAgenda else Icons.Rounded.Swipe,
-                    contentDescription = toggleModeLabel,
-                )
-            }
-            Column(Modifier.weight(1f).padding(horizontal = 8.dp)) {
-                Slider(
-                    state = sliderState,
-                    onValueChange = { value ->
-                        // The state-based overload leaves SliderState untouched when an
-                        // onValueChange callback is supplied, so update it explicitly.
-                        sliderState.value = value
-                        pendingJump = null
-                        val page = value.roundToInt().coerceIn(0, count - 1)
-                        if (page != lastTickPage) {
-                            lastTickPage = page
-                            haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
-                        }
-                    },
-                    onValueChangeFinished = {
-                        val target = sliderState.value.roundToInt().coerceIn(0, count - 1)
-                        pendingJump = target
-                        lastTickPage = target
-                        onGoToPage(target)
-                    },
-                    // A single-page book has no meaningful range; disable instead of a 0..1 slider.
-                    enabled = count > 1,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    stringResource(
-                        R.string.reader_page_indicator,
-                        sliderState.value.roundToInt().coerceIn(0, count - 1) + 1,
-                        count,
-                    ),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            IconButton(onClick = onOpenSettings) {
-                Icon(Icons.Rounded.Tune, contentDescription = settingsLabel)
-            }
-        }
-    }
-}
-
-/** 无 chrome 时的页码浮层；独立组件，翻页只重组这一个圆角标签。 */
-@Composable
-private fun PageNumberIndicator(page: State<Int>, count: Int, lightBackground: Boolean) {
-    val currentPage = page.value
-    Surface(
-        shape = CircleShape,
-        color = if (lightBackground) Color.White.copy(alpha = 0.72f) else Color.Black.copy(alpha = 0.55f),
-        contentColor = if (lightBackground) Color(0xFF29231D) else Color(0xFFEDE0D4),
-    ) {
-        Text(
-            stringResource(R.string.reader_page_indicator, currentPage + 1, count),
-            style = MaterialTheme.typography.labelMedium,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-        )
-    }
 }
 
 private sealed interface PageState {
@@ -1048,29 +994,39 @@ private fun TallVerticalPage(
         }
 
         val rp = regionPage
-        LaunchedEffect(rp, bucket, pageHeightPx) {
+        LaunchedEffect(rp, pageHeightPx) {
             val page = rp ?: return@LaunchedEffect
-            if (bucket < 0 || pageHeightPx <= 0f) return@LaunchedEffect
-            val scale = pageSize.height / pageHeightPx
-            val viewport = viewportHeightPx.toFloat()
-            val viewportImagePx = viewport * scale
-            val bucketTopDisplay = bucket * viewport * 0.75f
-            val marginDisplay = viewport * 0.75f
-            val top = ((bucketTopDisplay - marginDisplay) * scale).toInt().coerceIn(0, pageSize.height - 1)
-            val bottom = ((bucketTopDisplay + viewport + marginDisplay) * scale).toInt()
-                .coerceIn(top + 1, pageSize.height)
-            // 优先保持解码清晰度：区域过高时裁剪缓冲区高度，而不是提高 inSampleSize。
-            val maxPixels = 12L * 1024L * 1024L / 4L
-            val maxChunkHeight = (maxPixels / pageSize.width).toInt()
-                .coerceAtLeast(viewportImagePx.toInt().coerceAtLeast(1))
-            val chunkBottom = min(bottom, top + maxChunkHeight).coerceAtLeast(top + 1)
-            val rect = Rect(0, top, pageSize.width, chunkBottom)
-            val sample = regionSample(rect.width(), rect.height())
-            val decoded = withContext(Dispatchers.IO) { page.decodeRegion(rect, sample) }
-            if (decoded != null) {
-                slice = RegionSlice(decoded, top / scale, rect.height() / scale)
+            snapshotFlow { bucket }
+                .distinctUntilChanged()
+                .collect { requestedBucket ->
+                    if (requestedBucket < 0 || pageHeightPx <= 0f) return@collect
+                    // Do not cancel a blocking BitmapRegionDecoder call every time another bucket
+                    // arrives. Keep one decode in flight, drop stale results, then decode only the
+                    // latest visible bucket; repeated cancellation used to pile up obsolete native
+                    // decodes during a fast fling and leave the viewport waiting for the next tile.
+                    val decodeBucket = bucket
+                    val scale = pageSize.height / pageHeightPx
+                    val viewport = viewportHeightPx.toFloat()
+                    val viewportImagePx = viewport * scale
+                    val bucketTopDisplay = decodeBucket * viewport * 0.75f
+                    val marginDisplay = viewport * 0.75f
+                    val top = ((bucketTopDisplay - marginDisplay) * scale)
+                        .toInt().coerceIn(0, pageSize.height - 1)
+                    val bottom = ((bucketTopDisplay + viewport + marginDisplay) * scale)
+                        .toInt().coerceIn(top + 1, pageSize.height)
+                    // 优先保持解码清晰度：区域过高时裁剪缓冲区高度，而不是提高 inSampleSize。
+                    val maxPixels = 12L * 1024L * 1024L / 4L
+                    val maxChunkHeight = (maxPixels / pageSize.width).toInt()
+                        .coerceAtLeast(viewportImagePx.toInt().coerceAtLeast(1))
+                    val chunkBottom = min(bottom, top + maxChunkHeight).coerceAtLeast(top + 1)
+                    val rect = Rect(0, top, pageSize.width, chunkBottom)
+                    val sample = regionSample(rect.width(), rect.height())
+                    val decoded = withContext(Dispatchers.IO) { page.decodeRegion(rect, sample) }
+                    if (decoded != null && decodeBucket == bucket) {
+                        slice = RegionSlice(decoded, top / scale, rect.height() / scale)
+                    }
+                }
             }
-        }
 
         Box(
             Modifier
@@ -1238,277 +1194,6 @@ private fun ZoomablePage(
             contentScale = ContentScale.Fit,
             colorFilter = colorFilter,
         )
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class)
-@Composable
-internal fun ReaderControlsSheet(
-    currentPage: Int,
-    count: Int,
-    settings: AppSettings,
-    direction: ReadingDirection,
-    onDirection: (ReadingDirection) -> Unit,
-    onDismiss: () -> Unit,
-    onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
-    onCustomBackground: () -> Unit = {},
-    isTextBook: Boolean = false,
-) {
-    // Material3 1.5 replacement for the deprecated rememberModalBottomSheetState: restricting
-    // enabledValues to Hidden/Expanded keeps the old skipPartiallyExpanded = true behaviour.
-    val sheetState = rememberBottomSheetState(
-        initialValue = SheetValue.Hidden,
-        enabledValues = setOf(SheetValue.Hidden, SheetValue.Expanded),
-    )
-
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(
-            Modifier.fillMaxWidth().navigationBarsPadding()
-                .padding(start = 24.dp, end = 24.dp, bottom = 24.dp)
-                .animateContentSize(
-                    animationSpec = spring(dampingRatio = 0.9f, stiffness = 320f),
-                )
-                .verticalScroll(rememberScrollState()),
-        ) {
-            Text(stringResource(R.string.reader_settings_title), style = MaterialTheme.typography.headlineSmall)
-            Spacer(Modifier.height(14.dp))
-            if (isTextBook) {
-                Spacer(Modifier.height(6.dp))
-            }
-            ReaderMenuRow(
-                title = stringResource(R.string.reader_section_mode),
-                selected = settings.readerMode,
-                options = listOf(
-                    ReaderMode.PAGED to stringResource(R.string.reader_mode_paged),
-                    ReaderMode.VERTICAL to stringResource(R.string.reader_mode_vertical),
-                ),
-                onSelect = { mode -> onSettingsChange { it.copy(readerMode = mode) } },
-            )
-            ReaderMenuRow(
-                title = stringResource(R.string.reader_section_direction),
-                selected = direction,
-                options = listOf(
-                    ReadingDirection.LTR to stringResource(R.string.reader_direction_ltr),
-                    ReadingDirection.RTL to stringResource(R.string.reader_direction_rtl),
-                ),
-                onSelect = onDirection,
-            )
-            ReaderMenuRow(
-                title = stringResource(R.string.reader_section_background),
-                selected = settings.readerBackground,
-                options = listOf(
-                    ReaderBackground.AUTO to stringResource(R.string.reader_background_auto),
-                    ReaderBackground.WHITE to stringResource(R.string.reader_background_white),
-                    ReaderBackground.INK to stringResource(R.string.reader_background_ink),
-                    ReaderBackground.CUSTOM to stringResource(R.string.reader_background_custom),
-                ),
-                onSelect = { background ->
-                    if (background == ReaderBackground.CUSTOM) onCustomBackground()
-                    else onSettingsChange { it.copy(readerBackground = background) }
-                },
-            )
-            if (isTextBook) {
-                Spacer(Modifier.height(10.dp))
-                // Font size only affects the reflowable text reader; committed on release so
-                // re-layout happens once per adjustment.
-                val fontMin = READER_FONT_SIZE_MIN_SP.toFloat()
-                val fontMax = READER_FONT_SIZE_MAX_SP.toFloat()
-                val fontSliderState = rememberSliderState(
-                    value = settings.readerFontSizeSp.toFloat().coerceIn(fontMin, fontMax),
-                    steps = (READER_FONT_SIZE_MAX_SP - READER_FONT_SIZE_MIN_SP - 1).coerceAtLeast(0),
-                    trackRange = fontMin..fontMax,
-                )
-                LaunchedEffect(settings.readerFontSizeSp) {
-                    if (!fontSliderState.isDragging) {
-                        fontSliderState.value =
-                            settings.readerFontSizeSp.toFloat().coerceIn(fontMin, fontMax)
-                    }
-                }
-                Spacer(Modifier.height(10.dp))
-                Text(stringResource(R.string.reader_font_size), style = MaterialTheme.typography.titleSmall)
-                Slider(
-                    state = fontSliderState,
-                    onValueChange = { value -> fontSliderState.value = value },
-                    onValueChangeFinished = {
-                        val sp = fontSliderState.value.roundToInt().coerceIn(
-                            READER_FONT_SIZE_MIN_SP,
-                            READER_FONT_SIZE_MAX_SP,
-                        )
-                        onSettingsChange { it.copy(readerFontSizeSp = sp) }
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-                Text(
-                    stringResource(
-                        R.string.reader_font_size_value,
-                        fontSliderState.value.roundToInt()
-                            .coerceIn(READER_FONT_SIZE_MIN_SP, READER_FONT_SIZE_MAX_SP),
-                    ),
-                    style = MaterialTheme.typography.labelLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            Spacer(Modifier.height(10.dp))
-            ToggleRow(stringResource(R.string.reader_show_page_number), settings.showPageNumber) {
-                onSettingsChange { it.copy(showPageNumber = it.showPageNumber.not()) }
-            }
-            ToggleRow(stringResource(R.string.reader_keep_screen_on), settings.keepScreenOn) {
-                onSettingsChange { it.copy(keepScreenOn = it.keepScreenOn.not()) }
-            }
-            ToggleRow(stringResource(R.string.reader_volume_keys), settings.volumeKeyPaging) {
-                onSettingsChange { it.copy(volumeKeyPaging = it.volumeKeyPaging.not()) }
-            }
-            Spacer(Modifier.height(10.dp))
-            if (isTextBook) {
-                Text(
-                    stringResource(R.string.reader_text_filters_note),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            } else {
-                ToggleRow(stringResource(R.string.reader_grayscale), settings.grayscale) {
-                    onSettingsChange { it.copy(grayscale = it.grayscale.not()) }
-                }
-                ToggleRow(stringResource(R.string.reader_invert_colors), settings.invertColors) {
-                    onSettingsChange { it.copy(invertColors = it.invertColors.not()) }
-                }
-            }
-        }
-    }
-}
-
-/** Menu-style option row used by the reader settings sheet (theme/language style dropdown). */
-@Composable
-private fun <T> ReaderMenuRow(
-    title: String,
-    selected: T,
-    options: List<Pair<T, String>>,
-    onSelect: (T) -> Unit,
-) {
-    var expanded by remember { mutableStateOf(false) }
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .heightIn(min = 56.dp)
-                .clickable { expanded = true }
-                .padding(vertical = 8.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(title, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-            Text(
-                options.firstOrNull { it.first == selected }?.second.orEmpty(),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Icon(
-                Icons.Filled.ArrowDropDown,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        val menuWidth = 220.dp
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            offset = DpOffset(x = (maxWidth - menuWidth).coerceAtLeast(0.dp), y = 0.dp),
-            modifier = Modifier.width(menuWidth),
-        ) {
-            options.forEach { (value, label) ->
-                DropdownMenuItem(
-                    text = { Text(label) },
-                    leadingIcon = if (value == selected) {
-                        { Icon(Icons.Filled.Check, contentDescription = null) }
-                    } else {
-                        null
-                    },
-                    onClick = {
-                        expanded = false
-                        onSelect(value)
-                    },
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReaderTabRow(
-    labels: List<String>,
-    selectedTab: Int,
-    indicatorPosition: Float,
-    onSelect: (Int) -> Unit,
-) {
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val tabWidth = maxWidth / labels.size
-        Column {
-            Row(Modifier.fillMaxWidth()) {
-                labels.forEachIndexed { index, label ->
-                    // `selectable` with Role.Tab exposes the selected state and the proper "tab"
-                    // role to TalkBack, unlike a plain clickable Box.
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .selectable(
-                                selected = selectedTab == index,
-                                role = Role.Tab,
-                                onClick = { onSelect(index) },
-                            )
-                            .padding(vertical = 14.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.titleSmall,
-                            color = if (selectedTab == index) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
-            Box(Modifier.fillMaxWidth().height(3.dp)) {
-                Box(
-                    Modifier
-                        .width(tabWidth)
-                        .offset(x = tabWidth * indicatorPosition.coerceIn(0f, 2f))
-                        .height(3.dp)
-                        .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(2.dp)),
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun <T> ChoiceGroup(
-    title: String,
-    options: List<Pair<T, String>>,
-    selected: T,
-    onSelect: (T) -> Unit,
-) {
-    Text(title, style = MaterialTheme.typography.titleSmall)
-    Spacer(Modifier.height(8.dp))
-    Row(
-        Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        options.forEach { (value, label) ->
-            FilterChip(
-                selected = value == selected,
-                onClick = { onSelect(value) },
-                label = { Text(label) },
-            )
-        }
-    }
-}
-
-@Composable
-private fun ToggleRow(title: String, checked: Boolean, onToggle: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 56.dp).padding(vertical = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(title, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = { onToggle() })
     }
 }
 

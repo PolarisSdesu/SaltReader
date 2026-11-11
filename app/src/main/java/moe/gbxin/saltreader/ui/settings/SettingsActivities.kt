@@ -47,6 +47,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.BatteryFull
 import androidx.compose.material.icons.outlined.Contrast
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Delete
@@ -54,6 +55,9 @@ import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FilterBAndW
 import androidx.compose.material.icons.outlined.FolderOpen
 import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material.icons.automirrored.outlined.FormatIndentIncrease
+import androidx.compose.material.icons.outlined.FormatLineSpacing
+import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Numbers
@@ -79,6 +83,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -123,8 +128,20 @@ import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.ImportReport
 import moe.gbxin.saltreader.data.LibraryRoot
+import moe.gbxin.saltreader.data.READER_FONT_SIZE_MAX_SP
+import moe.gbxin.saltreader.data.READER_FONT_SIZE_MIN_SP
+import moe.gbxin.saltreader.data.READER_LINE_HEIGHT_MAX
+import moe.gbxin.saltreader.data.READER_LINE_HEIGHT_MIN
+import moe.gbxin.saltreader.data.READER_PAGE_MARGIN_MAX
+import moe.gbxin.saltreader.data.READER_PAGE_INDICATOR_SIZE_MAX_SP
+import moe.gbxin.saltreader.data.READER_PAGE_INDICATOR_SIZE_MIN_SP
+import moe.gbxin.saltreader.data.READER_PAGE_MARGIN_MIN
+import moe.gbxin.saltreader.data.READER_PROGRESS_LABEL_SIZE_MAX_SP
+import moe.gbxin.saltreader.data.READER_PROGRESS_LABEL_SIZE_MIN_SP
 import moe.gbxin.saltreader.data.ReaderBackground
+import moe.gbxin.saltreader.data.ReaderFontFamily
 import moe.gbxin.saltreader.data.ReaderMode
+import moe.gbxin.saltreader.data.ReaderPageInfo
 import moe.gbxin.saltreader.data.ReadingDirection
 import moe.gbxin.saltreader.data.ThemeMode
 import moe.gbxin.saltreader.ui.LocalizedActivity
@@ -142,6 +159,7 @@ import moe.gbxin.saltreader.util.setAppLanguage
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 abstract class BaseSettingsActivity : LocalizedActivity() {
     @Composable
@@ -446,6 +464,74 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                     labelRes = { it.labelRes() },
                 ) { direction -> app.settings.update { it.copy(readingDirection = direction) } }
             }
+            SettingsSectionLabel(stringResource(R.string.settings_reader_section_typography))
+            SettingsCard {
+                SettingsMenuRow(
+                    icon = Icons.Outlined.FormatSize,
+                    title = stringResource(R.string.settings_reader_font_family),
+                    selected = settings.readerFontFamily,
+                    options = ReaderFontFamily.entries.toList(),
+                    labelRes = { it.labelRes() },
+                ) { family -> app.settings.update { it.copy(readerFontFamily = family) } }
+                SettingsSliderRow(
+                    icon = Icons.Outlined.FormatSize,
+                    title = stringResource(R.string.settings_reader_font_size),
+                    valueText = stringResource(R.string.reader_font_size_value, settings.readerFontSizeSp),
+                    value = settings.readerFontSizeSp.toFloat(),
+                    valueRange = READER_FONT_SIZE_MIN_SP.toFloat()..READER_FONT_SIZE_MAX_SP.toFloat(),
+                    steps = (READER_FONT_SIZE_MAX_SP - READER_FONT_SIZE_MIN_SP - 1).coerceAtLeast(0),
+                ) { value ->
+                    app.settings.update {
+                        it.copy(
+                            readerFontSizeSp = value.roundToInt()
+                                .coerceIn(READER_FONT_SIZE_MIN_SP, READER_FONT_SIZE_MAX_SP),
+                        )
+                    }
+                }
+                SettingsSliderRow(
+                    icon = Icons.Outlined.FormatLineSpacing,
+                    title = stringResource(R.string.settings_reader_line_spacing),
+                    valueText = stringResource(R.string.reader_line_height_value, settings.readerLineHeight),
+                    value = settings.readerLineHeight,
+                    valueRange = READER_LINE_HEIGHT_MIN..READER_LINE_HEIGHT_MAX,
+                    steps = ((READER_LINE_HEIGHT_MAX - READER_LINE_HEIGHT_MIN) * 10f).roundToInt() - 1,
+                ) { value ->
+                    val snapped = (value * 10f).roundToInt() / 10f
+                    app.settings.update {
+                        it.copy(readerLineHeight = snapped.coerceIn(READER_LINE_HEIGHT_MIN, READER_LINE_HEIGHT_MAX))
+                    }
+                }
+                SettingsSliderRow(
+                    icon = Icons.AutoMirrored.Outlined.FormatIndentIncrease,
+                    title = stringResource(R.string.settings_reader_page_margin),
+                    valueText = stringResource(R.string.reader_page_margin_value, settings.readerPageMarginDp),
+                    value = settings.readerPageMarginDp.toFloat(),
+                    valueRange = READER_PAGE_MARGIN_MIN.toFloat()..READER_PAGE_MARGIN_MAX.toFloat(),
+                    steps = (READER_PAGE_MARGIN_MAX - READER_PAGE_MARGIN_MIN - 1).coerceAtLeast(0),
+                ) { value ->
+                    app.settings.update {
+                        it.copy(
+                            readerPageMarginDp = value.roundToInt()
+                                .coerceIn(READER_PAGE_MARGIN_MIN, READER_PAGE_MARGIN_MAX),
+                        )
+                    }
+                }
+                SettingsSliderRow(
+                    icon = Icons.AutoMirrored.Outlined.FormatIndentIncrease,
+                    title = stringResource(R.string.settings_reader_progress_label_size),
+                    valueText = stringResource(R.string.reader_progress_label_size_value, settings.readerProgressLabelSizeSp),
+                    value = settings.readerProgressLabelSizeSp.toFloat(),
+                    valueRange = READER_PROGRESS_LABEL_SIZE_MIN_SP.toFloat()..READER_PROGRESS_LABEL_SIZE_MAX_SP.toFloat(),
+                    steps = (READER_PROGRESS_LABEL_SIZE_MAX_SP - READER_PROGRESS_LABEL_SIZE_MIN_SP - 1).coerceAtLeast(0),
+                ) { value ->
+                    app.settings.update {
+                        it.copy(
+                            readerProgressLabelSizeSp = value.roundToInt()
+                                .coerceIn(READER_PROGRESS_LABEL_SIZE_MIN_SP, READER_PROGRESS_LABEL_SIZE_MAX_SP),
+                        )
+                    }
+                }
+            }
             SettingsSectionLabel(stringResource(R.string.settings_reader_section_display))
             SettingsCard {
                 SettingsMenuRow(
@@ -455,6 +541,8 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                     options = listOf(
                         ReaderBackground.AUTO,
                         ReaderBackground.WHITE,
+                        ReaderBackground.SEPIA,
+                        ReaderBackground.GREEN,
                         ReaderBackground.INK,
                         ReaderBackground.CUSTOM,
                     ),
@@ -466,12 +554,34 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                         app.settings.update { it.copy(readerBackground = background) }
                     }
                 }
-                SettingsSwitchRow(
+                SettingsMenuRow(
                     icon = Icons.Outlined.Numbers,
-                    title = stringResource(R.string.settings_reader_show_page_number),
-                    supporting = stringResource(R.string.settings_reader_show_page_number_supporting),
-                    checked = settings.showPageNumber,
-                ) { app.settings.update { it.copy(showPageNumber = it.showPageNumber.not()) } }
+                    title = stringResource(R.string.settings_reader_page_info),
+                    selected = settings.readerPageInfo,
+                    options = ReaderPageInfo.entries.toList(),
+                    labelRes = { it.labelRes() },
+                ) { info -> app.settings.update { it.copy(readerPageInfo = info) } }
+                SettingsSliderRow(
+                    icon = Icons.Outlined.FormatSize,
+                    title = stringResource(R.string.settings_reader_page_indicator_size),
+                    valueText = stringResource(R.string.reader_page_indicator_size_value, settings.readerPageIndicatorSizeSp),
+                    value = settings.readerPageIndicatorSizeSp.toFloat(),
+                    valueRange = READER_PAGE_INDICATOR_SIZE_MIN_SP.toFloat()..READER_PAGE_INDICATOR_SIZE_MAX_SP.toFloat(),
+                    steps = (READER_PAGE_INDICATOR_SIZE_MAX_SP - READER_PAGE_INDICATOR_SIZE_MIN_SP - 1).coerceAtLeast(0),
+                ) { value ->
+                    app.settings.update {
+                        it.copy(
+                            readerPageIndicatorSizeSp = value.roundToInt()
+                                .coerceIn(READER_PAGE_INDICATOR_SIZE_MIN_SP, READER_PAGE_INDICATOR_SIZE_MAX_SP),
+                        )
+                    }
+                }
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.BatteryFull,
+                    title = stringResource(R.string.settings_reader_battery_indicator),
+                    supporting = stringResource(R.string.settings_reader_battery_indicator_supporting),
+                    checked = settings.readerBatteryIndicator,
+                ) { app.settings.update { it.copy(readerBatteryIndicator = it.readerBatteryIndicator.not()) } }
                 SettingsSwitchRow(
                     icon = Icons.Outlined.LightMode,
                     title = stringResource(R.string.settings_reader_keep_screen_on),
@@ -1359,6 +1469,37 @@ private fun SettingsInfoRow(label: String, value: String, onClick: (() -> Unit)?
     }
 }
 
+/** Slider row used for text-reader typography settings (font size / line spacing / margins). */
+@Composable
+private fun SettingsSliderRow(
+    icon: ImageVector,
+    title: String,
+    valueText: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    onValueChange: (Float) -> Unit,
+) {
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            SettingsIcon(icon)
+            Spacer(Modifier.width(16.dp))
+            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Text(
+                valueText,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Slider(
+            value = value.coerceIn(valueRange),
+            onValueChange = onValueChange,
+            valueRange = valueRange,
+            steps = steps,
+            modifier = Modifier.fillMaxWidth().padding(start = 40.dp),
+        )
+    }
+}
 /** Menu-style setting row: title + current value + right-aligned dropdown. */
 @Composable
 private fun <T> SettingsMenuRow(
@@ -1485,6 +1626,17 @@ private fun ThemeMode.labelRes(): Int = when (this) {
     ThemeMode.DARK -> R.string.settings_theme_dark
 }
 
+private fun ReaderFontFamily.labelRes(): Int = when (this) {
+    ReaderFontFamily.SYSTEM -> R.string.reader_font_family_system
+    ReaderFontFamily.SONG -> R.string.reader_font_family_song
+    ReaderFontFamily.HEI -> R.string.reader_font_family_hei
+}
+
+private fun ReaderPageInfo.labelRes(): Int = when (this) {
+    ReaderPageInfo.HIDDEN -> R.string.reader_page_info_hidden
+    ReaderPageInfo.PROGRESS -> R.string.reader_bar_progress
+    ReaderPageInfo.PAGES -> R.string.reader_page_info_pages
+}
 private fun ReaderMode.labelRes(): Int = when (this) {
     ReaderMode.PAGED -> R.string.settings_reader_mode_paged
     ReaderMode.VERTICAL -> R.string.settings_reader_mode_vertical
@@ -1498,6 +1650,8 @@ private fun ReadingDirection.labelRes(): Int = when (this) {
 private fun ReaderBackground.labelRes(): Int = when (this) {
     ReaderBackground.AUTO -> R.string.settings_background_auto
     ReaderBackground.WHITE -> R.string.settings_background_white
+    ReaderBackground.SEPIA -> R.string.settings_background_sepia
+    ReaderBackground.GREEN -> R.string.settings_background_green
     ReaderBackground.INK -> R.string.settings_background_ink
     ReaderBackground.CUSTOM -> R.string.settings_background_custom
 }

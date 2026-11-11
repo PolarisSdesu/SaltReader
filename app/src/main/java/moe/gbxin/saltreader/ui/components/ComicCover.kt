@@ -11,13 +11,13 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.ImageBitmap
@@ -34,6 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.data.ComicBook
+import moe.gbxin.saltreader.data.DerivedCoverRevision
 
 /**
  * Process-wide cover cache: covers are derived cache files, so evicting them is always safe.
@@ -69,9 +70,12 @@ private fun coverCacheKey(file: File, targetWidthPx: Int): String =
  */
 @Composable
 fun rememberCoverBitmap(file: File, targetWidthPx: Int = DEFAULT_TARGET_WIDTH_PX): ImageBitmap? {
-    // remember 只在 file/目标宽度变化时做一次 stat + 查表；命中即作为初始值同步返回，消除首帧闪烁。
-    val cached = remember(file, targetWidthPx) { peekCoverBitmap(file, targetWidthPx) }
-    val bitmap by produceState<ImageBitmap?>(initialValue = cached, file, targetWidthPx) {
+    // 派生封面写入后（例如文字版 EPUB 首次打开时从 OPF 提取封面）只递增 revision，不轮询文件；
+    // 这里把 revision 纳入 key，书架下次组合就能换掉占位图。
+    val revision by DerivedCoverRevision.revision.collectAsState()
+    // remember 只在 file/目标宽度/revision 变化时做一次 stat + 查表；命中即作为初始值同步返回，消除首帧闪烁。
+    val cached = remember(file, targetWidthPx, revision) { peekCoverBitmap(file, targetWidthPx) }
+    val bitmap by produceState<ImageBitmap?>(initialValue = cached, file, targetWidthPx, revision) {
         // produceState 的 initialValue 只在首次生效，key 变化时要显式写回当前 composition 的命中值；
         // 未命中才在 IO 线程解码。
         value = cached ?: withContext(Dispatchers.IO) {
@@ -134,12 +138,10 @@ fun ComicCover(
                 contentScale = ContentScale.Crop,
             )
         } else {
+            // Books without a real cover (e.g. an EPUB with no cover image) get a calm solid
+            // placeholder in the book's accent colour; a gradient reads as a loading state.
             Box(
-                Modifier.fillMaxSize().background(
-                    Brush.linearGradient(
-                        listOf(accent, accent.copy(alpha = 0.85f), backdrop),
-                    )
-                ),
+                Modifier.fillMaxSize().background(accent),
                 contentAlignment = Alignment.Center,
             ) {
                 if (showTitleFallback) {

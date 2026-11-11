@@ -10,7 +10,33 @@ enum class LibraryLayout { COMPACT, COMFORTABLE, COVER_ONLY, LIST }
 /** Font size for the reflowable (text EPUB) reader. */
 const val READER_FONT_SIZE_MIN_SP = 14
 const val READER_FONT_SIZE_MAX_SP = 28
-const val READER_FONT_SIZE_DEFAULT_SP = 18
+const val READER_FONT_SIZE_DEFAULT_SP = 16
+
+/** Line height multiplier for the reflowable (text EPUB) reader. */
+const val READER_LINE_HEIGHT_MIN = 1.2f
+const val READER_LINE_HEIGHT_MAX = 2.4f
+const val READER_LINE_HEIGHT_DEFAULT = 1.8f
+
+/** Horizontal page margin (dp) for the reflowable (text EPUB) reader, WeChat-Reading style. */
+const val READER_PAGE_MARGIN_MIN = 16
+const val READER_PAGE_MARGIN_MAX = 44
+const val READER_PAGE_MARGIN_DEFAULT = 30
+const val READER_PROGRESS_LABEL_SIZE_MIN_SP = 10
+const val READER_PROGRESS_LABEL_SIZE_MAX_SP = 16
+const val READER_PROGRESS_LABEL_SIZE_DEFAULT_SP = 12
+const val READER_PAGE_INDICATOR_SIZE_MIN_SP = 10
+const val READER_PAGE_INDICATOR_SIZE_MAX_SP = 16
+const val READER_PAGE_INDICATOR_SIZE_DEFAULT_SP = 10
+
+/** Typeface used by the reflowable (text EPUB) reader. Mirrors WeChat-Reading's font picker. */
+enum class ReaderFontFamily {
+    /** WebView default (system sans-serif). */
+    SYSTEM,
+    /** Serif / Song typeface, the traditional choice for Chinese novels. */
+    SONG,
+    /** Hei / sans typeface. */
+    HEI,
+}
 
 /** Book-card metadata label font size. */
 const val LIBRARY_META_TEXT_MIN_SP = 10
@@ -29,12 +55,25 @@ data class AppSettings(
     val readerBackground: ReaderBackground = ReaderBackground.AUTO,
     val customBackgroundColor: Long = 0xFFFDFCFF,
     val keepScreenOn: Boolean = true,
-    val showPageNumber: Boolean = false,
+    /** Bottom-right corner label while chrome is hidden: hidden / progress / page number. */
+    val readerPageInfo: ReaderPageInfo = ReaderPageInfo.PAGES,
     val volumeKeyPaging: Boolean = true,
     val grayscale: Boolean = false,
     val invertColors: Boolean = false,
     /** Font size (sp) used by the text EPUB reader; always within [READER_FONT_SIZE_MIN_SP]..[READER_FONT_SIZE_MAX_SP]. */
     val readerFontSizeSp: Int = READER_FONT_SIZE_DEFAULT_SP,
+    /** Line height multiplier used by the text EPUB reader; within [READER_LINE_HEIGHT_MIN]..[READER_LINE_HEIGHT_MAX]. */
+    val readerLineHeight: Float = READER_LINE_HEIGHT_DEFAULT,
+    /** Horizontal page margin (dp) of the text EPUB reader, within [READER_PAGE_MARGIN_MIN]..[READER_PAGE_MARGIN_MAX]. */
+    val readerPageMarginDp: Int = READER_PAGE_MARGIN_DEFAULT,
+    /** Font size (sp) of the "xx% · xx/xx" label under the resident progress slider. */
+    val readerProgressLabelSizeSp: Int = READER_PROGRESS_LABEL_SIZE_DEFAULT_SP,
+    /** Font size (sp) of the bottom-end page/progress indicator while the chrome is hidden. */
+    val readerPageIndicatorSizeSp: Int = READER_PAGE_INDICATOR_SIZE_DEFAULT_SP,
+    /** Lower-left battery icon + percentage while the chrome is hidden, next to the page indicator. */
+    val readerBatteryIndicator: Boolean = true,
+    /** Typeface used by the text EPUB reader. */
+    val readerFontFamily: ReaderFontFamily = ReaderFontFamily.SYSTEM,
     val libraryLayout: LibraryLayout = LibraryLayout.COMFORTABLE,
     val libraryColumns: Int = 0,
     val libraryTitleSizeSp: Int = 20,
@@ -60,12 +99,22 @@ class SettingsRepository(context: Context) {
         readerBackground = prefs.enum("reader_background", ReaderBackground.AUTO),
         customBackgroundColor = prefs.getLong("custom_background_color", 0xFFFDFCFF),
         keepScreenOn = prefs.getBoolean("keep_screen_on", true),
-        showPageNumber = prefs.getBoolean("show_page_number", false),
+        readerPageInfo = prefs.enum("reader_page_info", if (prefs.getBoolean("show_page_number", false)) ReaderPageInfo.PROGRESS else ReaderPageInfo.PAGES),
         volumeKeyPaging = prefs.getBoolean("volume_key_paging", true),
         grayscale = prefs.getBoolean("reader_grayscale", false),
         invertColors = prefs.getBoolean("reader_invert", false),
         readerFontSizeSp = prefs.getInt("reader_font_size", READER_FONT_SIZE_DEFAULT_SP)
             .coerceIn(READER_FONT_SIZE_MIN_SP, READER_FONT_SIZE_MAX_SP),
+        readerLineHeight = prefs.getFloat("reader_line_height", READER_LINE_HEIGHT_DEFAULT)
+            .coerceIn(READER_LINE_HEIGHT_MIN, READER_LINE_HEIGHT_MAX),
+        readerPageMarginDp = prefs.getInt("reader_page_margin", READER_PAGE_MARGIN_DEFAULT)
+            .coerceIn(READER_PAGE_MARGIN_MIN, READER_PAGE_MARGIN_MAX),
+        readerFontFamily = prefs.enum("reader_font_family", ReaderFontFamily.SYSTEM),
+        readerProgressLabelSizeSp = prefs.getInt("reader_progress_label_size", READER_PROGRESS_LABEL_SIZE_DEFAULT_SP)
+            .coerceIn(READER_PROGRESS_LABEL_SIZE_MIN_SP, READER_PROGRESS_LABEL_SIZE_MAX_SP),
+        readerPageIndicatorSizeSp = prefs.getInt("reader_page_indicator_size", READER_PAGE_INDICATOR_SIZE_DEFAULT_SP)
+            .coerceIn(READER_PAGE_INDICATOR_SIZE_MIN_SP, READER_PAGE_INDICATOR_SIZE_MAX_SP),
+        readerBatteryIndicator = prefs.getBoolean("reader_battery_indicator", true),
         libraryLayout = runCatching { LibraryLayout.valueOf(prefs.getString("library_layout", LibraryLayout.COMFORTABLE.name)!!) }.getOrDefault(LibraryLayout.COMFORTABLE),
         libraryColumns = prefs.getInt("library_columns", 0),
         libraryTitleSizeSp = prefs.getInt("library_title_size", 20),
@@ -100,12 +149,30 @@ class SettingsRepository(context: Context) {
             editor.putLong("custom_background_color", next.customBackgroundColor)
         }
         if (next.keepScreenOn != old.keepScreenOn) editor.putBoolean("keep_screen_on", next.keepScreenOn)
-        if (next.showPageNumber != old.showPageNumber) editor.putBoolean("show_page_number", next.showPageNumber)
+        if (next.readerPageInfo != old.readerPageInfo) editor.putString("reader_page_info", next.readerPageInfo.name)
         if (next.volumeKeyPaging != old.volumeKeyPaging) editor.putBoolean("volume_key_paging", next.volumeKeyPaging)
         if (next.grayscale != old.grayscale) editor.putBoolean("reader_grayscale", next.grayscale)
         if (next.invertColors != old.invertColors) editor.putBoolean("reader_invert", next.invertColors)
         if (next.readerFontSizeSp != old.readerFontSizeSp) {
             editor.putInt("reader_font_size", next.readerFontSizeSp)
+        }
+        if (next.readerLineHeight != old.readerLineHeight) {
+            editor.putFloat("reader_line_height", next.readerLineHeight)
+        }
+        if (next.readerPageMarginDp != old.readerPageMarginDp) {
+            editor.putInt("reader_page_margin", next.readerPageMarginDp)
+        }
+        if (next.readerFontFamily != old.readerFontFamily) {
+            editor.putString("reader_font_family", next.readerFontFamily.name)
+        }
+        if (next.readerBatteryIndicator != old.readerBatteryIndicator) {
+            editor.putBoolean("reader_battery_indicator", next.readerBatteryIndicator)
+        }
+        if (next.readerProgressLabelSizeSp != old.readerProgressLabelSizeSp) {
+            editor.putInt("reader_progress_label_size", next.readerProgressLabelSizeSp)
+        }
+        if (next.readerPageIndicatorSizeSp != old.readerPageIndicatorSizeSp) {
+            editor.putInt("reader_page_indicator_size", next.readerPageIndicatorSizeSp)
         }
         if (next.libraryLayout != old.libraryLayout) editor.putString("library_layout", next.libraryLayout.name)
         if (next.libraryColumns != old.libraryColumns) editor.putInt("library_columns", next.libraryColumns)
@@ -129,6 +196,8 @@ class SettingsRepository(context: Context) {
 
 private fun AppSettings.normalized(): AppSettings = copy(
     readerFontSizeSp = readerFontSizeSp.coerceIn(READER_FONT_SIZE_MIN_SP, READER_FONT_SIZE_MAX_SP),
+    readerLineHeight = readerLineHeight.coerceIn(READER_LINE_HEIGHT_MIN, READER_LINE_HEIGHT_MAX),
+    readerPageMarginDp = readerPageMarginDp.coerceIn(READER_PAGE_MARGIN_MIN, READER_PAGE_MARGIN_MAX),
     libraryMetaTextSizeSp = libraryMetaTextSizeSp.coerceIn(LIBRARY_META_TEXT_MIN_SP, LIBRARY_META_TEXT_MAX_SP),
 )
 

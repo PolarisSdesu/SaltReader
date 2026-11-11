@@ -370,6 +370,15 @@ class ReaderViewModel(
         repo.updateTextProgress(bookId, offset)
     }
 
+    /**
+     * Backfills the authoritative character count of a reflowable book once its chapters are parsed.
+     * The shelf progress and the reader slider both use it as the denominator.
+     */
+    fun updateTextStats(charCount: Long) {
+        if (charCount <= 0L) return
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.updateTextStats(bookId, charCount) } }
+    }
+
     fun peekPage(index: Int, targetWidth: Int): Bitmap? {
         val bucket = (targetWidth / 240).coerceAtLeast(1)
         return cache.get("${index}_$bucket")

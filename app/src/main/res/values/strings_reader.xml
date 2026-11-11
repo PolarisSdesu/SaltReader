@@ -21,15 +21,18 @@
     <string name="reader_show_controls">Show controls</string>
     <string name="reader_hide_controls">Hide controls</string>
     <string name="reader_settings_title">Reading settings</string>
+    <string name="reader_more_settings">Details</string>
     <string name="reader_switch_to_vertical">Switch to vertical scrolling</string>
     <string name="reader_switch_to_paged">Switch to horizontal paging</string>
 
     <!-- Page / slider labels -->
     <string name="reader_page_indicator">%1$d / %2$d</string>
+    <string name="reader_page_indicator_size_value">%1$d sp</string>
     <string name="reader_page_number">Page %1$d</string>
     <string name="reader_page_failed">Page %1$d cannot be displayed</string>
     <string name="reader_page_slider_label">Page %1$d / %2$d</string>
     <string name="reader_percent">%1$d%%</string>
+    <string name="reader_progress_combo">%1$d%% · %2$d/%3$d</string>
     <string name="reader_font_size_value">%1$d sp</string>
 
     <!-- Reading settings sheet -->
@@ -46,12 +49,54 @@
     <string name="reader_background_auto">Auto</string>
     <string name="reader_background_white">White</string>
     <string name="reader_background_ink">Black</string>
+    <string name="reader_background_sepia">Beige</string>
+    <string name="reader_background_green">Green</string>
     <string name="reader_background_custom">Custom</string>
     <string name="reader_font_size">Font size</string>
+    <string name="reader_font_family">Font</string>
+    <string name="reader_font_family_system">System</string>
+    <string name="reader_font_family_song">Serif</string>
+    <string name="reader_font_family_hei">Sans-serif</string>
     <string name="reader_show_page_number">Show page number</string>
     <string name="reader_keep_screen_on">Keep screen on</string>
     <string name="reader_volume_keys">Volume keys turn pages</string>
     <string name="reader_grayscale">Grayscale</string>
     <string name="reader_invert_colors">Invert colours</string>
     <string name="reader_text_filters_note">The text reader follows the theme and background colour; grayscale and invert only apply to image books.</string>
+    <!-- Reader chrome / contents / typography (WeChat-Reading-style toolbar) -->
+    <string name="reader_close">Close</string>
+    <string name="reader_toc_title">Contents</string>
+    <string name="reader_toc_count">Chapters: %1$d</string>
+    <string name="reader_toc_chapter_fallback">Chapter %1$d</string>
+    <string name="reader_toc_current">Reading</string>
+    <string name="reader_bar_paged">Pages</string>
+    <string name="reader_bar_vertical">Scroll</string>
+    <string name="reader_bar_settings">Settings</string>
+    <string name="reader_progress_slider">Reading progress</string>
+    <string name="reader_section_typography">Type</string>
+    <string name="reader_section_general">General</string>
+    <string name="reader_line_height">Line spacing</string>
+    <string name="reader_line_height_value">%1$.1f×</string>
+    <string name="reader_page_margin">Page margins</string>
+    <string name="reader_page_margin_value">%1$d dp</string>
+    <string name="reader_progress_label_size_value">%1$d sp</string>
+    <string name="reader_font_size_decrease">Decrease font size</string>
+    <string name="reader_font_size_increase">Increase font size</string>
+    <string name="reader_line_height_decrease">Decrease line spacing</string>
+    <string name="reader_line_height_increase">Increase line spacing</string>
+    <string name="reader_page_margin_decrease">Decrease page margins</string>
+    <string name="reader_page_margin_increase">Increase page margins</string>
+    <!-- WeChat-Reading-style inline reader panels -->
+    <string name="reader_bar_progress">Progress</string>
+    <string name="reader_bar_theme">Theme</string>
+    <string name="reader_theme_and_text_size">Text size &amp; theme</string>
+    <string name="reader_font_style">Font</string>
+    <string name="reader_progress_last_read">Last read</string>
+    <string name="reader_level_small">Small</string>
+    <string name="reader_level_medium">Medium</string>
+    <string name="reader_level_large">Large</string>
+    <string name="reader_spacing_tight">Tight</string>
+    <string name="reader_spacing_loose">Loose</string>
+    <string name="reader_page_info_hidden">Hidden</string>
+    <string name="reader_page_info_pages">Page number</string>
 </resources>

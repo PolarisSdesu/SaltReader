@@ -182,6 +182,8 @@ fun pageBackgroundColor(
     // AUTO follows the system theme: pure white in light mode, pure black in dark mode.
     moe.gbxin.saltreader.data.ReaderBackground.AUTO -> if (darkTheme) Color.Black else Color.White
     moe.gbxin.saltreader.data.ReaderBackground.WHITE -> Color.White
+    moe.gbxin.saltreader.data.ReaderBackground.SEPIA -> Color(0xFFF5EFE2)
+    moe.gbxin.saltreader.data.ReaderBackground.GREEN -> Color(0xFFE7EFE4)
     moe.gbxin.saltreader.data.ReaderBackground.INK -> Color.Black
     moe.gbxin.saltreader.data.ReaderBackground.CUSTOM -> Color(customColor)
 }
