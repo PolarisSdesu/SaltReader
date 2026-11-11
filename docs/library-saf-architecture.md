@@ -289,12 +289,3 @@ A 负责的实现：
 - `ReaderViewModel` 缓存页尺寸（`pageSize(index)`），并在 `prepare()` 后设置 `tallPages`
   供 UI 选择渲染路径；切片由 Compose 侧负责 `close()`，页面源保持无状态。
 - 实测 800×6000 测试 CBZ：滚动连续、满宽、无缝隙，janky 0.93%（90th 16ms / 99th 23ms）。
-
-## 第七轮：启动先发布书架
-
-- `initialize()` 不再等 `ensureCovers()`：先发布 `_ready`（书架/阅读入口立即可用），
-  再在后台用有界并发补缺失封面。封面是派生数据，缺失时显示占位图即可。
-- 新增 `LibraryRepository.coversRevision: StateFlow<Int>`：后台补封面实际生成了文件时递增；
-  `LibraryScreen` 把它传给 `ComicCover` 的缓存 key（file/targetWidth/revision），
-  已组合的卡片因此会重新读取新生成的封面，而不需要重启应用。
-- 正常启动（封面已存在）行为不变：后台任务只做 N 次 stat，不打开文档。

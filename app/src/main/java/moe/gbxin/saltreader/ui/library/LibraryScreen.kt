@@ -90,7 +90,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -156,8 +155,6 @@ fun LibraryScreen(
     val context = LocalContext.current
     val app = context.applicationContext as SaltReaderApplication
     val repo = app.library
-    // 启动时书架先出现、缺失封面在后台补齐；revision 递增后卡片重新读封面。
-    val coversRevision by repo.coversRevision.collectAsStateWithLifecycle()
     // 按字段订阅设置：整体订阅 settings 会让主题/阅读器等无关偏好变更也重组整个书库。
     val settingsState = app.settings.state
     val libraryLayout by rememberSettingField(settingsState) { it.libraryLayout }
@@ -339,7 +336,6 @@ fun LibraryScreen(
                             BookCard(
                                 book = book,
                                 coverFile = remember(book.id) { repo.coverFile(book) },
-                                coverRevision = coversRevision,
                                 coverTargetWidthPx = coverTargetWidthPx,
                                 titleSizeSp = titleSizeSp,
                                 listMode = listMode,
@@ -519,7 +515,6 @@ private fun ShelfHeader(
 private fun BookCard(
     book: ComicBook,
     coverFile: File,
-    coverRevision: Int,
     coverTargetWidthPx: Int,
     titleSizeSp: Int,
     listMode: Boolean,
@@ -547,14 +542,7 @@ private fun BookCard(
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         ) {
             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                ComicCover(
-                    book,
-                    coverFile,
-                    Modifier.width(64.dp).aspectRatio(0.68f),
-                    radius = 8,
-                    targetWidthPx = coverTargetWidthPx,
-                    revision = coverRevision,
-                )
+                ComicCover(book, coverFile, Modifier.width(64.dp).aspectRatio(0.68f), radius = 8, targetWidthPx = coverTargetWidthPx)
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text(book.title, style = titleStyle, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -574,14 +562,7 @@ private fun BookCard(
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             ) {
                 Box(Modifier.fillMaxWidth().aspectRatio(0.68f)) {
-                    ComicCover(
-                        book,
-                        coverFile,
-                        Modifier.fillMaxSize(),
-                        radius = 0,
-                        targetWidthPx = coverTargetWidthPx,
-                        revision = coverRevision,
-                    )
+                    ComicCover(book, coverFile, Modifier.fillMaxSize(), radius = 0, targetWidthPx = coverTargetWidthPx)
                     if (!book.finished && (book.currentPage > 0 || book.progressOffset > 0L)) {
                         LinearProgressIndicator(
                             progress = { book.progress },
