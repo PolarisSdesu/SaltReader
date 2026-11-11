@@ -112,8 +112,8 @@ private class RemoteZipArchivePageSource(
         val list = ensureParsed() ?: return null
         val opened = reader ?: return null
         val entry = list.getOrNull(index) ?: return null
-        val bytes = runCatching { opened.readEntry(entry, PageIndexing.MAX_PAGE_BYTES) }.getOrNull() ?: return null
-        return decodePage(bytes, targetWidth)
+        val view = runCatching { opened.readEntryView(entry, PageIndexing.MAX_PAGE_BYTES) }.getOrNull() ?: return null
+        return decodePage(view.bytes, targetWidth, view.offset, view.length)
     }
 
     override fun close() {
@@ -224,8 +224,8 @@ private class EpubImagePageSource(
         val mapping = ensureParsed() ?: return null
         val opened = reader ?: return null
         val entry = mapping.getOrNull(index) ?: return null
-        val bytes = runCatching { opened.readEntry(entry, PageIndexing.MAX_PAGE_BYTES) }.getOrNull() ?: return null
-        return decodePage(bytes, targetWidth)
+        val view = runCatching { opened.readEntryView(entry, PageIndexing.MAX_PAGE_BYTES) }.getOrNull() ?: return null
+        return decodePage(view.bytes, targetWidth, view.offset, view.length)
     }
 
     override fun close() {
@@ -347,8 +347,8 @@ internal fun readBounded(
     return output.toByteArray()
 }
 
-internal fun isJpeg(bytes: ByteArray): Boolean =
-    bytes.size > 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()
+internal fun isJpeg(bytes: ByteArray, offset: Int = 0): Boolean =
+    bytes.size - offset > 2 && bytes[offset] == 0xFF.toByte() && bytes[offset + 1] == 0xD8.toByte()
 
 /** 单页解码后位图预算：约 12MB（ARGB_8888 按每像素 4 字节算），避免超长条漫解成 64MB 单张位图。 */
 /**
@@ -410,20 +410,31 @@ internal object PageImageSampling {
  * - API 28+ 优先 [ImageDecoder] 单次解码（在 header 回调里设采样，并把 EXIF 方向交给它处理）；
  * - 任何异常/不支持的格式回退到 BitmapFactory + EXIF 旋转的兼容路径（API<28 只走兼容路径）。
  */
-internal fun decodePage(bytes: ByteArray, targetWidth: Int): Bitmap? {
-    if (bytes.isEmpty()) return null
+internal fun decodePage(
+    bytes: ByteArray,
+    targetWidth: Int,
+    offset: Int = 0,
+    length: Int = bytes.size - offset,
+): Bitmap? {
+    if (length <= 0) return null
 
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-        decodeWithImageDecoder(bytes, targetWidth)?.let { return it }
+        decodeWithImageDecoder(bytes, targetWidth, offset, length)?.let { return it }
     }
-    return decodeWithBitmapFactory(bytes, targetWidth)
+    return decodeWithBitmapFactory(bytes, targetWidth, offset, length)
 }
 
 /** API 28+：单次解码，省掉 bounds 预解码 + 旋转拷贝；EXIF 方向由 decoder 自动处理。 */
-private fun decodeWithImageDecoder(bytes: ByteArray, targetWidth: Int): Bitmap? {
+private fun decodeWithImageDecoder(
+    bytes: ByteArray,
+    targetWidth: Int,
+    offset: Int,
+    length: Int,
+): Bitmap? {
     if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
     return try {
-        val source = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
+        // slice() 让 buffer 的 position=0、limit=length，ImageDecoder 只看到页图这一段。
+        val source = ImageDecoder.createSource(ByteBuffer.wrap(bytes, offset, length).slice())
         ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
             val size = info.size
             val sample = PageImageSampling.sampleSize(size.width, size.height, targetWidth)
@@ -437,9 +448,14 @@ private fun decodeWithImageDecoder(bytes: ByteArray, targetWidth: Int): Bitmap? 
 }
 
 /** 兼容路径：BitmapFactory 两趟解码（先 bounds 再采样），JPEG 额外按 EXIF 旋转。 */
-private fun decodeWithBitmapFactory(bytes: ByteArray, targetWidth: Int): Bitmap? {
+private fun decodeWithBitmapFactory(
+    bytes: ByteArray,
+    targetWidth: Int,
+    offset: Int,
+    length: Int,
+): Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+    BitmapFactory.decodeByteArray(bytes, offset, length, bounds)
     val width = bounds.outWidth
     val height = bounds.outHeight
     if (width <= 0 || height <= 0) return null
@@ -449,11 +465,11 @@ private fun decodeWithBitmapFactory(bytes: ByteArray, targetWidth: Int): Bitmap?
         inSampleSize = sample
         inPreferredConfig = Bitmap.Config.ARGB_8888
     }
-    val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options) ?: return null
-    if (!isJpeg(bytes)) return bitmap
+    val bitmap = BitmapFactory.decodeByteArray(bytes, offset, length, options) ?: return null
+    if (!isJpeg(bytes, offset)) return bitmap
 
     val degrees = runCatching {
-        when (ExifInterface(ByteArrayInputStream(bytes)).getAttributeInt(
+        when (ExifInterface(ByteArrayInputStream(bytes, offset, length)).getAttributeInt(
             ExifInterface.TAG_ORIENTATION,
             ExifInterface.ORIENTATION_NORMAL,
         )) {

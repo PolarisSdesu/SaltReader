@@ -47,6 +47,9 @@ internal class RemoteZipReader internal constructor(
         val uncompressedSize: Long,
         val localHeaderOffset: Long,
         val encrypted: Boolean,
+        /** central directory 记录的名字/extra 字节长度：合并读取时用来算数据偏移。 */
+        val nameBytes: Int = 0,
+        val extraBytes: Int = 0,
     )
 
     fun entries(): List<Entry> = synchronized(lock) {
@@ -83,17 +86,80 @@ internal class RemoteZipReader internal constructor(
         entry(name)?.let { readEntry(it, maxBytes) }
 
     /**
+     * 条目内容的零拷贝视图。ZIP 页面读取会把「本地头 + 名字/extra + 压缩数据」一次读进同一块
+     * 缓冲区，数据只是其中一个区间；直接把这个区间交给解码器，避免再复制一份整页字节。
+     */
+    class EntryView internal constructor(
+        val bytes: ByteArray,
+        val offset: Int,
+        val length: Int,
+    ) {
+        /** 需要独立数组的调用方（container.xml / OPF 等小文件）再复制一次。 */
+        fun toByteArray(): ByteArray =
+            if (offset == 0 && length == bytes.size) bytes else bytes.copyOfRange(offset, offset + length)
+    }
+
+    /**
      * 直接按已解析的 [Entry] 读取：页面源把条目列表整个缓存下来，
      * 每页不必再用名字查找，避免 O(条目数) 的重复扫描。
      * 超过 [maxBytes] 或加密/不支持的压缩算法时返回 null。
      */
-    fun readEntry(entry: Entry, maxBytes: Long): ByteArray? {
+    fun readEntry(entry: Entry, maxBytes: Long): ByteArray? =
+        readEntryView(entry, maxBytes)?.toByteArray()
+
+    /**
+     * 按条目读取并返回字节视图：优先「一次 pread 读完整条记录」，
+     * 比原来「头 30B + 数据」两次 pread 少一次系统调用（SAF/FUSE 上收益更明显），
+     * STORED 条目还能零拷贝。本地头与中央目录长度不一致等异常包回退到两次 pread。
+     */
+    fun readEntryView(entry: Entry, maxBytes: Long): EntryView? {
         if (entry.encrypted) return null
         if (entry.uncompressedSize > maxBytes || entry.compressedSize > maxBytes) return null
         if (entry.compressedSize < 0L || entry.uncompressedSize < 0L) return null
         if (entry.compressedSize == 0L && entry.uncompressedSize > 0L) return null
         if (entry.uncompressedSize > Int.MAX_VALUE || entry.compressedSize > Int.MAX_VALUE) return null
+        return readCombined(entry, maxBytes) ?: readTwoStep(entry, maxBytes)
+    }
 
+    /** 一次 pread 读「本地头 + 名字/extra + 压缩数据」，再按压缩方式解出视图。 */
+    private fun readCombined(entry: Entry, maxBytes: Long): EntryView? {
+        val nameBytes = entry.nameBytes
+        val extraBytes = entry.extraBytes
+        if (nameBytes <= 0 || nameBytes > MAX_LOCAL_NAME_BYTES) return null
+        if (extraBytes < 0 || extraBytes > MAX_LOCAL_NAME_BYTES) return null
+        if (entry.compressedSize > MAX_COMBINED_READ_BYTES) return null
+        val total = LOCAL_HEADER_SIZE.toLong() + nameBytes + extraBytes + entry.compressedSize
+        if (total <= LOCAL_HEADER_SIZE || total > MAX_COMBINED_READ_BYTES) return null
+
+        val buffer = ByteArray(total.toInt())
+        val wrapped = ByteBuffer.wrap(buffer).order(ByteOrder.LITTLE_ENDIAN)
+        readFully(wrapped, entry.localHeaderOffset)
+        if (wrapped.getInt(0) != LOCAL_HEADER_SIG) return null
+        // 本地头长度字段必须与中央目录一致，否则「一次读」的偏移不可信，退回两次 pread。
+        val localNameLength = wrapped.getShort(26).toInt() and 0xFFFF
+        val localExtraLength = wrapped.getShort(28).toInt() and 0xFFFF
+        if (localNameLength != nameBytes || localExtraLength != extraBytes) return null
+        val dataOffset = LOCAL_HEADER_SIZE + localNameLength + localExtraLength
+        if (dataOffset + entry.compressedSize != total) return null
+
+        return when (entry.method) {
+            // STORED：数据原样在缓冲区里，直接返回区间视图（零拷贝）。
+            METHOD_STORED -> EntryView(buffer, dataOffset, entry.compressedSize.toInt())
+            METHOD_DEFLATE -> {
+                val inflated = inflateExact(
+                    buffer,
+                    dataOffset,
+                    entry.compressedSize.toInt(),
+                    entry.uncompressedSize.toInt(),
+                ) ?: return null
+                EntryView(inflated, 0, inflated.size)
+            }
+            else -> null
+        }
+    }
+
+    /** 兼容路径：先读 30B 本地头拿真实长度，再按偏移读数据；处理本地头与中央目录不一致的包。 */
+    private fun readTwoStep(entry: Entry, maxBytes: Long): EntryView? {
         val header = ByteBuffer.allocate(LOCAL_HEADER_SIZE).order(ByteOrder.LITTLE_ENDIAN)
         readFully(header, entry.localHeaderOffset)
         if (header.getInt(0) != LOCAL_HEADER_SIG) return null
@@ -107,8 +173,9 @@ internal class RemoteZipReader internal constructor(
             readFully(buffer, dataOffset)
         }
         return when (entry.method) {
-            METHOD_STORED -> compressed.takeIf { it.size.toLong() <= maxBytes }
-            METHOD_DEFLATE -> inflate(compressed, entry.uncompressedSize.toInt(), maxBytes)
+            METHOD_STORED -> compressed.takeIf { it.size.toLong() <= maxBytes }?.let { EntryView(it, 0, it.size) }
+            METHOD_DEFLATE -> inflate(compressed, 0, compressed.size, entry.uncompressedSize.toInt(), maxBytes)
+                ?.let { EntryView(it, 0, it.size) }
             else -> null
         }
     }
@@ -224,6 +291,8 @@ internal class RemoteZipReader internal constructor(
                 uncompressedSize = uncompressedSize,
                 localHeaderOffset = localHeaderOffset,
                 encrypted = flags and FLAG_ENCRYPTED != 0,
+                nameBytes = nameLength,
+                extraBytes = extraLength,
             )
             position += CENTRAL_HEADER_SIZE + nameLength + extraLength + commentLength
         }
@@ -231,25 +300,36 @@ internal class RemoteZipReader internal constructor(
         return result
     }
 
-    private fun inflate(compressed: ByteArray, expectedSize: Int, maxBytes: Long): ByteArray? {
-        if (compressed.isEmpty()) return if (expectedSize == 0) ByteArray(0) else null
+    private fun inflate(
+        input: ByteArray,
+        inputOffset: Int,
+        inputLength: Int,
+        expectedSize: Int,
+        maxBytes: Long,
+    ): ByteArray? {
+        if (inputLength <= 0) return if (expectedSize == 0) ByteArray(0) else null
         // 优先路径：central directory 已给出解压后大小且合法时，直接 inflate 到预分配数组，
         // 省掉 InflaterInputStream + ByteArrayOutputStream + toByteArray 的整块额外拷贝。
         if (expectedSize > 0 && expectedSize.toLong() <= maxBytes) {
-            inflateExact(compressed, expectedSize)?.let { return it }
+            inflateExact(input, inputOffset, inputLength, expectedSize)?.let { return it }
         }
         // 声明尺寸不可信（截断/多出数据/损坏）或超过 maxBytes 时，回退到原流式实现重新解压。
-        return inflateStreaming(compressed, expectedSize, maxBytes)
+        return inflateStreaming(input, inputOffset, inputLength, expectedSize, maxBytes)
     }
 
     /**
      * 已知解压后大小：一次性 inflate 进 [expectedSize] 大小的数组（零额外拷贝）。
      * 任何尺寸不一致/数据异常都返回 null，由 [inflate] 回退到流式路径。
      */
-    private fun inflateExact(compressed: ByteArray, expectedSize: Int): ByteArray? {
+    private fun inflateExact(
+        input: ByteArray,
+        inputOffset: Int,
+        inputLength: Int,
+        expectedSize: Int,
+    ): ByteArray? {
         val inflater = Inflater(true)
         return try {
-            inflater.setInput(compressed)
+            inflater.setInput(input, inputOffset, inputLength)
             val output = ByteArray(expectedSize)
             var offset = 0
             while (!inflater.finished()) {
@@ -272,10 +352,16 @@ internal class RemoteZipReader internal constructor(
     }
 
     /** 原流式实现：不信任声明尺寸时的保底路径，同时负责 [maxBytes] 上限。 */
-    private fun inflateStreaming(compressed: ByteArray, expectedSize: Int, maxBytes: Long): ByteArray? {
+    private fun inflateStreaming(
+        input: ByteArray,
+        inputOffset: Int,
+        inputLength: Int,
+        expectedSize: Int,
+        maxBytes: Long,
+    ): ByteArray? {
         val inflater = Inflater(true)
         return try {
-            InflaterInputStream(ByteArrayInputStream(compressed), inflater, 64 * 1024).use { input ->
+            InflaterInputStream(ByteArrayInputStream(input, inputOffset, inputLength), inflater, 64 * 1024).use { stream ->
                 val initialSize = if (expectedSize in 1..maxBytes.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()) {
                     expectedSize
                 } else {
@@ -285,7 +371,7 @@ internal class RemoteZipReader internal constructor(
                 val buffer = ByteArray(64 * 1024)
                 var total = 0L
                 while (true) {
-                    val read = input.read(buffer)
+                    val read = stream.read(buffer)
                     if (read < 0) break
                     total += read
                     if (total > maxBytes) return null
@@ -332,6 +418,12 @@ internal class RemoteZipReader internal constructor(
         private const val METHOD_DEFLATE = 8
 
         private const val MAX_CENTRAL_DIRECTORY_BYTES = 32L * 1024L * 1024L
+
+        /** 合并读取时名字/extra 字段上限（ZIP 规范为 16 位）。 */
+        private const val MAX_LOCAL_NAME_BYTES = 0xFFFF
+
+        /** 合并读取的整条记录上限；超过则回退两次 pread（正常页图远小于此值）。 */
+        private const val MAX_COMBINED_READ_BYTES = 48L * 1024L * 1024L
 
         /** 打开失败（provider 不支持 seek/文件损坏/非 ZIP）返回 null，调用方回退慢路径。 */
         fun open(context: Context, uri: Uri): RemoteZipReader? {

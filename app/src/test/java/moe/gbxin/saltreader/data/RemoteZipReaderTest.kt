@@ -4,6 +4,7 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.nio.channels.FileChannel
 import java.nio.file.StandardOpenOption
+import java.util.zip.CRC32
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 import kotlin.test.Test
@@ -53,6 +54,44 @@ class RemoteZipReaderTest {
                 assertEquals(8, container.method) // DEFLATE (ZipOutputStream default)
                 assertEquals(text.size.toLong(), container.uncompressedSize)
                 assertTrue(!container.encrypted)
+            }
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun `entry views expose zero-copy ranges matching the payload`() {
+        val storedPayload = ByteArray(1000) { (it * 7).toByte() }
+        val deflatedPayload = "page bytes".repeat(300).toByteArray()
+        val file = File.createTempFile("remote-zip-view", ".zip")
+        ZipOutputStream(file.outputStream()).use { out ->
+            val stored = ZipEntry("stored/page.jpg").apply {
+                method = ZipEntry.STORED
+                size = storedPayload.size.toLong()
+                compressedSize = storedPayload.size.toLong()
+                crc = CRC32().apply { update(storedPayload) }.value
+            }
+            out.putNextEntry(stored)
+            out.write(storedPayload)
+            out.closeEntry()
+            out.putNextEntry(ZipEntry("deflated/page.xhtml"))
+            out.write(deflatedPayload)
+            out.closeEntry()
+        }
+        try {
+            withReader(file) { reader ->
+                val storedEntry = assertNotNull(reader.entry("stored/page.jpg"))
+                val stored = assertNotNull(reader.readEntryView(storedEntry, 1_000_000L))
+                // STORED 直接返回合并缓冲区里的区间视图：offset 在本地头之后，不复制数据。
+                assertTrue(stored.offset > 0)
+                assertContentEquals(storedPayload, stored.toByteArray())
+
+                val deflatedEntry = assertNotNull(reader.entry("deflated/page.xhtml"))
+                val deflated = assertNotNull(reader.readEntryView(deflatedEntry, 1_000_000L))
+                assertContentEquals(deflatedPayload, deflated.toByteArray())
+                // 兼容 API 与视图 API 语义一致。
+                assertContentEquals(deflatedPayload, assertNotNull(reader.readEntry(deflatedEntry, 1_000_000L)))
             }
         } finally {
             file.delete()
