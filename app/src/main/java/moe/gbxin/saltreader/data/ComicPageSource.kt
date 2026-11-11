@@ -16,6 +16,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import kotlinx.serialization.Serializable
+import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.io.Closeable
 import java.io.File
 import java.io.InputStream
@@ -124,6 +127,42 @@ private class RemoteZipArchivePageSource(
 }
 
 /**
+ * 图片型 EPUB 的 spine→图片条目映射缓存（页序即 spine 顺序）。
+ *
+ * 解析它需要逐个读取 spine 里的 XHTML（151 页的书约 38ms + 数百次 ZIP 读），
+ * 但结果只取决于文件内容；按 id + 指纹落盘后，重新打开书不必再扫一遍。
+ */
+@Serializable
+private data class EpubPageMap(val pages: List<String?>)
+
+private val epubMapJson = Json { ignoreUnknownKeys = true; encodeDefaults = false }
+
+/** 与 LibraryRepository 的 textCacheDir 保持一致：清缓存 / 删除书时按 `<id>_` 前缀一并清理。 */
+internal fun epubPageMapCacheFile(
+    context: Context,
+    bookId: String,
+    modifiedAt: Long,
+    sizeBytes: Long,
+): File = File(File(context.cacheDir, "text"), "${bookId}_${modifiedAt}_${sizeBytes}.epubmap.json")
+
+/** 供索引阶段复用：分类已经算出映射，顺手落盘，这样连首次打开也不用再扫一遍 spine。 */
+internal fun writeEpubPageMapCache(
+    context: Context,
+    bookId: String,
+    modifiedAt: Long,
+    sizeBytes: Long,
+    names: List<String>,
+) {
+    val file = epubPageMapCacheFile(context, bookId, modifiedAt, sizeBytes)
+    runCatching {
+        file.parentFile?.mkdirs()
+        val payload = epubMapJson.encodeToString(EpubPageMap(names)).toByteArray(Charsets.UTF_8)
+        // 派生缓存：不需要 fsync。
+        writeFileAtomically(file, sync = false) { out -> out.write(payload) }
+    }
+}
+
+/**
  * 图片型 EPUB：同样用 RemoteZipReader 直读自身 ZIP，但页序/页数来自 spine→图片条目映射
  * （不是 ZIP 里的全部图片）。[prepare] 惰性解析映射并返回真实页数。
  */
@@ -150,9 +189,23 @@ private class EpubImagePageSource(
         pages?.let { return it }
         val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
         val opened = RemoteZipReader.open(context, uri) ?: return null
-        val mapping = runCatching { EpubIndexer.imagePageEntries(opened) }.getOrNull().orEmpty()
-        val list = mapping.map { opened.entry(it) }
-        // 全部条目都解析失败才视为不可读；个别缺页保留 null 占位，页码不整体前移。
+        val cacheFile = epubPageMapCacheFile(context, book.id, book.modifiedAt, book.sizeBytes)
+
+        fun mapNames(names: List<String?>): List<RemoteZipReader.Entry?> =
+            names.map { name -> if (name.isNullOrEmpty()) null else opened.entry(name) }
+
+        // 命中缓存：省掉逐页读取 spine XHTML 的分类扫描（书越大省得越多）。
+        var list = readEpubPageMap(cacheFile)?.let(::mapNames)
+        if (list.isNullOrEmpty() || list.all { it == null }) {
+            // 缓存不存在或已失效（条目全解析不出来）：重新解析并写回。
+            val mapping = runCatching { EpubIndexer.imagePageEntries(opened) }.getOrNull().orEmpty()
+            if (mapping.isEmpty()) {
+                opened.close()
+                return null
+            }
+            writeEpubPageMapCache(context, book.id, book.modifiedAt, book.sizeBytes, mapping)
+            list = mapNames(mapping)
+        }
         if (list.isEmpty() || list.all { it == null }) {
             opened.close()
             return null
@@ -161,6 +214,11 @@ private class EpubImagePageSource(
         pages = list
         list
     }
+
+    private fun readEpubPageMap(file: File): List<String?>? = runCatching {
+        if (!file.exists() || file.length() == 0L) null
+        else epubMapJson.decodeFromString<EpubPageMap>(file.readText(Charsets.UTF_8)).pages
+    }.getOrNull()
 
     override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
         val mapping = ensureParsed() ?: return null

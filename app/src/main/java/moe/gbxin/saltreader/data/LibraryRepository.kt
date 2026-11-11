@@ -459,7 +459,7 @@ class LibraryRepository(private val context: Context) {
             deleteTextCache(id)
         }
         val indexed = try {
-            indexPages(candidate)
+            indexPages(candidate, id)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -529,7 +529,7 @@ class LibraryRepository(private val context: Context) {
      * - EPUB：RemoteZipReader 解析 container→OPF→spine，图片型按 Zip 直读，文字型只估算字符数/页数。
      * - MOBI/AZW3：按文件大小估算字符数/页数，作为 TEXT 文字书直接阅读，不转换。
      */
-    private fun indexPages(candidate: ScanCandidate): IndexedPages = when (candidate.kind) {
+    private fun indexPages(candidate: ScanCandidate, bookId: String): IndexedPages = when (candidate.kind) {
         BookKind.FOLDER ->
             IndexedPages(candidate.imageCount, candidate.coverUri?.let(::readDocumentBitmap))
         BookKind.PDF ->
@@ -539,7 +539,7 @@ class LibraryRepository(private val context: Context) {
         BookKind.ARCHIVE -> {
             val ext = candidate.name.substringAfterLast('.', "").lowercase()
             when {
-                ext == "epub" -> indexEpub(candidate)
+                ext == "epub" -> indexEpub(candidate, bookId)
                 ext in MOBI_EXTENSIONS -> mobileTextIndex(candidate.sizeBytes)
                 else -> indexZipFast(candidate)
             }
@@ -563,7 +563,7 @@ class LibraryRepository(private val context: Context) {
      * 文字型 → TEXT（charCount 由 spine XHTML 未压缩大小估算）。
      * 解析失败时保守回退成文字型，保证仍可直接阅读。
      */
-    private fun indexEpub(candidate: ScanCandidate): IndexedPages {
+    private fun indexEpub(candidate: ScanCandidate, bookId: String): IndexedPages {
         val reader = RemoteZipReader.open(context, candidate.uri)
         if (reader != null) {
             return reader.use { opened ->
@@ -571,6 +571,15 @@ class LibraryRepository(private val context: Context) {
                 if (classification == null) {
                     epubTextFallback(candidate.sizeBytes)
                 } else if (classification.kind == BookKind.ARCHIVE) {
+                    // 索引阶段已经算出了 spine→图片映射：顺手缓存，避免首次打开再扫一遍 spine。
+                    // 预算耗尽时列表里含占位条目名，与打开时重新解析的结果一致。
+                    writeEpubPageMapCache(
+                        context,
+                        bookId,
+                        candidate.modifiedAt,
+                        candidate.sizeBytes,
+                        classification.imageEntries,
+                    )
                     val coverBytes = classification.imageEntries.firstOrNull()?.let { entry ->
                         opened.readEntry(entry, PageIndexing.MAX_PAGE_BYTES)
                     }

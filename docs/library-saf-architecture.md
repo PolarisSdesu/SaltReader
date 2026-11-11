@@ -259,3 +259,8 @@ A 负责的实现：
    （MOBI 仍用 `.html`）；`clearCaches()` 会一并清理。缓存文件都按 `id_` 前缀批量删除。
 6. **内存**：封面 LruCache 容量 `maxMemory/8`（上限 64MB）、命中时同步返回避免首帧闪烁；
    `Application.onTrimMemory` 触发页缓存清空与封面缓存裁剪。
+7. **图片型 EPUB 页码映射缓存**：`cacheDir/text/<id>_<mtime>_<size>.epubmap.json`
+   （`EpubPageMap.pages`，spine 顺序的图片条目名，含缺页占位）。索引阶段 `indexEpub()` 分类完成后
+   直接写入，`EpubImagePageSource` 打开时优先读它；只有缓存缺失/失效才重新逐页扫描 spine XHTML。
+   实测 151 页的图片型 EPUB：首次打开 prepare 84ms（其中分类 48ms）→ 命中缓存 18–25ms；
+   索引阶段写入后连首次打开也只需 24ms。
