@@ -56,7 +56,6 @@ Salt Reader is a small open-source project; contributions are welcome:
 Requires JDK 21 and Android SDK Platform 37.
 
 ```bash
-export JAVA_HOME="/Applications/Android Studio.app/Contents/jbr/Contents/Home"
 ./gradlew :app:assembleDebug     # debug APK
 ./gradlew :app:assembleRelease   # R8-minified release APK
 ./gradlew :app:testDebugUnitTest # JVM unit tests
