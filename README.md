@@ -61,6 +61,23 @@ Requires JDK 21 and Android SDK Platform 37.
 ./gradlew :app:testDebugUnitTest # JVM unit tests
 ```
 
+### Faster local builds
+
+A full release build is dominated by R8 and release lint (about 1m45s from a cold cache on an
+8-core laptop; roughly 25s warm, mostly `lintVitalAnalyzeRelease`). When you only need an
+installable release APK for device testing, skip the shrinker and release lint:
+
+```bash
+./gradlew :app:assembleDebug                      # fastest: Compose debug build, no R8
+./gradlew :app:assembleRelease -PfastRelease      # unminified release APK, no R8/lint/shrink
+```
+
+`-PfastRelease` only affects local builds: CI and Play builds never pass it, so they keep the
+full R8 + resource-shrinking + lint pipeline. The configuration cache is enabled, so repeat
+builds also skip the configuration phase; pass `--no-configuration-cache` if a task ever
+misbehaves after an AGP upgrade. Avoid `clean` between iterations — incremental Kotlin
+compilation and the Gradle build cache are what keep warm builds fast.
+
 ## Third-party components
 
 Salt Reader builds on the AndroidX, Compose and Kotlin ecosystems and includes a vendored MOBI parser.

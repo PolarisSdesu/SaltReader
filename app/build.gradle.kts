@@ -38,6 +38,11 @@ val appVersionName: String = buildString {
 }
 val appVersionCode: Int = versionPart("versionCode", "1").toInt()
 
+// Local iteration switch: `./gradlew :app:assembleRelease -PfastRelease` skips R8, resource
+// shrinking and release lint. The APK is unminified and larger, so it is for device testing
+// only; CI / Play builds never pass the flag and keep the full optimized pipeline.
+val fastRelease = providers.gradleProperty("fastRelease").isPresent
+
 val releaseStoreFile = signingValue("storeFile", "SALTREADER_KEYSTORE")
 val releaseStorePassword = signingValue("storePassword", "SALTREADER_STORE_PASSWORD")
 val releaseKeyAlias = signingValue("keyAlias", "SALTREADER_KEY_ALIAS")
@@ -78,8 +83,9 @@ android {
         }
         release {
             // Play-ready release: shrink code and resources, then optimize.
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // -PfastRelease 时跳过（本地构建速度优先）。
+            isMinifyEnabled = !fastRelease
+            isShrinkResources = !fastRelease
             isDebuggable = false
             // null on checkouts without signing material -> unsigned release APK.
             signingConfig = signingConfigs.findByName("release")
@@ -95,6 +101,11 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+    }
+
+    lint {
+        // `-PfastRelease` 只用于本地快速出包，跳过 release lint；CI 保持完整检查。
+        checkReleaseBuilds = !fastRelease
     }
 
     packaging {
@@ -138,7 +149,6 @@ dependencies {
     implementation(libs.androidx.core.splashscreen)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
-    implementation(libs.androidx.documentfile)
     implementation(libs.androidx.exifinterface)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.kotlinx.serialization.json)
