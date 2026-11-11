@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="about_section_links">連結</string>
+    <string name="about_commit">提交</string>
+    <string name="about_build_time">建置時間</string>
+    <string name="about_source_code">原始碼</string>
+    <string name="about_source_code_desc">GitHub · PolarisSdesu/SaltReader</string>
+    <string name="about_issues">問題回報</string>
+    <string name="about_issues_desc">在 GitHub 上回報 bug 或功能建議</string>
+    <string name="about_updates">檢查更新</string>
+    <string name="about_updates_desc">GitHub Releases 上的測試版本</string>
+    <string name="about_licenses">開源授權</string>
+    <string name="about_licenses_desc">第三方元件及其授權條款</string>
+    <string name="about_section_storage">書庫</string>
+    <string name="about_books">藏書</string>
+    <string name="about_books_value">%1$d 本 · %2$d 個目錄</string>
+    <string name="about_cache">快取</string>
+    <string name="about_cache_value">封面與文字快取佔用 %1$s</string>
+    <string name="about_section_privacy">隱私</string>
+    <string name="about_privacy_title">本機優先</string>
+    <string name="about_privacy_body">Salt Reader 不申請網路或儲存權限。書籍經系統選擇器授權後原地讀取，只有封面與文字快取會寫入應用程式私有目錄，所有資料都不會離開裝置。</string>
+    <string name="about_copy">複製</string>
+    <string name="about_copied">已複製到剪貼簿</string>
+    <string name="about_debug_title">除錯資訊</string>
+    <string name="about_open_failed">沒有可以開啟此連結的應用程式</string>
+    <string name="about_unknown">未知</string>
+</resources>

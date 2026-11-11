@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="about_section_links">リンク</string>
+    <string name="about_commit">コミット</string>
+    <string name="about_build_time">ビルド日時</string>
+    <string name="about_source_code">ソースコード</string>
+    <string name="about_source_code_desc">GitHub · PolarisSdesu/SaltReader</string>
+    <string name="about_issues">問題を報告</string>
+    <string name="about_issues_desc">GitHub でバグや要望を報告</string>
+    <string name="about_updates">アップデートを確認</string>
+    <string name="about_updates_desc">GitHub Releases のテストビルド</string>
+    <string name="about_licenses">オープンソースライセンス</string>
+    <string name="about_licenses_desc">サードパーティ製コンポーネントとライセンス</string>
+    <string name="about_section_storage">ライブラリ</string>
+    <string name="about_books">蔵書</string>
+    <string name="about_books_value">%1$d 冊 · %2$d フォルダ</string>
+    <string name="about_cache">キャッシュ</string>
+    <string name="about_cache_value">表紙とテキストのキャッシュ %1$s</string>
+    <string name="about_section_privacy">プライバシー</string>
+    <string name="about_privacy_title">ローカルファースト</string>
+    <string name="about_privacy_body">Salt Reader はネットワークやストレージの権限を要求しません。書籍はシステムのピッカーで許可したフォルダから直接読み込まれ、アプリ専用領域には表紙とテキストのキャッシュのみを保存します。データが端末外に出ることはありません。</string>
+    <string name="about_copy">コピー</string>
+    <string name="about_copied">クリップボードにコピーしました</string>
+    <string name="about_debug_title">デバッグ情報</string>
+    <string name="about_open_failed">このリンクを開けるアプリがありません</string>
+    <string name="about_unknown">不明</string>
+</resources>

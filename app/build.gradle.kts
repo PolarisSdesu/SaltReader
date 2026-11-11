@@ -43,6 +43,20 @@ val appVersionCode: Int = versionPart("versionCode", "1").toInt()
 // only; CI / Play builds never pass the flag and keep the full optimized pipeline.
 val fastRelease = providers.gradleProperty("fastRelease").isPresent
 
+// Build provenance for Settings -> About (commit hash / commit time). Using `providers.exec`
+// keeps this compatible with the configuration cache; both values are stable for a given
+// commit, so they do not invalidate incremental builds between runs. Falls back to
+// "unknown"/0 when git is unavailable (e.g. building from a source tarball).
+fun gitValue(vararg args: String): String? = runCatching {
+    providers.exec {
+        workingDir = rootProject.projectDir
+        commandLine("git", *args)
+    }.standardOutput.asText.get().trim()
+}.getOrNull()?.takeIf { it.isNotEmpty() }
+
+val gitHash: String = gitValue("rev-parse", "--short", "HEAD") ?: "unknown"
+val gitCommitTime: Long = gitValue("log", "-1", "--format=%ct")?.toLongOrNull() ?: 0L
+
 val releaseStoreFile = signingValue("storeFile", "SALTREADER_KEYSTORE")
 val releaseStorePassword = signingValue("storePassword", "SALTREADER_STORE_PASSWORD")
 val releaseKeyAlias = signingValue("keyAlias", "SALTREADER_KEY_ALIAS")
@@ -61,6 +75,8 @@ android {
         versionCode = appVersionCode
         versionName = appVersionName
         vectorDrawables.useSupportLibrary = true
+        buildConfigField("String", "GIT_HASH", "\"$gitHash\"")
+        buildConfigField("long", "GIT_COMMIT_TIME", "${gitCommitTime}L")
     }
 
     signingConfigs {

@@ -1,10 +1,13 @@
 package moe.gbxin.saltreader.ui.settings
 
 
+import android.content.ClipData
+import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -85,6 +88,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -101,6 +106,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -133,6 +139,9 @@ import moe.gbxin.saltreader.util.SUPPORTED_APP_LANGUAGES
 import moe.gbxin.saltreader.util.currentAppLanguage
 import moe.gbxin.saltreader.util.formatBytes
 import moe.gbxin.saltreader.util.setAppLanguage
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 abstract class BaseSettingsActivity : LocalizedActivity() {
     @Composable
@@ -804,7 +813,6 @@ private val runtimeLibraries = listOf(
     OpenSourceLibrary("Material Components for Android / Material 3", "Apache License 2.0"),
     OpenSourceLibrary("Material Icons", "Apache License 2.0"),
     OpenSourceLibrary("AndroidX SplashScreen", "Apache License 2.0"),
-    OpenSourceLibrary("AndroidX DocumentFile", "Apache License 2.0"),
     OpenSourceLibrary("AndroidX ExifInterface", "Apache License 2.0"),
     OpenSourceLibrary(
         "mobi-api4java",
@@ -930,8 +938,69 @@ private fun LibraryRow(library: OpenSourceLibrary) {
     }
 }
 
+private const val REPO_URL = "https://github.com/PolarisSdesu/SaltReader"
+
+/**
+ * About page, modelled after PiliPlus' layout: identity, version/build provenance, links,
+ * storage/cache status, and a local-first privacy note. Tapping the logo five times opens a
+ * hidden debug-info dialog (copyable device/build details for bug reports).
+ */
 @Composable
 private fun AboutSettingsPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val app = context.applicationContext as SaltReaderApplication
+    val scope = rememberCoroutineScope()
+    val books by app.library.books.collectAsStateWithLifecycle()
+    var cacheBytes by remember { mutableLongStateOf(0L) }
+    var rootsCount by remember { mutableIntStateOf(0) }
+    var showDebug by remember { mutableStateOf(false) }
+    var logoPresses by remember { mutableIntStateOf(0) }
+
+    LaunchedEffect(Unit) {
+        val snapshot = withContext(Dispatchers.IO) {
+            app.library.roots().size to app.library.appDataBytes()
+        }
+        rootsCount = snapshot.first
+        cacheBytes = snapshot.second
+    }
+
+    fun openUrl(url: String) {
+        val launched = runCatching {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        }.isSuccess
+        if (!launched) Toast.makeText(context, R.string.about_open_failed, Toast.LENGTH_SHORT).show()
+    }
+
+    fun copy(text: String) {
+        runCatching {
+            context.getSystemService(ClipboardManager::class.java)
+                ?.setPrimaryClip(ClipData.newPlainText("Salt Reader", text))
+            Toast.makeText(context, R.string.about_copied, Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    val versionText = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
+    val buildTimeText = remember(BuildConfig.GIT_COMMIT_TIME) {
+        if (BuildConfig.GIT_COMMIT_TIME <= 0L) {
+            context.getString(R.string.about_unknown)
+        } else {
+            SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
+                .format(Date(BuildConfig.GIT_COMMIT_TIME * 1000L))
+        }
+    }
+    val debugInfo = remember(BuildConfig.GIT_HASH, buildTimeText) {
+        buildString {
+            appendLine("Salt Reader $versionText")
+            appendLine("build=${BuildConfig.BUILD_TYPE} commit=${BuildConfig.GIT_HASH}")
+            appendLine("commitTime=$buildTimeText")
+            appendLine("device=${Build.MANUFACTURER} ${Build.MODEL}")
+            appendLine("android=${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})")
+            appendLine("abi=${Build.SUPPORTED_ABIS.firstOrNull().orEmpty()}")
+        }
+    }
+    val booksText = stringResource(R.string.about_books_value, books.size, rootsCount)
+    val cacheText = stringResource(R.string.about_cache_value, formatBytes(cacheBytes))
+
     SettingsScaffold(stringResource(R.string.settings_about_title), onBack) { innerPadding ->
         Column(
             Modifier.fillMaxSize().padding(innerPadding).verticalScroll(rememberScrollState())
@@ -941,12 +1010,17 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                 Modifier.fillMaxWidth().padding(top = 8.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                // Vector mark tinted with theme roles: matches Android 13 monochrome/themed icons
-                // and follows light/dark/dynamic color automatically.
+                // Vector mark tinted with theme roles: matches Android 13 monochrome/themed icons.
                 Surface(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.size(96.dp),
+                    modifier = Modifier.size(96.dp).clickable {
+                        logoPresses += 1
+                        if (logoPresses >= 5) {
+                            logoPresses = 0
+                            showDebug = true
+                        }
+                    },
                 ) {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Icon(
@@ -972,33 +1046,123 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
             SettingsCard {
                 SettingsInfoRow(
                     stringResource(R.string.settings_about_version),
-                    "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                    versionText,
+                    onClick = { copy(versionText) },
                 )
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    modifier = Modifier.padding(start = 16.dp),
-                )
-                SettingsInfoRow(stringResource(R.string.settings_about_build), BuildConfig.BUILD_TYPE)
-                HorizontalDivider(
-                    color = MaterialTheme.colorScheme.outlineVariant,
-                    modifier = Modifier.padding(start = 16.dp),
-                )
-                val context = LocalContext.current
+                SettingsDivider()
                 SettingsInfoRow(
-                    stringResource(R.string.settings_about_github),
-                    "PolarisSdesu/SaltReader",
-                    onClick = {
-                        runCatching {
-                            context.startActivity(
-                                Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/PolarisSdesu/SaltReader")),
-                            )
-                        }
-                    },
+                    stringResource(R.string.about_commit),
+                    BuildConfig.GIT_HASH,
+                    onClick = { openUrl("$REPO_URL/commit/${BuildConfig.GIT_HASH}") },
                 )
+                SettingsDivider()
+                SettingsInfoRow(stringResource(R.string.about_build_time), buildTimeText)
+                SettingsDivider()
+                SettingsInfoRow(stringResource(R.string.settings_about_build), BuildConfig.BUILD_TYPE)
+            }
+            SettingsSectionLabel(stringResource(R.string.about_section_links))
+            SettingsCard {
+                SettingsActionRow(
+                    icon = Icons.Outlined.Description,
+                    title = stringResource(R.string.about_source_code),
+                    enabled = true,
+                    supporting = stringResource(R.string.about_source_code_desc),
+                ) { openUrl(REPO_URL) }
+                SettingsDivider()
+                SettingsActionRow(
+                    icon = Icons.Outlined.Info,
+                    title = stringResource(R.string.about_issues),
+                    enabled = true,
+                    supporting = stringResource(R.string.about_issues_desc),
+                ) { openUrl("$REPO_URL/issues") }
+                SettingsDivider()
+                SettingsActionRow(
+                    icon = Icons.Outlined.Language,
+                    title = stringResource(R.string.about_updates),
+                    enabled = true,
+                    supporting = stringResource(R.string.about_updates_desc),
+                ) { openUrl("$REPO_URL/releases") }
+                SettingsDivider()
+                SettingsActionRow(
+                    icon = Icons.AutoMirrored.Outlined.MenuBook,
+                    title = stringResource(R.string.about_licenses),
+                    enabled = true,
+                    supporting = stringResource(R.string.about_licenses_desc),
+                ) { context.startActivity(Intent(context, LicensesSettingsActivity::class.java)) }
+            }
+            SettingsSectionLabel(stringResource(R.string.about_section_storage))
+            SettingsCard {
+                SettingsInfoRow(stringResource(R.string.about_books), booksText)
+                SettingsDivider()
+                SettingsActionRow(
+                    icon = Icons.Outlined.Delete,
+                    title = stringResource(R.string.settings_storage_clear_cache),
+                    enabled = cacheBytes > 0L,
+                    supporting = cacheText,
+                ) {
+                    scope.launch {
+                        val freed = withContext(Dispatchers.IO) { app.library.clearCaches() }
+                        cacheBytes = withContext(Dispatchers.IO) { app.library.appDataBytes() }
+                        Toast.makeText(
+                            context,
+                            context.getString(R.string.settings_about_cache_cleared, formatBytes(freed)),
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }
+                }
+            }
+            SettingsSectionLabel(stringResource(R.string.about_section_privacy))
+            SettingsCard {
+                Column(Modifier.fillMaxWidth().padding(16.dp)) {
+                    Text(
+                        stringResource(R.string.about_privacy_title),
+                        style = MaterialTheme.typography.titleMedium,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        stringResource(R.string.about_privacy_body),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
     }
 
+    if (showDebug) {
+        AlertDialog(
+            onDismissRequest = { showDebug = false },
+            title = { Text(stringResource(R.string.about_debug_title)) },
+            text = {
+                Text(
+                    debugInfo,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    copy(debugInfo)
+                    showDebug = false
+                }) {
+                    Text(stringResource(R.string.about_copy))
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDebug = false }) {
+                    Text(stringResource(R.string.settings_about_title))
+                }
+            },
+        )
+    }
+}
+
+@Composable
+private fun SettingsDivider() {
+    HorizontalDivider(
+        color = MaterialTheme.colorScheme.outlineVariant,
+        modifier = Modifier.padding(start = 16.dp),
+    )
 }
 
 @Composable
