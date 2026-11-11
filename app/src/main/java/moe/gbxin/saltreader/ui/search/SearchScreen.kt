@@ -2,7 +2,6 @@
 package moe.gbxin.saltreader.ui.search
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -145,7 +144,7 @@ fun SearchScreen(onOpenBook: (ComicBook) -> Unit, onBack: () -> Unit) {
     ) { innerPadding ->
         val navBarBottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
         Column(
-            Modifier.fillMaxSize().padding(innerPadding).animateContentSize(),
+            Modifier.fillMaxSize().padding(innerPadding),
         ) {
             SearchField(
                 value = state.query,
@@ -178,7 +177,7 @@ fun SearchScreen(onOpenBook: (ComicBook) -> Unit, onBack: () -> Unit) {
                         items(state.books, key = { it.id }) { book ->
                             SearchResultCard(
                                 book = book,
-                                coverFile = repo.coverFile(book),
+                                coverFile = remember(book.id) { repo.coverFile(book) },
                                 showMeta = settings.libraryMetaVisible,
                                 metaTextSizeSp = settings.libraryMetaTextSizeSp,
                                 metaFields = settings.libraryMetaFields,

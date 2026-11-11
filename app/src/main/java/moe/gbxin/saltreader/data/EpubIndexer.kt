@@ -30,6 +30,54 @@ object EpubSpineClassifier {
     /** 只有书架进度估算用，真实位置由 progressOffset 决定。 */
     fun estimatePageCount(charCount: Long): Int =
         max(1, (charCount / CHARS_PER_PAGE).toInt())
+
+    /**
+     * spine 扫描的判定结果。
+     *
+     * - [kind]：ARCHIVE = 图片型，TEXT = 文字型；
+     * - [pageCount]：仅图片型有意义（已按页数策略把未检查页计入）；文字型为 0，
+     *   页数仍由 [estimatePageCount] 按 charCount 估算；
+     * - [budgetExhausted]：判定时扫描预算是否已耗尽，原样透传便于调用方/测试区分来源。
+     */
+    data class ScanDecision(
+        val kind: BookKind,
+        val pageCount: Int,
+        val budgetExhausted: Boolean,
+    ) {
+        val imageBased: Boolean get() = kind == BookKind.ARCHIVE
+    }
+
+    /**
+     * 仅依据 XHTML 扫描结果做分类决策（纯函数，便于 JVM 单测）。
+     *
+     * 修复点：分母必须是"实际检查过的页数" [examinedPages]，而不是全部 spine 页数。原实现用
+     * 全部 spine 页数做分母，扫描预算耗尽后未检查的页仍会累加分母，导致图片型 EPUB 的图片页
+     * 比例被稀释、跌破 [IMAGE_RATIO] 而误判成文字型（随后走昂贵的整本文字提取）。
+     *
+     * - 预算未耗尽：直接按已检查页比例判定，图片型页数 = 已检查出的图片页数。
+     * - 预算耗尽：仍按已检查比例保守判定；若判定为图片型，则把 [remainingPages]（来不及检查
+     *   的页）计入页数，避免页数明显偏小。这些页没有图片映射，由调用方补齐占位映射。
+     * - [remainingPages] 在预算未耗尽时忽略（那时只可能来自文字型的提前终止）。
+     */
+    fun decideByScan(
+        imagePages: Int,
+        examinedPages: Int,
+        remainingPages: Int,
+        budgetExhausted: Boolean,
+    ): ScanDecision {
+        val examined = examinedPages.coerceAtLeast(0)
+        // 防御性裁剪：图片页不可能多于检查过的页。
+        val images = imagePages.coerceIn(0, examined)
+        if (examined == 0 || images == 0) {
+            return ScanDecision(BookKind.TEXT, pageCount = 0, budgetExhausted = budgetExhausted)
+        }
+        if (images.toFloat() / examined < IMAGE_RATIO) {
+            return ScanDecision(BookKind.TEXT, pageCount = 0, budgetExhausted = budgetExhausted)
+        }
+        val unchecked = if (budgetExhausted) remainingPages.coerceAtLeast(0).toLong() else 0L
+        val pages = (images.toLong() + unchecked).coerceAtMost(Int.MAX_VALUE.toLong())
+        return ScanDecision(BookKind.ARCHIVE, pageCount = pages.toInt(), budgetExhausted = budgetExhausted)
+    }
 }
 
 /**
@@ -45,7 +93,9 @@ internal object EpubIndexer {
     private const val MAX_OPF_BYTES = 16L * 1024L * 1024L
     private const val MAX_CHAPTER_BYTES = 8L * 1024L * 1024L
     private const val MAX_XHTML_SCAN_BYTES = 2L * 1024L * 1024L
-    private const val XHTML_SCAN_BUDGET = 1L * 1024L * 1024L
+    // 文字书有"24 页且图片比例 < 0.2 提前终止"，实际只有图片书才会用满预算，
+    // 因此给到 32MB，避免图片书扫描中途断粮后分类比例失真。
+    private const val XHTML_SCAN_BUDGET = 32L * 1024L * 1024L
     private const val XHTML_SCAN_EARLY_ABORT = 24
     private const val MAX_INLINE_IMAGE_BYTES = 2L * 1024L * 1024L
     private const val MAX_INLINE_TOTAL_BYTES = 4L * 1024L * 1024L
@@ -78,36 +128,59 @@ internal object EpubIndexer {
         val available = reader.entries().mapTo(HashSet()) { it.name }
 
         var imagePages = 0
-        var spinePages = 0
+        // 分母只算"实际检查过的页"：预算耗尽后未检查的页不能拉低图片比例。
+        var examinedPages = 0
+        // 预算耗尽后仍未检查的 spine 页；保守判定为图片型时按页计入 pageCount。
+        var remainingPages = 0
         var scanBudget = XHTML_SCAN_BUDGET
+        var budgetExhausted = false
         // charCount 需要全书 spine XHTML 大小，分类扫描可能提前结束，所以先算好。
         val xhtmlBytes = opf.spineItems
             .asSequence()
             .filter { it.isXhtml }
             .sumOf { max(0L, it.uncompressedSize) }
         val imageEntries = ArrayList<String>()
+        // 预算耗尽后未检查的 XHTML spine 条目名：图片条目无从得知，用条目名占位补齐映射。
+        val remainingEntries = ArrayList<String>()
 
         for (item in opf.spineItems) {
-            spinePages++
             // 扫了足够多页仍几乎没有图片：按文字型提前结束，别为分类读完大半本书。
-            if (spinePages >= XHTML_SCAN_EARLY_ABORT &&
-                imagePages.toFloat() / spinePages < 0.2f
+            if (examinedPages >= XHTML_SCAN_EARLY_ABORT &&
+                imagePages.toFloat() / examinedPages < 0.2f
             ) {
                 break
             }
             val mediaType = item.mediaType.lowercase()
             if (mediaType.startsWith("image/")) {
+                // 直接是图片条目：看元数据就能判定，不消耗扫描预算。
+                examinedPages++
                 if (item.entryName in available) {
                     imagePages++
                     imageEntries += item.entryName
                 }
                 continue
             }
-            if (!item.isXhtml) continue
-            if (scanBudget <= 0L) continue
+            if (!item.isXhtml) {
+                // 非图片、非 XHTML 的 spine 页：看过元数据即可确定它不是图片页。
+                examinedPages++
+                continue
+            }
+            if (budgetExhausted || scanBudget <= 0L) {
+                // 预算耗尽：该页不参与比例计算，只记为未检查页。
+                budgetExhausted = true
+                remainingPages++
+                remainingEntries += item.entryName
+                continue
+            }
             val limit = min(scanBudget, MAX_XHTML_SCAN_BYTES)
-            val bytes = reader.readEntry(item.entryName, limit) ?: continue
+            val bytes = reader.readEntry(item.entryName, limit)
+            if (bytes == null) {
+                // 读取失败视为已检查（确定拿不到图片），且不消耗预算，避免失败页空转。
+                examinedPages++
+                continue
+            }
             scanBudget -= bytes.size
+            examinedPages++
             val image = singleImageEntry(bytes, dirOf(item.entryName), available)
             if (image != null) {
                 imagePages++
@@ -115,10 +188,24 @@ internal object EpubIndexer {
             }
         }
 
-        if (EpubSpineClassifier.isImageBased(imagePages, spinePages) && imageEntries.isNotEmpty()) {
+        val decision = EpubSpineClassifier.decideByScan(
+            imagePages = imagePages,
+            examinedPages = examinedPages,
+            remainingPages = remainingPages,
+            budgetExhausted = budgetExhausted,
+        )
+        if (decision.imageBased && imageEntries.isNotEmpty()) {
+            // 预算耗尽时未检查页也计入了 pageCount，但它们的图片条目无从得知。
+            // 这里用这些页的 spine 条目名占位：名字在 ZIP 中真实存在，消费者按名过滤时不会丢页，
+            // 从而保证 imageEntries.size == pageCount（imagePageEntries()/ComicPageSource 依赖
+            // 该顺序，缺映射会让后续页整体错位）。读取时解不出图片只会退化成空白页。
+            val padding = (decision.pageCount - imageEntries.size).coerceAtLeast(0)
+            repeat(padding) { index ->
+                imageEntries += remainingEntries.getOrNull(index) ?: remainingEntries.lastOrNull() ?: ""
+            }
             return Classification(
                 kind = BookKind.ARCHIVE,
-                pageCount = imageEntries.size,
+                pageCount = decision.pageCount,
                 charCount = 0L,
                 imageEntries = imageEntries,
             )
@@ -215,14 +302,10 @@ internal object EpubIndexer {
         inlineBudget: InlineBudget,
     ): String {
         var html = raw
-        html = SCRIPT_BLOCK.replace(html, "")
-        html = STYLE_BLOCK.replace(html, "")
-        html = LINK_TAG.replace(html, "")
-        html = IFRAME_BLOCK.replace(html, "")
-        html = OBJECT_BLOCK.replace(html, "")
-        html = EMBED_TAG.replace(html, "")
-        html = VIDEO_BLOCK.replace(html, "")
-        html = AUDIO_BLOCK.replace(html, "")
+        // 6 个块级标签合并成一次 alternation 替换，link/embed 两个自闭合标签合并成一次：
+        // 原来 8 遍全串 Regex.replace 各自生成一个新 String，合并后只遍历 2 遍。
+        html = BLOCK_TAGS.replace(html, "")
+        html = SELF_CLOSING_TAGS.replace(html, "")
         html = EVENT_ATTRIBUTE.replace(html, "")
         // 只保留 body 正文，避免把 html/head 嵌套进阅读器模板。
         BODY_BLOCK.find(html)?.let { match -> html = match.groupValues[1] }
@@ -373,14 +456,22 @@ internal object EpubIndexer {
         Regex("([A-Za-z_:][-A-Za-z0-9_:.]*)\\s*=\\s*(\"([^\"]*)\"|'([^']*)')")
 
     private val IMG_TAG = Regex("<img\\b[^>]*>", RegexOption.IGNORE_CASE)
-    private val SCRIPT_BLOCK = Regex("<script\\b[^>]*>[\\s\\S]*?</script\\s*>", RegexOption.IGNORE_CASE)
-    private val STYLE_BLOCK = Regex("<style\\b[^>]*>[\\s\\S]*?</style\\s*>", RegexOption.IGNORE_CASE)
-    private val LINK_TAG = Regex("<link\\b[^>]*>", RegexOption.IGNORE_CASE)
-    private val IFRAME_BLOCK = Regex("<iframe\\b[^>]*>[\\s\\S]*?</iframe\\s*>", RegexOption.IGNORE_CASE)
-    private val OBJECT_BLOCK = Regex("<object\\b[^>]*>[\\s\\S]*?</object\\s*>", RegexOption.IGNORE_CASE)
-    private val EMBED_TAG = Regex("<embed\\b[^>]*>", RegexOption.IGNORE_CASE)
-    private val VIDEO_BLOCK = Regex("<video\\b[^>]*>[\\s\\S]*?</video\\s*>", RegexOption.IGNORE_CASE)
-    private val AUDIO_BLOCK = Regex("<audio\\b[^>]*>[\\s\\S]*?</audio\\s*>", RegexOption.IGNORE_CASE)
+    /**
+     * 6 个需要整块删除的标签（script/style/iframe/object/video/audio）合并成一次替换。
+     * 每个分支的结束标签与自身对应，内容用 [\s\S]*? 非贪婪跨行匹配；IGNORE_CASE 覆盖大小写。
+     */
+    private val BLOCK_TAGS = Regex(
+        "<(?:script\\b[^>]*>[\\s\\S]*?</script\\s*>" +
+            "|style\\b[^>]*>[\\s\\S]*?</style\\s*>" +
+            "|iframe\\b[^>]*>[\\s\\S]*?</iframe\\s*>" +
+            "|object\\b[^>]*>[\\s\\S]*?</object\\s*>" +
+            "|video\\b[^>]*>[\\s\\S]*?</video\\s*>" +
+            "|audio\\b[^>]*>[\\s\\S]*?</audio\\s*>)",
+        RegexOption.IGNORE_CASE,
+    )
+
+    /** link/embed 两个自闭合标签合并成一次替换。 */
+    private val SELF_CLOSING_TAGS = Regex("<(?:link|embed)\\b[^>]*>", RegexOption.IGNORE_CASE)
     private val EVENT_ATTRIBUTE = Regex("""(?i)\s+on[a-z]+\s*=\s*("[^"]*"|'[^']*')""")
     private val REMOTE_ATTRIBUTE =
         Regex("""(?i)\s+(?:src|href|poster)\s*=\s*("(?:https?:)?//[^"]*"|'(?:https?:)?//[^']*')""")

@@ -37,6 +37,7 @@ internal class RemoteZipReader internal constructor(
 ) : Closeable {
     private val lock = Any()
     private var cachedEntries: List<Entry>? = null
+    private var cachedEntryIndex: HashMap<String, Entry>? = null
 
     /** central directory 中的一条记录（只保留读取所需字段）。 */
     data class Entry(
@@ -52,6 +53,23 @@ internal class RemoteZipReader internal constructor(
         cachedEntries ?: parseCentralDirectory().also { cachedEntries = it }
     }
 
+    /** 条目名→Entry 索引：与 [entries] 一样惰性构建并缓存，避免每次按名字线性扫描。 */
+    private fun entryIndex(): HashMap<String, Entry> = synchronized(lock) {
+        cachedEntryIndex ?: run {
+            val list = entries()
+            val index = HashMap<String, Entry>(list.size)
+            for (entry in list) {
+                // 同名条目保持与 firstOrNull 一致的"先出现者优先"语义。
+                if (!index.containsKey(entry.name)) index[entry.name] = entry
+            }
+            cachedEntryIndex = index
+            index
+        }
+    }
+
+    /** 按名字取 central directory 条目；不存在返回 null。 */
+    fun entry(name: String): Entry? = entryIndex()[name]
+
     /** 图片条目，按自然序；加密条目不算可读页。 */
     fun imageEntries(): List<Entry> = entries()
         .filter { !it.encrypted && PageIndexing.isComicImageName(it.name) }
@@ -61,8 +79,15 @@ internal class RemoteZipReader internal constructor(
      * 按条目名读取并解压一个小文件（EPUB container.xml / OPF、CBZ 首图等）。
      * 超过 [maxBytes] 或加密/不支持的压缩算法时返回 null。
      */
-    fun readEntry(name: String, maxBytes: Long): ByteArray? {
-        val entry = entries().firstOrNull { it.name == name } ?: return null
+    fun readEntry(name: String, maxBytes: Long): ByteArray? =
+        entry(name)?.let { readEntry(it, maxBytes) }
+
+    /**
+     * 直接按已解析的 [Entry] 读取：页面源把条目列表整个缓存下来，
+     * 每页不必再用名字查找，避免 O(条目数) 的重复扫描。
+     * 超过 [maxBytes] 或加密/不支持的压缩算法时返回 null。
+     */
+    fun readEntry(entry: Entry, maxBytes: Long): ByteArray? {
         if (entry.encrypted) return null
         if (entry.uncompressedSize > maxBytes || entry.compressedSize > maxBytes) return null
         if (entry.compressedSize < 0L || entry.uncompressedSize < 0L) return null
@@ -91,6 +116,7 @@ internal class RemoteZipReader internal constructor(
     override fun close() {
         synchronized(lock) {
             cachedEntries = null
+            cachedEntryIndex = null
             runCatching { channel.close() }
             runCatching { descriptor?.close() }
         }
@@ -207,6 +233,46 @@ internal class RemoteZipReader internal constructor(
 
     private fun inflate(compressed: ByteArray, expectedSize: Int, maxBytes: Long): ByteArray? {
         if (compressed.isEmpty()) return if (expectedSize == 0) ByteArray(0) else null
+        // 优先路径：central directory 已给出解压后大小且合法时，直接 inflate 到预分配数组，
+        // 省掉 InflaterInputStream + ByteArrayOutputStream + toByteArray 的整块额外拷贝。
+        if (expectedSize > 0 && expectedSize.toLong() <= maxBytes) {
+            inflateExact(compressed, expectedSize)?.let { return it }
+        }
+        // 声明尺寸不可信（截断/多出数据/损坏）或超过 maxBytes 时，回退到原流式实现重新解压。
+        return inflateStreaming(compressed, expectedSize, maxBytes)
+    }
+
+    /**
+     * 已知解压后大小：一次性 inflate 进 [expectedSize] 大小的数组（零额外拷贝）。
+     * 任何尺寸不一致/数据异常都返回 null，由 [inflate] 回退到流式路径。
+     */
+    private fun inflateExact(compressed: ByteArray, expectedSize: Int): ByteArray? {
+        val inflater = Inflater(true)
+        return try {
+            inflater.setInput(compressed)
+            val output = ByteArray(expectedSize)
+            var offset = 0
+            while (!inflater.finished()) {
+                // 已填满声明大小但流还没结束：尺寸声明偏小，交给流式路径判断。
+                if (offset >= output.size) return null
+                val read = inflater.inflate(output, offset, output.size - offset)
+                if (read == 0) {
+                    // 没有进展且未结束：输入被截断或需要字典，视为异常。
+                    return null
+                }
+                offset += read
+            }
+            if (offset != expectedSize) return null
+            output
+        } catch (e: Exception) {
+            null
+        } finally {
+            runCatching { inflater.end() }
+        }
+    }
+
+    /** 原流式实现：不信任声明尺寸时的保底路径，同时负责 [maxBytes] 上限。 */
+    private fun inflateStreaming(compressed: ByteArray, expectedSize: Int, maxBytes: Long): ByteArray? {
         val inflater = Inflater(true)
         return try {
             InflaterInputStream(ByteArrayInputStream(compressed), inflater, 64 * 1024).use { input ->

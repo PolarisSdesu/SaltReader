@@ -24,7 +24,7 @@ data class LibraryRoot(val treeUri: String, val displayName: String)
 internal class LibraryRootsStore(context: Context) {
     private val lock = Any()
     private val file = File(File(context.filesDir, "library"), "roots.json")
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; encodeDefaults = true }
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
     @Volatile
     private var cached: List<LibraryRoot>? = null
@@ -69,7 +69,11 @@ internal class LibraryRootsStore(context: Context) {
  * 原子写文件：先写同目录临时文件，flush + fd.sync() 后 rename 替换。
  * 失败会删除临时文件并抛出异常，绝不静默留下半成品。
  */
-internal fun writeFileAtomically(target: File, write: (OutputStream) -> Unit) {
+internal fun writeFileAtomically(
+    target: File,
+    sync: Boolean = true,
+    write: (OutputStream) -> Unit,
+) {
     val dir = target.parentFile ?: throw IOException("目标文件路径无效：$target")
     if (!dir.exists() && !dir.mkdirs()) throw IOException("无法创建目录：$dir")
     // 用唯一临时文件，避免两个协程同时写同一目标时互相截断。
@@ -79,7 +83,9 @@ internal fun writeFileAtomically(target: File, write: (OutputStream) -> Unit) {
             val buffered = BufferedOutputStream(fileOut, 64 * 1024)
             write(buffered)
             buffered.flush()
-            fileOut.fd.sync()
+            // 可丢弃的派生数据（章节缓存、阅读进度）不 fsync：省掉每次写的刷盘成本，
+            // rename 已经保证不会读到半成品；真正的数据丢失窗口只在进程被强杀时。
+            if (sync) fileOut.fd.sync()
         }
         if (!tmp.renameTo(target)) throw IOException("无法替换文件：$target")
     } catch (t: Throwable) {

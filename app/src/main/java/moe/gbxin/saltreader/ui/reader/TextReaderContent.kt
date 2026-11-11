@@ -287,12 +287,17 @@ internal fun TextReaderContent(
     // position even if the user never taps the back button.
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE) persistProgress(force = true)
+            if (event == Lifecycle.Event.ON_PAUSE) {
+                persistProgress(force = true)
+                // 文字进度同样落独立进度文件，切后台时立即刷盘。
+                vm.flushProgress()
+            }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             persistProgress(force = true)
+            vm.flushProgress()
         }
     }
 
@@ -565,7 +570,10 @@ private fun escapeHtml(text: String): String = text
  */
 private fun buildBookHtml(chapters: List<EbookChapter>, bookTitle: String): String {
     val body = StringBuilder()
-    chapters.forEachIndexed { index, chapter ->
+    for ((index, chapter) in chapters.withIndex()) {
+        // 上限只用于拦截异常巨大的书（正常书远达不到）：整本 HTML 同时存在于内存和 WebView
+        // 里，没有上限时超大文件会在打开瞬间把进程内存打满。
+        if (body.length >= MAX_TOTAL_HTML_CHARS) break
         body.append("<section class=\"chapter\" id=\"ch").append(index).append("\">")
         val heading = chapter.title?.takeIf { it.isNotBlank() }
             ?: bookTitle.takeIf { chapters.size == 1 && it.isNotBlank() }
@@ -577,6 +585,9 @@ private fun buildBookHtml(chapters: List<EbookChapter>, bookTitle: String): Stri
     }
     return HTML_HEAD + body + HTML_TAIL
 }
+
+/** 单本书拼出的 HTML 总量上限（约 24M 字符，正常文字书在 1M 量级）。 */
+private const val MAX_TOTAL_HTML_CHARS = 24 * 1024 * 1024
 
 private const val BRIDGE_NAME = "SaltReader"
 

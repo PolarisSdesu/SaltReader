@@ -11,15 +11,19 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
@@ -28,6 +32,9 @@ import moe.gbxin.saltreader.R
 import org.rr.mobi4java.MobiReader
 import java.io.File
 import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.coroutines.coroutineContext
 import kotlin.math.max
 
@@ -42,12 +49,22 @@ import kotlin.math.max
  */
 class LibraryRepository(private val context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /** 状态锁：只保护内存快照的读改写，临界区里不做序列化 / 写盘。 */
     private val mutex = Mutex()
-    private val json = Json { ignoreUnknownKeys = true; prettyPrint = true; encodeDefaults = true }
+
+    /** 写盘串行化：序列化 + 原子写文件放到状态锁之外，但同一时刻只允许一个写入者。 */
+    private val writeMutex = Mutex()
+
+    /** 书库索引用紧凑 JSON：只保留非默认字段，体积和 encode 时间都明显下降。 */
+    private val json = Json { ignoreUnknownKeys = true; encodeDefaults = false }
 
     private val libraryDir = File(context.filesDir, "library")
     private val coversDir = File(libraryDir, "covers")
     private val booksFile = File(libraryDir, "books.json")
+
+    /** 高频变化的阅读进度单独落盘（紧凑 JSON），不再随每次翻页重写整个书库。 */
+    private val progressFile = File(libraryDir, "progress.json")
 
     /** 文字书章节提取缓存：cacheDir/text/<id>_<modifiedAt>_<size>.html */
     private val textCacheDir = File(context.cacheDir, "text")
@@ -63,14 +80,31 @@ class LibraryRepository(private val context: Context) {
     private val _books = MutableStateFlow<List<ComicBook>>(emptyList())
     val books: StateFlow<List<ComicBook>> = _books.asStateFlow()
 
+    /** id -> 列表下标：翻页 / 标记已读时按 id 直接定位，不再线性扫描整张表。 */
+    @Volatile
+    private var bookIndex: Map<String, Int> = emptyMap()
+
+    /**
+     * 阅读进度覆盖层。内存里与 [_books] 保持一致，磁盘上单独写 [progressFile]；
+     * 载入索引时用它覆盖 books.json 里可能更旧的进度字段。
+     */
+    private val progressEntries = ConcurrentHashMap<String, ReadingProgress>()
+
+    /** 自上次落盘以来进度发生过变化的书籍 id。 */
+    private val dirtyProgress: MutableSet<String> = ConcurrentHashMap.newKeySet()
+
     private val _ready = MutableStateFlow(false)
     val ready: StateFlow<Boolean> = _ready.asStateFlow()
 
     /** 进度变更的合并信号：CONFLATED 保证只保留“还有未落盘变更”这一事实。 */
     private val persistSignal = Channel<Unit>(Channel.CONFLATED)
 
+    /** 阅读进度的合并信号，与书库索引的持久化彻底分开。 */
+    private val progressSignal = Channel<Unit>(Channel.CONFLATED)
+
     init {
         scope.launch { persistWorker() }
+        scope.launch { progressWorker() }
     }
 
     // -----------------------------------------------------------------------
@@ -92,6 +126,11 @@ class LibraryRepository(private val context: Context) {
         val keptIds = kept.mapTo(HashSet()) { it.id }
         val dropped = loaded.filterNot { it.id in keptIds }
 
+        // 阅读进度是独立的小文件：覆盖 books.json 里的旧进度字段。
+        progressEntries.putAll(readProgressFromDisk())
+        val merged = kept.map { book -> progressEntries[book.id]?.applyTo(book) ?: book }
+        dropped.forEach { progressEntries.remove(it.id) }
+
         // 预热 roots 缓存，并同步剔除丢失持久化权限的目录，避免刷新时反复报错。
         val roots = rootsStore.all()
         val keptRoots = roots.filter { it.treeUri in persistedTrees }
@@ -100,19 +139,15 @@ class LibraryRepository(private val context: Context) {
                 .onFailure { Log.e(TAG, "写入 roots.json 失败", it) }
         }
 
-        mutex.withLock {
-            _books.value = sortBooks(kept)
-            if (kept != loaded) {
-                try {
-                    persistBooksLocked(_books.value)
-                } catch (e: Exception) {
-                    Log.e(TAG, "初始化时写入 books.json 失败", e)
-                }
-            }
+        val snapshot = mutex.withLock {
+            publish(sortBooks(merged))
+            _books.value
         }
+        if (merged != loaded) persistBooks(snapshot)
 
         // 权限失效的条目不留在书架上，其派生数据也一并清掉。
         dropped.forEach { removeDerivedFiles(it) }
+        // 封面是派生数据且绝大多数已经存在：并发补齐，避免串行打开文档拖慢启动。
         ensureCovers(kept)
         // 旧版本拍平转换留下的缓存目录不再使用。
         obsoleteCacheDirs.forEach { dir -> if (dir.exists()) runCatching { dir.deleteRecursively() } }
@@ -193,6 +228,7 @@ class LibraryRepository(private val context: Context) {
             )
         }
         val failures = ArrayList<ImportFailure>()
+        val completed = ArrayList<TreeScanResult>()
         for ((index, rootInfo) in roots.withIndex()) {
             coroutineContext.ensureActive()
             val span = 1f / roots.size
@@ -222,9 +258,11 @@ class LibraryRepository(private val context: Context) {
             failures += result.failures
             // 目录枚举失败时整棵 tree 放弃合并，避免把仍存在的书记录删掉。
             if (!result.completed) continue
-            if (!mergeTreeResult(result)) {
-                failures += failure(rootInfo.displayName, DataMessage.SAVE_FAILED)
-            }
+            completed += result
+        }
+        // 多 root 刷新只在最后合并 / 落盘一次，避免每个 root 都重写一遍整库。
+        if (completed.isNotEmpty() && !mergeTreeResults(completed)) {
+            failures += failure(R.string.data_source_library, DataMessage.SAVE_FAILED)
         }
         onProgress(1f, context.getString(R.string.data_progress_done))
         ImportReport(emptyList(), failures)
@@ -269,7 +307,7 @@ class LibraryRepository(private val context: Context) {
         onProgress: (Float, String) -> Unit,
     ): TreeScanResult {
         val treeUri = tree.treeUri.toString()
-        val failures = ArrayList<ImportFailure>()
+        val failures: MutableList<ImportFailure> = CopyOnWriteArrayList()
         val root = tree.rootEntry()
         if (root == null) {
             return TreeScanResult(
@@ -291,25 +329,37 @@ class LibraryRepository(private val context: Context) {
             .filter { it.treeUri == treeUri }
             .associateBy { it.documentPath }
 
-        val scanned = ArrayList<ComicBook>(candidates.size)
         val total = candidates.size
-        for ((index, candidate) in candidates.withIndex()) {
-            coroutineContext.ensureActive()
-            val fraction = if (total == 0) 1f else index.toFloat() / total
-            onProgress(
-                progress.start + (progress.endInclusive - progress.start) * fraction,
-                context.getString(R.string.data_progress_indexed, index + 1, total),
-            )
-            try {
-                val book = indexCandidate(treeUri, candidate, existing[candidate.documentPath], failures)
-                if (book != null) scanned += book
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "索引失败：${candidate.name}", e)
-                failures += failure(candidate.name, DataMessage.READ_FAILED)
-            }
+        val done = AtomicInteger(0)
+        // 每本书都要打开 provider / 解析中央目录，串行导入的时间与书数线性相加；
+        // 每本使用独立的 reader、互不共享状态，因此可以用有界并发把大库导入压到接近 1/N。
+        val books = coroutineScope {
+            val limiter = Semaphore(SCAN_CONCURRENCY)
+            candidates.map { candidate ->
+                async(Dispatchers.IO) {
+                    limiter.withPermit {
+                        coroutineContext.ensureActive()
+                        val index = done.incrementAndGet()
+                        val fraction = if (total == 0) 1f else (index - 1).toFloat() / total
+                        onProgress(
+                            progress.start + (progress.endInclusive - progress.start) * fraction,
+                            context.getString(R.string.data_progress_indexed, index, total),
+                        )
+                        try {
+                            indexCandidate(treeUri, candidate, existing[candidate.documentPath], failures)
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            Log.w(TAG, "索引失败：${candidate.name}", e)
+                            failures += failure(candidate.name, DataMessage.READ_FAILED)
+                            null
+                        }
+                    }
+                }
+            }.awaitAll()
         }
+        val scanned = ArrayList<ComicBook>(books.size)
+        books.filterNotNullTo(scanned)
         onProgress(progress.endInclusive, context.getString(R.string.data_progress_done))
         return TreeScanResult(treeUri, scanned, failures, true)
     }
@@ -582,20 +632,24 @@ class LibraryRepository(private val context: Context) {
         null
     }
 
-    private suspend fun mergeTreeResult(result: TreeScanResult): Boolean {
-        val merged = mutex.withLock {
-            val survivors = _books.value.filterNot { it.treeUri == result.treeUri }
-            val next = sortBooks(survivors + result.scanned)
-            _books.value = next
-            try {
-                persistBooksLocked(next)
-                true
-            } catch (e: Exception) {
-                Log.e(TAG, "写入 books.json 失败", e)
-                false
-            }
+    private suspend fun mergeTreeResult(result: TreeScanResult): Boolean =
+        mergeTreeResults(listOf(result))
+
+    /**
+     * 合并一批 tree 扫描结果：状态锁内只做列表合并，序列化 + 落盘放到锁外。
+     * 扫描期间用户可能还在阅读，因此用进度覆盖层兜底，避免旧记录把新进度盖回去。
+     */
+    private suspend fun mergeTreeResults(results: List<TreeScanResult>): Boolean {
+        if (results.isEmpty()) return true
+        val treeUris = results.mapTo(HashSet()) { it.treeUri }
+        val next = mutex.withLock {
+            val survivors = _books.value.filterNot { it.treeUri in treeUris }
+            val scanned = results.flatMap { it.scanned }
+                .map { book -> progressEntries[book.id]?.applyTo(book) ?: book }
+            publish(sortBooks(survivors + scanned))
+            _books.value
         }
-        return merged
+        return persistBooks(next)
     }
 
     // -----------------------------------------------------------------------
@@ -605,17 +659,14 @@ class LibraryRepository(private val context: Context) {
     fun roots(): List<LibraryRoot> = rootsStore.all()
 
     suspend fun removeRoot(treeUri: String) = withContext(Dispatchers.IO) {
-        val removed = mutex.withLock {
+        val (removed, next) = mutex.withLock {
             val affected = _books.value.filter { it.treeUri == treeUri }
-            _books.value = _books.value.filterNot { it.treeUri == treeUri }
-            try {
-                persistBooksLocked(_books.value)
-            } catch (e: Exception) {
-                Log.e(TAG, "写入 books.json 失败", e)
-            }
-            affected
+            publish(_books.value.filterNot { it.treeUri == treeUri })
+            affected.forEach { dropProgressEntry(it.id) }
+            affected to _books.value
         }
-        removed.forEach { removeDerivedFiles(it) }
+        persistBooks(next)
+        if (removed.isNotEmpty()) deleteTextCaches(removed.map { it.id })
         runCatching { rootsStore.remove(treeUri) }
             .onFailure { Log.e(TAG, "写入 roots.json 失败", it) }
         runCatching { Uri.parse(treeUri) }.getOrNull()?.let { uri ->
@@ -631,14 +682,12 @@ class LibraryRepository(private val context: Context) {
 
     /** 只删除索引、封面与文本缓存；SAF 引用的用户文件绝不触碰。 */
     suspend fun delete(book: ComicBook) = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            _books.update { list -> list.filterNot { it.id == book.id } }
-            try {
-                persistBooksLocked(_books.value)
-            } catch (e: Exception) {
-                Log.e(TAG, "写入 books.json 失败", e)
-            }
+        val next = mutex.withLock {
+            publish(_books.value.filterNot { it.id == book.id })
+            dropProgressEntry(book.id)
+            _books.value
         }
+        persistBooks(next)
         removeDerivedFiles(book)
         Unit
     }
@@ -646,87 +695,89 @@ class LibraryRepository(private val context: Context) {
     suspend fun rename(book: ComicBook, title: String): Boolean = withContext(Dispatchers.IO) {
         val clean = title.trim().take(120)
         if (clean.isBlank()) return@withContext false
-        mutex.withLock {
-            _books.update { list -> list.map { if (it.id == book.id) it.copy(title = clean) else it } }
-            try {
-                persistBooksLocked(_books.value)
-                true
-            } catch (e: Exception) {
-                Log.e(TAG, "写入 books.json 失败", e)
-                false
-            }
+        val next = mutex.withLock {
+            publish(_books.value.map { if (it.id == book.id) it.copy(title = clean) else it })
+            _books.value
         }
+        persistBooks(next)
     }
 
     suspend fun setFinished(book: ComicBook, finished: Boolean): Boolean = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            _books.update { list ->
-                list.map {
+        val next = mutex.withLock {
+            val now = System.currentTimeMillis()
+            publish(
+                _books.value.map {
                     if (it.id == book.id) {
                         it.copy(
                             finished = finished,
                             currentPage = if (finished) max(0, it.pageCount - 1) else 0,
-                            lastReadAt = if (finished) System.currentTimeMillis() else it.lastReadAt,
+                            lastReadAt = if (finished) now else it.lastReadAt,
                         )
                     } else {
                         it
                     }
-                }
-            }
-            try {
-                persistBooksLocked(_books.value)
-                true
-            } catch (e: Exception) {
-                Log.e(TAG, "写入 books.json 失败", e)
-                false
-            }
+                },
+            )
+            _books.value.firstOrNull { it.id == book.id }?.let(::refreshProgressEntry)
+            _books.value
         }
+        persistBooks(next)
     }
 
     suspend fun setDirection(bookId: String, direction: ReadingDirection?) = withContext(Dispatchers.IO) {
-        mutex.withLock {
-            _books.update { list ->
-                list.map { if (it.id == bookId) it.copy(direction = direction) else it }
-            }
-            try {
-                persistBooksLocked(_books.value)
-            } catch (e: Exception) {
-                Log.e(TAG, "写入 books.json 失败", e)
-            }
+        val next = mutex.withLock {
+            publish(_books.value.map { if (it.id == bookId) it.copy(direction = direction) else it })
+            _books.value
         }
+        persistBooks(next)
         Unit
     }
 
+    /**
+     * 翻页进度：只更新内存快照 + 进度覆盖层，并调度 progress.json 的独立写盘。
+     * 不再触发 books.json 的整库重写。
+     */
     fun updateProgress(bookId: String, page: Int) {
-        val current = _books.value.firstOrNull { it.id == bookId } ?: return
+        val index = indexOfBook(bookId)
+        if (index < 0) return
+        val books = _books.value
+        val current = books[index]
         val safePage = page.coerceIn(0, max(0, current.pageCount - 1))
-        if (current.currentPage == safePage && !current.finished) return
+        // 停在同一页时不刷新 lastReadAt：否则已读完的书每次退出阅读器都会触发一次写盘。
+        if (current.currentPage == safePage) return
         val updated = current.copy(
             currentPage = safePage,
             lastReadAt = System.currentTimeMillis(),
             finished = current.pageCount > 0 && safePage >= current.pageCount - 1,
         )
-        _books.update { list -> list.map { if (it.id == bookId) updated else it } }
-        schedulePersist()
+        publish(books.toMutableList().also { it[index] = updated }, rebuildIndex = false)
+        refreshProgressEntry(updated)
     }
 
+    /** 打开书时只更新「最近阅读时间」，同样走进度文件而不是整库写盘。 */
     fun markOpened(bookId: String) {
-        val current = _books.value.firstOrNull { it.id == bookId } ?: return
-        val updated = current.copy(lastReadAt = System.currentTimeMillis())
-        _books.update { list -> list.map { if (it.id == bookId) updated else it } }
-        schedulePersist()
+        val index = indexOfBook(bookId)
+        if (index < 0) return
+        val books = _books.value
+        val updated = books[index].copy(lastReadAt = System.currentTimeMillis())
+        publish(books.toMutableList().also { it[index] = updated }, rebuildIndex = false)
+        refreshProgressEntry(updated)
     }
 
-    /** 阅读器 prepare() 拿到真实页数后回填（只改内存并调度防抖落盘）。 */
+    /** 阅读器 prepare() 拿到真实页数后回填（结构变化，仍然写 books.json）。 */
     fun updatePageCount(bookId: String, pageCount: Int) {
         if (pageCount <= 0) return
-        val current = _books.value.firstOrNull { it.id == bookId } ?: return
+        val index = indexOfBook(bookId)
+        if (index < 0) return
+        val books = _books.value
+        val current = books[index]
         if (current.pageCount == pageCount) return
         val updated = current.copy(
             pageCount = pageCount,
             currentPage = current.currentPage.coerceIn(0, max(0, pageCount - 1)),
         )
-        _books.update { list -> list.map { if (it.id == bookId) updated else it } }
+        publish(books.toMutableList().also { it[index] = updated })
+        refreshProgressEntry(updated)
         schedulePersist()
     }
 
@@ -736,7 +787,10 @@ class LibraryRepository(private val context: Context) {
      */
     fun updateTextStats(bookId: String, charCount: Long) {
         if (charCount <= 0L) return
-        val current = _books.value.firstOrNull { it.id == bookId } ?: return
+        val index = indexOfBook(bookId)
+        if (index < 0) return
+        val books = _books.value
+        val current = books[index]
         if (!current.reflowable || current.charCount == charCount) return
         val pageCount = EpubSpineClassifier.estimatePageCount(charCount)
         val offset = current.progressOffset.coerceIn(0L, charCount)
@@ -749,16 +803,20 @@ class LibraryRepository(private val context: Context) {
             progressOffset = offset,
             currentPage = page,
         )
-        _books.update { list -> list.map { if (it.id == bookId) updated else it } }
+        publish(books.toMutableList().also { it[index] = updated })
+        refreshProgressEntry(updated)
         schedulePersist()
     }
 
     /**
      * 文字阅读进度回填：progressOffset 是唯一权威位置，currentPage 仅用于书架进度显示。
-     * offset ≥ charCount * 99% 时置为已读完；写盘走统一 debounce。
+     * offset ≥ charCount * 99% 时置为已读完；写盘走进度文件的独立节流。
      */
     fun updateTextProgress(bookId: String, offset: Long) {
-        val current = _books.value.firstOrNull { it.id == bookId } ?: return
+        val index = indexOfBook(bookId)
+        if (index < 0) return
+        val books = _books.value
+        val current = books[index]
         if (!current.reflowable || current.charCount <= 0L) return
         val safeOffset = offset.coerceIn(0L, current.charCount)
         val finished = current.finished || safeOffset >= (current.charCount * 0.99).toLong()
@@ -772,8 +830,8 @@ class LibraryRepository(private val context: Context) {
             finished = finished,
             lastReadAt = System.currentTimeMillis(),
         )
-        _books.update { list -> list.map { if (it.id == bookId) updated else it } }
-        schedulePersist()
+        publish(books.toMutableList().also { it[index] = updated }, rebuildIndex = false)
+        refreshProgressEntry(updated)
     }
 
     // -----------------------------------------------------------------------
@@ -804,10 +862,32 @@ class LibraryRepository(private val context: Context) {
     }
 
     private fun loadEpubChapters(book: ComicBook): List<EbookChapter> {
+        // 章节清洗（逐章解压 + 十几遍正则 + 图片内联）是打开文字书最贵的一步；
+        // 和 MOBI 一样落盘缓存，命中时直接读 JSON，二次打开几乎零成本。
+        val cache = chapterCacheFile(book)
+        if (cache.exists() && cache.length() > 0L) {
+            val cached = runCatching {
+                json.decodeFromString<List<EbookChapter>>(cache.readText(Charsets.UTF_8))
+            }.getOrNull()
+            if (!cached.isNullOrEmpty()) return cached
+        }
         val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return emptyList()
         val reader = RemoteZipReader.open(context, uri) ?: return emptyList()
-        return reader.use { opened -> EpubIndexer.loadChapters(opened) }
+        val chapters = reader.use { opened -> EpubIndexer.loadChapters(opened) }
+        if (chapters.isNotEmpty()) {
+            runCatching {
+                val payload = json.encodeToString(chapters).toByteArray(Charsets.UTF_8)
+                textCacheDir.mkdirs()
+                // 派生缓存：不需要 fsync。
+                writeFileAtomically(cache, sync = false) { out -> out.write(payload) }
+            }.onFailure { Log.w(TAG, "写入 EPUB 章节缓存失败：${book.title}", it) }
+        }
+        return chapters
     }
+
+    /** EPUB 章节缓存：派生数据，id + 指纹命名，重新索引时随旧指纹一并失效。 */
+    private fun chapterCacheFile(book: ComicBook): File =
+        File(textCacheDir, "${book.id}_${book.modifiedAt}_${book.sizeBytes}.chapters.json")
 
     private suspend fun loadMobiChapters(book: ComicBook): List<EbookChapter> {
         val cache = textCacheFile(book)
@@ -835,7 +915,8 @@ class LibraryRepository(private val context: Context) {
             }
             textCacheDir.mkdirs()
             runCatching {
-                writeFileAtomically(cache) { out -> out.write(html.toByteArray(Charsets.UTF_8)) }
+                // 派生缓存：不需要 fsync。
+                writeFileAtomically(cache, sync = false) { out -> out.write(html.toByteArray(Charsets.UTF_8)) }
             }.onFailure { Log.w(TAG, "写入文字缓存失败：${book.title}", it) }
             updateTextStats(book.id, plainText.length.toLong().coerceAtLeast(1L))
             val title = document.fullName?.takeIf { it.isNotBlank() } ?: book.title
@@ -853,10 +934,19 @@ class LibraryRepository(private val context: Context) {
     /** MOBI 纯文本 → 简单 HTML：按行包 <p> 并转义。 */
     private fun mobiTextToHtml(text: String): String {
         val builder = StringBuilder(text.length + text.length / 8 + 32)
-        for (line in text.split('\n')) {
-            val trimmed = line.trim('\r', ' ', '\t')
-            if (trimmed.isEmpty()) continue
-            builder.append("<p>").append(escapeHtml(trimmed)).append("</p>\n")
+        // 不用 text.split('\n')：那会为整本书一次性创建几百万元素的行列表。
+        var lineStart = 0
+        var index = 0
+        while (index <= text.length) {
+            val atLineEnd = index == text.length || text[index] == '\n'
+            if (atLineEnd) {
+                val trimmed = text.substring(lineStart, index).trim('\r', ' ', '\t')
+                if (trimmed.isNotEmpty()) {
+                    builder.append("<p>").append(escapeHtml(trimmed)).append("</p>\n")
+                }
+                lineStart = index + 1
+            }
+            index++
         }
         if (builder.isEmpty()) builder.append("<p></p>")
         return builder.toString()
@@ -879,6 +969,18 @@ class LibraryRepository(private val context: Context) {
 
     private fun deleteTextCache(bookId: String) {
         textCacheDir.listFiles { file -> file.name.startsWith("${bookId}_") }?.forEach { it.delete() }
+    }
+
+    /**
+     * 批量删除文字/章节缓存：目录只列举一次，再按文件名前缀里的 id 命中。
+     * 逐个 id 调 [deleteTextCache] 在 removeRoot 场景是 O(books × cacheFiles)。
+     */
+    private fun deleteTextCaches(bookIds: Collection<String>) {
+        if (bookIds.isEmpty()) return
+        val ids = bookIds.toHashSet()
+        textCacheDir.listFiles()?.forEach { file ->
+            if (file.name.substringBefore('_') in ids) file.delete()
+        }
     }
 
     private fun copyDocumentToTemp(book: ComicBook, temp: File): Boolean = try {
@@ -906,19 +1008,116 @@ class LibraryRepository(private val context: Context) {
         persistSignal.trySend(Unit)
     }
 
-    /** 单一持久化协程 + 400ms 防抖：只落盘最新快照，不再维护 progressPending。 */
+    private fun scheduleProgressPersist() {
+        progressSignal.trySend(Unit)
+    }
+
+    /** 单一持久化协程 + 400ms 防抖：锁内只取快照，序列化与写盘都在锁外。 */
     private suspend fun persistWorker() {
         @Suppress("UNUSED_VARIABLE")
         for (signal in persistSignal) {
             delay(PERSIST_DEBOUNCE_MS)
+            // 快照在锁内取，保证不会把刚合并进来的新数据覆盖成旧值。
+            val snapshot = mutex.withLock { _books.value }
+            persistBooks(snapshot)
+        }
+    }
+
+    /**
+     * 阅读进度的独立持久化协程：写的是几十 KB 的 progress.json，与 books.json 完全分开。
+     * 节流窗口比书库索引长（1.5s），进程切后台 / 退出阅读器时会 [flushProgress] 立即落盘。
+     */
+    private suspend fun progressWorker() {
+        @Suppress("UNUSED_VARIABLE")
+        for (signal in progressSignal) {
+            delay(PROGRESS_DEBOUNCE_MS)
+            flushProgress()
+        }
+    }
+
+    /** 立即把未落盘的阅读进度写入 progress.json。 */
+    suspend fun flushProgress() = withContext(Dispatchers.IO) {
+        if (dirtyProgress.isEmpty()) return@withContext
+        val pending = HashSet(dirtyProgress)
+        dirtyProgress.removeAll(pending)
+        if (progressEntries.isEmpty() && !progressFile.exists()) return@withContext
+        val payload = runCatching {
+            progressJson.encodeToString(ProgressSnapshot(progressEntries.toMap()))
+                .toByteArray(Charsets.UTF_8)
+        }.getOrElse {
+            Log.e(TAG, "序列化阅读进度失败", it)
+            return@withContext
+        }
+        writeMutex.withLock {
             try {
-                // 在锁内取快照：避免扫描合并刚写入的新数据被旧快照覆盖。
-                mutex.withLock { persistBooksLocked(_books.value) }
-            } catch (e: CancellationException) {
-                throw e
+                // 进度是可丢失的派生数据：不 fsync，rename 已保证不会读到半成品。
+                writeFileAtomically(progressFile, sync = false) { out -> out.write(payload) }
             } catch (e: Exception) {
-                Log.e(TAG, "保存 books.json 失败", e)
+                Log.e(TAG, "写入 progress.json 失败", e)
+                dirtyProgress.addAll(pending)
             }
+        }
+    }
+
+    private fun readProgressFromDisk(): Map<String, ReadingProgress> = runCatching {
+        if (!progressFile.exists()) emptyMap()
+        else progressJson.decodeFromString<ProgressSnapshot>(progressFile.readText(Charsets.UTF_8)).entries
+    }.getOrElse { error ->
+        Log.w(TAG, "progress.json 解析失败，忽略阅读进度", error)
+        emptyMap()
+    }
+
+    /**
+     * 发布内存快照。结构变化（增删 / 重排）时必须重建 id -> 下标索引；
+     * 单纯改进度（列表长度与顺序不变）传 false，避免每翻一页都分配一张新 Map。
+     */
+    private fun publish(books: List<ComicBook>, rebuildIndex: Boolean = true) {
+        _books.value = books
+        if (rebuildIndex) {
+            bookIndex = books.withIndex().associate { it.value.id to it.index }
+        }
+    }
+
+    /** 按 id 定位；索引失效（列表已被替换）时回退到一次线性查找。 */
+    private fun indexOfBook(bookId: String): Int {
+        val books = _books.value
+        val index = bookIndex[bookId]
+        if (index != null && index in books.indices && books[index].id == bookId) return index
+        return books.indexOfFirst { it.id == bookId }
+    }
+
+    /** 把一本书的最新进度同步进覆盖层并调度进度落盘。 */
+    private fun refreshProgressEntry(book: ComicBook) {
+        val hasProgress = book.currentPage > 0 || book.progressOffset > 0L ||
+            book.lastReadAt != null || book.finished
+        if (!hasProgress) {
+            progressEntries.remove(book.id)
+        } else {
+            progressEntries[book.id] = ReadingProgress(
+                currentPage = book.currentPage,
+                progressOffset = book.progressOffset,
+                lastReadAt = book.lastReadAt,
+                finished = book.finished,
+            )
+        }
+        dirtyProgress.add(book.id)
+        scheduleProgressPersist()
+    }
+
+    private fun dropProgressEntry(bookId: String) {
+        progressEntries.remove(bookId)
+        dirtyProgress.add(bookId)
+        scheduleProgressPersist()
+    }
+
+    /** 写盘统一入口：序列化 + 原子写在状态锁外执行，失败只记录日志。 */
+    private suspend fun persistBooks(books: List<ComicBook>): Boolean = writeMutex.withLock {
+        try {
+            persistBooksLocked(books)
+            true
+        } catch (e: Exception) {
+            Log.e(TAG, "写入 books.json 失败", e)
+            false
         }
     }
 
@@ -969,14 +1168,22 @@ class LibraryRepository(private val context: Context) {
     }
 
     private suspend fun ensureCovers(books: List<ComicBook>) {
-        for (book in books) {
-            coroutineContext.ensureActive()
-            // 文字书没有固定页封面：EPUB 用默认占位，MOBI 的封面在解析章节时提取。
-            if (book.reflowable) continue
-            val cover = coverFile(book)
-            // 只补缺失封面，已在的不重复解码。
-            if (cover.exists() && cover.length() > 512L) continue
-            writeCover(book)
+        // 封面绝大多数已经存在（索引阶段就写好了）；缺失时并发补齐，避免串行打开文档拖慢启动。
+        coroutineScope {
+            val limiter = Semaphore(COVER_WORKERS)
+            books.map { book ->
+                async(Dispatchers.IO) {
+                    limiter.withPermit {
+                        coroutineContext.ensureActive()
+                        // 文字书没有固定页封面：EPUB 用默认占位，MOBI 的封面在解析章节时提取。
+                        if (book.reflowable) return@withPermit
+                        val cover = coverFile(book)
+                        // 只补缺失封面，已在的不重复解码。
+                        if (cover.exists() && cover.length() > 512L) return@withPermit
+                        writeCover(book)
+                    }
+                }
+            }.awaitAll()
         }
     }
 
@@ -1052,6 +1259,15 @@ class LibraryRepository(private val context: Context) {
         const val TAG = "LibraryRepository"
         const val MAX_SCAN_DEPTH = 10
         const val PERSIST_DEBOUNCE_MS = 400L
+
+        /** 阅读进度的落盘节流：比书库索引长，退出阅读器时另有立即 flush。 */
+        const val PROGRESS_DEBOUNCE_MS = 1_500L
+
+        /** 索引并发度：每本书独立打开 provider / 解析中央目录，互不共享状态。 */
+        const val SCAN_CONCURRENCY = 4
+
+        /** 启动补封面时的并发度（封面绝大多数已存在，这里只兜底缺失）。 */
+        const val COVER_WORKERS = 2
         const val COVER_WIDTH = 480
 
         val BOOK_EXTENSIONS = setOf("cbz", "zip", "pdf", "epub", "mobi", "azw", "azw3")

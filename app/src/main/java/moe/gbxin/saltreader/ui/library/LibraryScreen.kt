@@ -88,6 +88,7 @@ import androidx.compose.material3.rememberBottomSheetState
 import androidx.compose.material3.rememberTopAppBarState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -101,7 +102,9 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -112,6 +115,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import java.io.File
 import kotlin.math.roundToInt
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.AppSettings
@@ -133,6 +139,9 @@ import moe.gbxin.saltreader.ui.components.metaFieldLabel
 import moe.gbxin.saltreader.ui.components.SaltLoading
 import moe.gbxin.saltreader.util.formatBytes
 
+/** 列表模式封面显示宽 64dp，约 200px 解码足够清晰，也避免按默认 640px 解码浪费内存。 */
+private const val LIST_COVER_TARGET_WIDTH_PX = 200
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalMaterial3ExpressiveApi::class, ExperimentalFoundationApi::class)
 @Composable
 fun LibraryScreen(
@@ -142,18 +151,25 @@ fun LibraryScreen(
 ) {
     val vm: LibraryViewModel = viewModel()
     val state by vm.uiState.collectAsStateWithLifecycle()
-    val importState by vm.importState.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val app = context.applicationContext as SaltReaderApplication
     val repo = app.library
-    val allBooks by repo.books.collectAsStateWithLifecycle()
-    val settings by app.settings.state.collectAsStateWithLifecycle()
+    // 按字段订阅设置：整体订阅 settings 会让主题/阅读器等无关偏好变更也重组整个书库。
+    val settingsState = app.settings.state
+    val libraryLayout by rememberSettingField(settingsState) { it.libraryLayout }
+    val libraryColumns by rememberSettingField(settingsState) { it.libraryColumns }
+    val titleSizeSp by rememberSettingField(settingsState) { it.libraryTitleSizeSp }
+    val metaVisible by rememberSettingField(settingsState) { it.libraryMetaVisible }
+    val metaTextSizeSp by rememberSettingField(settingsState) { it.libraryMetaTextSizeSp }
+    val metaFields by rememberSettingField(settingsState) { it.libraryMetaFields }
+    val sortAscending by rememberSettingField(settingsState) { it.librarySortAscending }
     val snackbar = remember { SnackbarHostState() }
     var showLayoutSheet by rememberSaveable { mutableStateOf(false) }
     var selectedBookId by rememberSaveable { mutableStateOf<String?>(null) }
-    val selectedBook = remember(allBooks, selectedBookId) {
-        selectedBookId?.let { id -> allBooks.firstOrNull { it.id == id } }
+    // 选中项直接读仓库快照，不再额外订阅整份 books 列表造成重复重组。
+    val selectedBook = remember(selectedBookId) {
+        selectedBookId?.let { id -> repo.books.value.firstOrNull { it.id == id } }
     }
     val topBarState = rememberTopAppBarState()
     val scrollBehavior = TopAppBarDefaults.exitUntilCollapsedScrollBehavior(topBarState)
@@ -165,6 +181,31 @@ fun LibraryScreen(
                 gridState.firstVisibleItemScrollOffset == 0 &&
                 (topBarState.heightOffset.isNaN() || topBarState.heightOffset == 0f) &&
                 (topBarState.collapsedFraction.isNaN() || topBarState.collapsedFraction == 0f)
+        }
+    }
+
+    val listMode = libraryLayout == LibraryLayout.LIST
+    val effectiveColumns = remember(libraryLayout, libraryColumns) {
+        when {
+            libraryLayout == LibraryLayout.LIST -> 1
+            libraryColumns > 0 -> libraryColumns
+            libraryLayout == LibraryLayout.COMPACT -> 3
+            libraryLayout == LibraryLayout.COVER_ONLY -> 2
+            else -> 2
+        }
+    }
+    // 按实际列宽算封面目标像素宽：2 倍列宽在缩放/高分屏下仍清晰，又比统一 640px 省内存。
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val coverTargetWidthPx = remember(configuration.screenWidthDp, density, effectiveColumns, listMode) {
+        if (listMode) {
+            LIST_COVER_TARGET_WIDTH_PX
+        } else with(density) {
+            val screenPx = configuration.screenWidthDp.dp.roundToPx()
+            val contentPx = (screenPx - 16.dp.roundToPx() * 2).coerceAtLeast(1)
+            val gapPx = 12.dp.roundToPx() * (effectiveColumns - 1).coerceAtLeast(0)
+            val columnPx = ((contentPx - gapPx) / effectiveColumns).coerceAtLeast(1)
+            (columnPx * 2).coerceIn(240, 1280)
         }
     }
 
@@ -195,23 +236,6 @@ fun LibraryScreen(
                 }
             }
         }
-    }
-
-    val effectiveColumns = when {
-        settings.libraryLayout == LibraryLayout.LIST -> 1
-        settings.libraryColumns > 0 -> settings.libraryColumns
-        settings.libraryLayout == LibraryLayout.COMPACT -> 3
-        settings.libraryLayout == LibraryLayout.COVER_ONLY -> 2
-        else -> 2
-    }
-    val displayedBooks = remember(state.books, state.sort, settings.librarySortAscending) {
-        val comparator: Comparator<ComicBook> = when (state.sort) {
-            LibrarySort.RECENT -> compareBy { it.lastReadAt ?: it.addedAt }
-            LibrarySort.ADDED -> compareBy { it.addedAt }
-            LibrarySort.TITLE -> compareBy { it.title }
-            LibrarySort.PROGRESS -> compareBy { it.progress }
-        }
-        state.books.sortedWith(if (settings.librarySortAscending) comparator else comparator.reversed())
     }
 
     val layoutDirection = LocalLayoutDirection.current
@@ -274,7 +298,7 @@ fun LibraryScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp),
             ) {
                 if (!state.ready) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
+                    item(key = "library-loading", contentType = "loading", span = { GridItemSpan(maxLineSpan) }) {
                         Column(
                             Modifier.fillMaxWidth().padding(top = 120.dp),
                             horizontalAlignment = Alignment.CenterHorizontally,
@@ -285,14 +309,14 @@ fun LibraryScreen(
                         }
                     }
                 } else if (state.isEmpty) {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
+                    item(key = "library-empty", contentType = "empty", span = { GridItemSpan(maxLineSpan) }) {
                         EmptyLibrary(onChooseFolder = { libraryLauncher.launch(null) })
                     }
                 } else {
-                    item(span = { GridItemSpan(maxLineSpan) }) {
+                    item(key = "shelf-header", contentType = "header", span = { GridItemSpan(maxLineSpan) }) {
                         ShelfHeader(
                             state = state,
-                            sortAscending = settings.librarySortAscending,
+                            sortAscending = sortAscending,
                             onFilter = vm::setFilter,
                             onSort = vm::setSort,
                             onSortAscending = { ascending -> app.settings.update { it.copy(librarySortAscending = ascending) } },
@@ -300,20 +324,25 @@ fun LibraryScreen(
                     }
 
                     if (state.noResults) {
-                        item(span = { GridItemSpan(maxLineSpan) }) {
+                        item(key = "library-no-results", contentType = "no-results", span = { GridItemSpan(maxLineSpan) }) {
                             NoResults(state.query.isNotBlank())
                         }
                     } else {
-                        items(displayedBooks, key = { it.id }) { book ->
+                        items(
+                            items = state.books,
+                            key = { it.id },
+                            contentType = { "book" },
+                        ) { book ->
                             BookCard(
                                 book = book,
-                                coverFile = repo.coverFile(book),
-                                titleSizeSp = settings.libraryTitleSizeSp,
-                                listMode = settings.libraryLayout == LibraryLayout.LIST,
-                                coverOnly = settings.libraryLayout == LibraryLayout.COVER_ONLY,
-                                showMeta = settings.libraryMetaVisible,
-                                metaTextSizeSp = settings.libraryMetaTextSizeSp,
-                                metaFields = settings.libraryMetaFields,
+                                coverFile = remember(book.id) { repo.coverFile(book) },
+                                coverTargetWidthPx = coverTargetWidthPx,
+                                titleSizeSp = titleSizeSp,
+                                listMode = listMode,
+                                coverOnly = libraryLayout == LibraryLayout.COVER_ONLY,
+                                showMeta = metaVisible,
+                                metaTextSizeSp = metaTextSizeSp,
+                                metaFields = metaFields,
                                 onClick = { onOpenBook(book) },
                                 onLongClick = { selectedBookId = book.id },
                                 modifier = Modifier.animateItem(fadeInSpec = null, fadeOutSpec = null),
@@ -323,20 +352,14 @@ fun LibraryScreen(
                 }
             }
 
-            AnimatedVisibility(
-                visible = importState.running,
-                modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 92.dp, start = 16.dp, end = 16.dp),
-                enter = fadeIn() + slideInVertically { it / 2 },
-                exit = fadeOut() + slideOutVertically { it / 2 },
-            ) {
-                ImportProgress(importState)
-            }
+            // 导入进度独立订阅，父级不再因进度 tick 而重组整个书库。
+            ImportOverlay(vm, Modifier.align(Alignment.BottomCenter))
         }
     }
 
     if (showLayoutSheet) {
         LayoutSheet(
-            settings = settings,
+            settingsState = settingsState,
             onSettingsChange = { transform -> app.settings.update(transform) },
             onDismiss = { showLayoutSheet = false },
         )
@@ -345,7 +368,7 @@ fun LibraryScreen(
     selectedBook?.let { book ->
         BookActionsSheet(
             book = book,
-            coverFile = repo.coverFile(book),
+            coverFile = remember(book.id) { repo.coverFile(book) },
             onDismiss = { selectedBookId = null },
             onRead = {
                 selectedBookId = null
@@ -365,6 +388,33 @@ fun LibraryScreen(
             },
         )
     }
+}
+
+/** 导入进度浮层：自己订阅 [LibraryViewModel.importState]，只有进度更新时才重组这一块。 */
+@Composable
+private fun ImportOverlay(vm: LibraryViewModel, modifier: Modifier = Modifier) {
+    val importState by vm.importState.collectAsStateWithLifecycle()
+    AnimatedVisibility(
+        visible = importState.running,
+        modifier = modifier.navigationBarsPadding().padding(bottom = 92.dp, start = 16.dp, end = 16.dp),
+        enter = fadeIn() + slideInVertically { it / 2 },
+        exit = fadeOut() + slideOutVertically { it / 2 },
+    ) {
+        ImportProgress(importState)
+    }
+}
+
+/**
+ * 按字段订阅设置：只有该字段真正变化时才触发读取方重组。selector 每次重组都是新 lambda，
+ * 所以用 remember 固定「按字段投影」这条流本身，初始值直接取当前快照。
+ */
+@Composable
+private fun <T> rememberSettingField(
+    settings: StateFlow<AppSettings>,
+    selector: (AppSettings) -> T,
+): State<T> {
+    val fieldFlow = remember(settings) { settings.map(selector).distinctUntilChanged() }
+    return fieldFlow.collectAsStateWithLifecycle(settings.value.let(selector))
 }
 
 @Composable
@@ -465,6 +515,7 @@ private fun ShelfHeader(
 private fun BookCard(
     book: ComicBook,
     coverFile: File,
+    coverTargetWidthPx: Int,
     titleSizeSp: Int,
     listMode: Boolean,
     coverOnly: Boolean,
@@ -491,7 +542,7 @@ private fun BookCard(
             elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
         ) {
             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                ComicCover(book, coverFile, Modifier.width(64.dp).aspectRatio(0.68f), radius = 8)
+                ComicCover(book, coverFile, Modifier.width(64.dp).aspectRatio(0.68f), radius = 8, targetWidthPx = coverTargetWidthPx)
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {
                     Text(book.title, style = titleStyle, maxLines = 2, overflow = TextOverflow.Ellipsis)
@@ -511,7 +562,7 @@ private fun BookCard(
                 elevation = CardDefaults.cardElevation(defaultElevation = 0.dp),
             ) {
                 Box(Modifier.fillMaxWidth().aspectRatio(0.68f)) {
-                    ComicCover(book, coverFile, Modifier.fillMaxSize(), radius = 0)
+                    ComicCover(book, coverFile, Modifier.fillMaxSize(), radius = 0, targetWidthPx = coverTargetWidthPx)
                     if (!book.finished && (book.currentPage > 0 || book.progressOffset > 0L)) {
                         LinearProgressIndicator(
                             progress = { book.progress },
@@ -542,10 +593,12 @@ private fun BookCard(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun LayoutSheet(
-    settings: AppSettings,
+    settingsState: StateFlow<AppSettings>,
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // 版面设置页需要整份 settings，订阅放在组件内部：sheet 关闭时不再有任何整体订阅。
+    val settings by settingsState.collectAsStateWithLifecycle()
     // New sheet-state API: skip the half-expanded stop by only enabling Hidden/Expanded.
     val sheetState = rememberBottomSheetState(
         initialValue = SheetValue.Hidden,
@@ -808,6 +861,9 @@ private fun BookActionsSheet(
     var renameOpen by rememberSaveable { mutableStateOf(false) }
     var deleteOpen by rememberSaveable { mutableStateOf(false) }
     var draftTitle by rememberSaveable(book.id) { mutableStateOf(book.title) }
+    // 72dp 宽的封面按 2 倍宽解码即可，不必走默认 640px。
+    val density = LocalDensity.current
+    val coverTargetWidthPx = remember(density) { with(density) { (72.dp * 2).roundToPx() } }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(
@@ -822,6 +878,7 @@ private fun BookActionsSheet(
                     coverFile = coverFile,
                     modifier = Modifier.width(72.dp).aspectRatio(0.68f),
                     radius = 12,
+                    targetWidthPx = coverTargetWidthPx,
                 )
                 Spacer(Modifier.width(16.dp))
                 Column(Modifier.weight(1f)) {

@@ -77,6 +77,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -121,6 +123,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
@@ -379,8 +384,14 @@ private fun ReaderContent(
     val themeBackgroundIsLight = MaterialTheme.colorScheme.background.luminance() > 0.5f
 
     val direction = book.direction ?: settings.readingDirection
-    val currentPage =
-        if (settings.readerMode == ReaderMode.PAGED) pagerState.currentPage else listState.firstVisibleItemIndex
+    // 翻页/滚动位置用 derivedStateOf 包起来，并且只在底栏、页码浮层这些小子作用域里读取：
+    // 否则每翻一页都会让整个 ReaderContent（含 Pager / LazyColumn）重组一次。
+    val liveModeForPage by rememberUpdatedState(settings.readerMode)
+    val currentPageState = remember {
+        derivedStateOf {
+            if (liveModeForPage == ReaderMode.PAGED) pagerState.currentPage else listState.firstVisibleItemIndex
+        }
+    }
 
     // Compose never restarts a running pointerInput block just because captured values changed, and
     // detectTapGestures loops forever, so the tap handler would otherwise keep the page index it saw
@@ -438,6 +449,19 @@ private fun ReaderContent(
         val window = (view.context as? Activity)?.window
         if (settings.keepScreenOn) window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON) }
+    }
+
+    // 切后台 / 退出时立即把阅读进度落盘（平时是 1.5s 节流写 progress.json）。
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_STOP) vm.flushProgress()
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+            vm.flushProgress()
+        }
     }
 
     val activityWindow = remember(view) { (view.context as? Activity)?.window }
@@ -697,7 +721,7 @@ private fun ReaderContent(
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
             ReaderBottomBar(
-                currentPage = currentPage,
+                page = currentPageState,
                 count = count,
                 mode = settings.readerMode,
                 onGoToPage = { page -> jumpTo(page) },
@@ -716,23 +740,17 @@ private fun ReaderContent(
             exit = fadeOut(),
             modifier = Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 16.dp),
         ) {
-            Surface(
-                shape = CircleShape,
-                color = if (readerBackground.luminance() < 0.5f) Color.Black.copy(alpha = 0.55f) else Color.White.copy(alpha = 0.72f),
-                contentColor = if (readerBackground.luminance() < 0.5f) Color(0xFFEDE0D4) else Color(0xFF29231D),
-            ) {
-                Text(
-                    stringResource(R.string.reader_page_indicator, currentPage + 1, count),
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
-                )
-            }
+            PageNumberIndicator(
+                page = currentPageState,
+                count = count,
+                lightBackground = readerBackground.luminance() >= 0.5f,
+            )
         }
     }
 
     if (showSettings) {
         ReaderControlsSheet(
-            currentPage = currentPage,
+            currentPage = currentPageState.value,
             count = count,
             settings = settings,
             direction = direction,
@@ -791,13 +809,15 @@ internal fun ReaderTopBar(book: ComicBook, onBack: () -> Unit) {
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun ReaderBottomBar(
-    currentPage: Int,
+    page: State<Int>,
     count: Int,
     mode: ReaderMode,
     onGoToPage: (Int) -> Unit,
     onToggleMode: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
+    // 只有底栏订阅翻页状态：翻页时重组的范围控制在工具条内部。
+    val currentPage = page.value
     var pendingJump by remember { mutableStateOf<Int?>(null) }
     var lastTickPage by remember { mutableStateOf(currentPage) }
     val haptics = LocalHapticFeedback.current
@@ -813,6 +833,16 @@ private fun ReaderBottomBar(
     )
     // Follow page changes made elsewhere (swipe, volume keys, tap zones) unless the user is actively
     // dragging or a slider jump is still animating.
+    LaunchedEffect(currentPage) {
+        if (sliderState.isDragging) return@LaunchedEffect
+        val jump = pendingJump
+        if (jump == null) {
+            sliderState.value = currentPage.toFloat().coerceIn(0f, sliderMax.toFloat())
+        } else if (currentPage == jump) {
+            // 跳转动画已到达目标页，滑杆交还给翻页状态。
+            pendingJump = null
+        }
+    }
     Box(
         Modifier.fillMaxWidth()
             .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = 0.38f))))
@@ -869,6 +899,23 @@ private fun ReaderBottomBar(
                 Icon(Icons.Rounded.Tune, contentDescription = settingsLabel)
             }
         }
+    }
+}
+
+/** 无 chrome 时的页码浮层；独立组件，翻页只重组这一个圆角标签。 */
+@Composable
+private fun PageNumberIndicator(page: State<Int>, count: Int, lightBackground: Boolean) {
+    val currentPage = page.value
+    Surface(
+        shape = CircleShape,
+        color = if (lightBackground) Color.White.copy(alpha = 0.72f) else Color.Black.copy(alpha = 0.55f),
+        contentColor = if (lightBackground) Color(0xFF29231D) else Color(0xFFEDE0D4),
+    ) {
+        Text(
+            stringResource(R.string.reader_page_indicator, currentPage + 1, count),
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
+        )
     }
 }
 

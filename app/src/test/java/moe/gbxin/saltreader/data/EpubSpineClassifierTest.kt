@@ -35,6 +35,134 @@ class EpubSpineClassifierTest {
         assertFalse(EpubSpineClassifier.isImageBased(imagePages = 0, spinePages = 0))
     }
 
+    // --- scan decision: denominator is examined pages, not the whole spine -------------------
+
+    @Test
+    fun `fully examined image book is classified as image based with its own page count`() {
+        val decision = EpubSpineClassifier.decideByScan(
+            imagePages = 100,
+            examinedPages = 100,
+            remainingPages = 0,
+            budgetExhausted = false,
+        )
+        assertEquals(BookKind.ARCHIVE, decision.kind)
+        assertTrue(decision.imageBased)
+        assertEquals(100, decision.pageCount)
+        assertFalse(decision.budgetExhausted)
+    }
+
+    @Test
+    fun `fully examined text book is classified as text`() {
+        val decision = EpubSpineClassifier.decideByScan(
+            imagePages = 5,
+            examinedPages = 100,
+            remainingPages = 0,
+            budgetExhausted = false,
+        )
+        assertEquals(BookKind.TEXT, decision.kind)
+        assertFalse(decision.imageBased)
+        assertEquals(0, decision.pageCount) // 文字型页数由 charCount 估算，这里只表达策略
+    }
+
+    @Test
+    fun `budget exhausted with a high examined ratio stays image based and counts remaining pages`() {
+        val decision = EpubSpineClassifier.decideByScan(
+            imagePages = 80,
+            examinedPages = 100,
+            remainingPages = 400,
+            budgetExhausted = true,
+        )
+        assertEquals(BookKind.ARCHIVE, decision.kind)
+        assertTrue(decision.imageBased)
+        // 回归点：未检查页也计入页数，不能只报检查过的 80 页。
+        assertEquals(480, decision.pageCount)
+        assertTrue(decision.budgetExhausted)
+    }
+
+    @Test
+    fun `budget exhausted with a low examined ratio falls back to text`() {
+        val decision = EpubSpineClassifier.decideByScan(
+            imagePages = 10,
+            examinedPages = 100,
+            remainingPages = 400,
+            budgetExhausted = true,
+        )
+        assertEquals(BookKind.TEXT, decision.kind)
+        assertFalse(decision.imageBased)
+        assertEquals(0, decision.pageCount)
+    }
+
+    @Test
+    fun `no examined page is never image based even when the budget is exhausted`() {
+        val decision = EpubSpineClassifier.decideByScan(
+            imagePages = 0,
+            examinedPages = 0,
+            remainingPages = 500,
+            budgetExhausted = true,
+        )
+        assertEquals(BookKind.TEXT, decision.kind)
+        assertFalse(decision.imageBased)
+        assertEquals(0, decision.pageCount)
+    }
+
+    @Test
+    fun `exactly 80 percent of examined pages is image based`() {
+        val decision = EpubSpineClassifier.decideByScan(
+            imagePages = 40,
+            examinedPages = 50,
+            remainingPages = 0,
+            budgetExhausted = false,
+        )
+        assertEquals(BookKind.ARCHIVE, decision.kind)
+        assertEquals(40, decision.pageCount)
+    }
+
+    @Test
+    fun `remaining pages are ignored when the budget was not exhausted`() {
+        // 预算未耗尽时 remaining 只可能来自文字型提前终止，不应影响图片型页数。
+        val decision = EpubSpineClassifier.decideByScan(
+            imagePages = 80,
+            examinedPages = 100,
+            remainingPages = 400,
+            budgetExhausted = false,
+        )
+        assertEquals(BookKind.ARCHIVE, decision.kind)
+        assertEquals(80, decision.pageCount)
+    }
+
+    @Test
+    fun `text-like ratio below the early abort threshold stays text`() {
+        val decision = EpubSpineClassifier.decideByScan(
+            imagePages = 4,
+            examinedPages = 24,
+            remainingPages = 1000,
+            budgetExhausted = false,
+        )
+        assertEquals(BookKind.TEXT, decision.kind)
+        assertEquals(0, decision.pageCount)
+    }
+
+    @Test
+    fun `negative inputs are clamped defensively`() {
+        val text = EpubSpineClassifier.decideByScan(
+            imagePages = -5,
+            examinedPages = -1,
+            remainingPages = -3,
+            budgetExhausted = true,
+        )
+        assertEquals(BookKind.TEXT, text.kind)
+        assertEquals(0, text.pageCount)
+
+        val image = EpubSpineClassifier.decideByScan(
+            imagePages = 5,
+            examinedPages = 5,
+            remainingPages = -10,
+            budgetExhausted = true,
+        )
+        assertEquals(BookKind.ARCHIVE, image.kind)
+        assertEquals(5, image.pageCount)
+    }
+
     // --- charCount estimation (EPUB spine bytes and MOBI/AZW3 file bytes) -------------------
 
     @Test

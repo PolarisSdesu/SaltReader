@@ -238,3 +238,24 @@ A 负责的实现：
 - 新增纯 JVM 测试：书页/字符进度换算、`charCount`→`pageCount` 估算、EPUB spine 分类纯函数
   （如拆成可测的 `EpubSpineClassifier`）、`pageLabel` 百分比。
 - README：EPUB 直读/原生文字阅读说明，删除“EPUB 会拍平转换”的旧描述。
+
+## 第四轮：性能优化（进度持久化 / 并发 / 内存）
+
+本轮的接口约定变化，后续改动请保持：
+
+1. **持久化拆成两个文件**
+   - `file/library/books.json`：只放书库索引（紧凑 JSON，`encodeDefaults = false`，无缩进），
+     只在增删 / 改名 / 重新索引 / 页数回填等**结构变化**时写。
+   - `file/library/progress.json`：阅读进度覆盖层（`id -> {currentPage, progressOffset, lastReadAt, finished}`），
+     翻页 / 滚动 / 打开书只写这个文件；1.5s 节流、不 `fsync`，`ON_STOP` 时 `flushProgress()` 立即落盘。
+   - 载入时 progress.json 覆盖 books.json 里的旧进度字段；两者都由 `LibraryRepository` 单一来源写入。
+2. **锁与写盘**：`mutex` 只保护内存快照（临界区内不做序列化 / 文件 IO）；写盘统一走 `writeMutex`
+   （串行写入 + 原子 rename）。`writeFileAtomically(target, sync = false)` 只用于派生数据（进度、章节缓存）。
+3. **导入**：单棵树内的候选文件按 `SCAN_CONCURRENCY = 4` 有界并发索引；多 root 刷新只在全部扫描结束后
+   合并并落盘一次。
+4. **并发解码**：`ReaderViewModel` 以「每页一把锁 + 全局 `Semaphore(2)`」替代单把 cacheMutex；
+   同一页不会重复解码，不同页可并行；单页位图预算 16MB / 长边 8192（超长条漫强制降采样）。
+5. **章节缓存**：EPUB 清洗后的章节序列化到 `cacheDir/text/<id>_<mtime>_<size>.chapters.json`
+   （MOBI 仍用 `.html`）；`clearCaches()` 会一并清理。缓存文件都按 `id_` 前缀批量删除。
+6. **内存**：封面 LruCache 容量 `maxMemory/8`（上限 64MB）、命中时同步返回避免首帧闪烁；
+   `Application.onTrimMemory` 触发页缓存清空与封面缓存裁剪。

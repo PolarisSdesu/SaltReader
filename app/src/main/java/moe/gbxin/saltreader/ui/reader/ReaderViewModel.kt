@@ -8,6 +8,7 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -18,8 +19,11 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.ComicBook
 import moe.gbxin.saltreader.data.ComicPageSource
@@ -95,10 +99,17 @@ class ReaderViewModel(
     application: Application,
     private val bookId: String,
 ) : ViewModel() {
-    private val repo = (application as SaltReaderApplication).library
+    private val app = application as SaltReaderApplication
+    private val repo = app.library
 
-    /** Guards decode / cache work so two pages never race the same source. */
-    private val cacheMutex = Mutex()
+    /**
+     * 解码并发限制。同一页仍然串行（按 key 的锁避免重复解码），不同页最多并行
+     * [DECODE_CONCURRENCY] 张：开书时 Pager 的相邻页、预取和可见页不再互相排队。
+     */
+    private val decodeLimiter = Semaphore(DECODE_CONCURRENCY)
+
+    /** 每页一把锁：保证同一个 key 不会被并发解码两次，同时不同页可以并行。 */
+    private val pageLocks = ConcurrentHashMap<String, Mutex>()
 
     /** Guards lazy creation of [source]; there is exactly one source per reader. */
     private val sourceMutex = Mutex()
@@ -130,14 +141,16 @@ class ReaderViewModel(
         override fun sizeOf(key: String, value: Bitmap): Int = value.byteCount
     }
 
+    /** 系统内存回收时清空页缓存：内容随时可以从文件重新解码。 */
+    private val cacheTrimmer: () -> Unit = { cache.evictAll() }
+
     private fun stateFor(
         ready: Boolean,
-        books: List<ComicBook>,
+        indexed: ComicBook?,
         prepare: PrepareState,
         text: TextLoadState,
     ): ReaderUiState {
-        val indexed = books.firstOrNull { it.id == bookId }
-            ?: return if (ready) ReaderUiState.Missing else ReaderUiState.Loading()
+        if (indexed == null) return if (ready) ReaderUiState.Missing else ReaderUiState.Loading()
         // Reflowable text books (EPUB/MOBI/AZW3) never go through the image page source.
         if (indexed.reflowable) {
             return when (text) {
@@ -157,17 +170,34 @@ class ReaderViewModel(
     }
 
     /**
+     * 当前书在索引里的记录。翻页只会改 currentPage / lastReadAt，这些变化不应让整个阅读器
+     * 重新组合；这里只保留真正影响阅读器的字段做去重（标题 / 方向 / 格式 / 文件指纹）。
+     */
+    private val indexedBook: Flow<ComicBook?> = repo.books
+        .map { books -> books.firstOrNull { it.id == bookId } }
+        .distinctUntilChangedBy { book ->
+            book?.let {
+                listOf(it.id, it.title, it.kind, it.extension, it.reflowable, it.modifiedAt, it.direction)
+            }
+        }
+
+    /**
      * Primary state. Derived from the repository index + one-time preparation result, so progress
      * updates and re-indexing flow through without extra file access.
      */
     val uiState: StateFlow<ReaderUiState> =
-        combine(repo.ready, repo.books, prepareState, textState) { ready, books, prepare, text ->
-            stateFor(ready, books, prepare, text)
+        combine(repo.ready, indexedBook, prepareState, textState) { ready, indexed, prepare, text ->
+            stateFor(ready, indexed, prepare, text)
         }
             .stateIn(
                 viewModelScope,
                 SharingStarted.WhileSubscribed(5_000),
-                stateFor(repo.ready.value, repo.books.value, prepareState.value, textState.value),
+                stateFor(
+                    repo.ready.value,
+                    repo.books.value.firstOrNull { it.id == bookId },
+                    prepareState.value,
+                    textState.value,
+                ),
             )
 
     /** The book currently being read, or null while loading / missing / failed. */
@@ -186,7 +216,12 @@ class ReaderViewModel(
         )
 
     private fun initialBook(): ComicBook? = when (
-        val state = stateFor(repo.ready.value, repo.books.value, prepareState.value, textState.value)
+        val state = stateFor(
+            repo.ready.value,
+            repo.books.value.firstOrNull { it.id == bookId },
+            prepareState.value,
+            textState.value,
+        )
     ) {
         is ReaderUiState.Ready -> state.book
         is ReaderUiState.TextReady -> state.book
@@ -194,6 +229,7 @@ class ReaderViewModel(
     }
 
     init {
+        app.addBitmapCacheTrimmer(cacheTrimmer)
         // bookkeeping only: never touches the page source and runs off the main thread.
         viewModelScope.launch(Dispatchers.IO) { runCatching { repo.markOpened(bookId) } }
         viewModelScope.launch { observePrepareTarget() }
@@ -206,13 +242,8 @@ class ReaderViewModel(
      * Re-indexing (modifiedAt changes) reloads the content; deleting the book resets both states.
      */
     private suspend fun observePrepareTarget() {
-        repo.books
-            .map { books -> books.firstOrNull { it.id == bookId } }
-            .distinctUntilChangedBy { indexed ->
-                indexed?.let { listOf(it.reflowable, it.modifiedAt) }
-            }
-            .collect { indexed ->
-                if (indexed == null) {
+        indexedBook.collect { indexed ->
+            if (indexed == null) {
                     prepareState.value = PrepareState.Idle
                     textState.value = TextLoadState.Idle
                 } else if (indexed.reflowable) {
@@ -308,17 +339,24 @@ class ReaderViewModel(
         val bucket = (targetWidth / 240).coerceAtLeast(1)
         val key = "${index}_$bucket"
         cache.get(key)?.let { return it }
-        return withContext(Dispatchers.IO) {
-            cacheMutex.withLock {
-                cache.get(key)?.let { return@withLock it }
-                val pageSource = ensureSource(ready.book) ?: return@withLock null
+        return withContext(Dispatchers.IO) { decodePage(key, index, bucket, ready.book) }
+    }
+
+    /**
+     * 解码一页：同一个 key 上只有一次解码（避免预取和可见页重复解同一张），
+     * 不同页之间最多并行 [DECODE_CONCURRENCY] 张，不再被一把全局锁串行化。
+     */
+    private suspend fun decodePage(key: String, index: Int, bucket: Int, book: ComicBook): Bitmap? =
+        pageLocks.computeIfAbsent(key) { Mutex() }.withLock page@ {
+            cache.get(key)?.let { return@page it }
+            decodeLimiter.withPermit {
+                val pageSource = ensureSource(book) ?: return@withPermit null
                 val bitmap = runCatching { pageSource.loadPage(index, bucket * 240) }.getOrNull()
-                    ?: return@withLock null
+                    ?: return@withPermit null
                 cache.put(key, bitmap)
                 bitmap
             }
         }
-    }
 
     /**
      * Opens the page source on an IO thread the first time it is needed. The repository builds a
@@ -341,8 +379,9 @@ class ReaderViewModel(
      *
      * Every page goes through [loadPage], so the cache key (page + 240px width bucket) is identical
      * to the one the UI reads and a duplicate decode is impossible: the second caller either hits
-     * the cache or waits on [cacheMutex] and then finds the bitmap already cached. Lock order is
-     * always cacheMutex -> sourceMutex (never the other way around), so this cannot deadlock.
+     * the cache or waits on that page's own lock and then finds the bitmap already cached. Decodes
+     * run at most [DECODE_CONCURRENCY] at a time (see [decodeLimiter]); lock order is always
+     * page lock -> decode limiter -> sourceMutex, never the other way around, so this cannot deadlock.
      *
      * [pages] is expected to be ordered nearest-first; cancelled jobs finish their current blocking
      * decode (a page source may not be cancellable) but then stop before starting the next page.
@@ -370,12 +409,18 @@ class ReaderViewModel(
         repo.updateProgress(bookId, page)
     }
 
+    /** 立即把未落盘的阅读进度写盘（Activity 切后台 / 退出阅读器时调用）。 */
+    fun flushProgress() {
+        viewModelScope.launch(Dispatchers.IO) { runCatching { repo.flushProgress() } }
+    }
+
     fun setDirection(direction: ReadingDirection) {
         viewModelScope.launch(Dispatchers.IO) { repo.setDirection(bookId, direction) }
     }
 
     override fun onCleared() {
         super.onCleared()
+        app.removeBitmapCacheTrimmer(cacheTrimmer)
         released = true
         prefetchJob?.cancel()
         prefetchJob = null
@@ -386,6 +431,11 @@ class ReaderViewModel(
         runCatching { source?.close() }
         source = null
         cache.evictAll()
+    }
+
+    private companion object {
+        /** 同时解码的页数上限：过大只会增加内存峰值，2 足以覆盖相邻页预取。 */
+        const val DECODE_CONCURRENCY = 2
     }
 
     class Factory(private val application: Application, private val bookId: String) : ViewModelProvider.Factory {

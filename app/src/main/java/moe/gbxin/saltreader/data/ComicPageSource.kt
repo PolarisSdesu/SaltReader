@@ -5,9 +5,11 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ImageDecoder
 import android.graphics.Matrix
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
+import android.os.Build
 import android.os.ParcelFileDescriptor
 import androidx.exifinterface.media.ExifInterface
 import kotlinx.coroutines.Dispatchers
@@ -17,6 +19,7 @@ import java.io.ByteArrayOutputStream
 import java.io.Closeable
 import java.io.File
 import java.io.InputStream
+import java.nio.ByteBuffer
 import kotlin.math.min
 import kotlin.math.sqrt
 
@@ -78,19 +81,21 @@ private class RemoteZipArchivePageSource(
 ) : LazyPageSource(book.pageCount) {
     private val lock = Any()
     private var reader: RemoteZipReader? = null
-    private var pages: List<String>? = null
+
+    // 直接缓存 Entry（而不是名字）：loadBlocking 用 readEntry(entry) 重载，避免每页 O(条目数) 查找。
+    private var pages: List<RemoteZipReader.Entry>? = null
     private var closed = false
 
     override suspend fun prepare(): Int = withContext(Dispatchers.IO) {
         ensureParsed()?.size ?: pageCount
     }
 
-    private fun ensureParsed(): List<String>? = synchronized(lock) {
+    private fun ensureParsed(): List<RemoteZipReader.Entry>? = synchronized(lock) {
         if (closed) return null
         pages?.let { return it }
         val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
         val opened = RemoteZipReader.open(context, uri) ?: return null
-        val list = runCatching { opened.imageEntries().map { it.name } }.getOrNull().orEmpty()
+        val list = runCatching { opened.imageEntries() }.getOrNull().orEmpty()
         if (list.isEmpty()) {
             opened.close()
             return null
@@ -128,26 +133,33 @@ private class EpubImagePageSource(
 ) : LazyPageSource(book.pageCount) {
     private val lock = Any()
     private var reader: RemoteZipReader? = null
-    private var pages: List<String>? = null
+
+    // spine 页序的 Entry 列表：名字列表只映射一次，loadBlocking 不再每页按名字查找。
+    // 极少数 EPUB 的 spine 指向 central directory 里不存在的条目：这里保留 null 占位，
+    // 保证页数（page/prepare 的映射）与 spine 一致，缺页只是该页加载返回 null，
+    // 而不是把后续页整体前移、打乱页码。
+    private var pages: List<RemoteZipReader.Entry?>? = null
     private var closed = false
 
     override suspend fun prepare(): Int = withContext(Dispatchers.IO) {
         ensureParsed()?.size ?: pageCount
     }
 
-    private fun ensureParsed(): List<String>? = synchronized(lock) {
+    private fun ensureParsed(): List<RemoteZipReader.Entry?>? = synchronized(lock) {
         if (closed) return null
         pages?.let { return it }
         val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
         val opened = RemoteZipReader.open(context, uri) ?: return null
         val mapping = runCatching { EpubIndexer.imagePageEntries(opened) }.getOrNull().orEmpty()
-        if (mapping.isEmpty()) {
+        val list = mapping.map { opened.entry(it) }
+        // 全部条目都解析失败才视为不可读；个别缺页保留 null 占位，页码不整体前移。
+        if (list.isEmpty() || list.all { it == null }) {
             opened.close()
             return null
         }
         reader = opened
-        pages = mapping
-        mapping
+        pages = list
+        list
     }
 
     override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
@@ -280,32 +292,101 @@ internal fun readBounded(
 internal fun isJpeg(bytes: ByteArray): Boolean =
     bytes.size > 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xD8.toByte()
 
+/** 单页解码后位图预算：约 12MB（ARGB_8888 按每像素 4 字节算），避免超长条漫解成 64MB 单张位图。 */
+/**
+ * 单页位图的字节预算（ARGB_8888，约 16MB / 4MP）。这个值要同时满足两件事：
+ * - 普通 1600×2400 的漫画页仍按原分辨率解码（15.4MB），不能为了省内存牺牲清晰度；
+ * - 800×20000 这种超长条漫必须降到 1/4 像素，避免单张 64MB 直接 OOM。
+ */
+private const val MAX_DECODE_BYTES = 16L * 1024L * 1024L
+
+/** 单页解码长边上限：超长条漫必须降采样到该范围内，避免超大纹理拖慢绘制。 */
+private const val MAX_DECODE_SIDE = 8192
+
+/**
+ * 采样计算：在"尽量不小于 [targetWidth]"的前提下，同时满足
+ * 总字节上限（ARGB_8888 按每像素 4 字节）与长边上限。
+ *
+ * 纯逻辑、不碰 Android API，方便 JVM 单测覆盖。
+ */
+internal object PageImageSampling {
+    fun sampleSize(
+        width: Int,
+        height: Int,
+        targetWidth: Int,
+        maxBytes: Long = MAX_DECODE_BYTES,
+        maxSide: Int = MAX_DECODE_SIDE,
+    ): Int {
+        if (width <= 0 || height <= 0) return 1
+        val safeTarget = targetWidth.coerceIn(240, 4096)
+        var sample = 1
+        // 先按目标宽度降采样：最终宽度允许略大于目标，但不小于目标（与旧行为一致）。
+        while (sample < MAX_SAMPLE) {
+            val next = sample * 2
+            if (width / next < safeTarget) break
+            sample = next
+        }
+        // 再同时约束总字节与长边：超长条漫靠这一步才不会被解成整块大位图。
+        val maxPixels = (maxBytes / 4L).coerceAtLeast(1L)
+        while (sample < MAX_SAMPLE) {
+            val sampledWidth = ceilDiv(width, sample)
+            val sampledHeight = ceilDiv(height, sample)
+            val pixels = sampledWidth * sampledHeight
+            val longSide = maxOf(sampledWidth, sampledHeight)
+            if (pixels <= maxPixels && longSide <= maxSide) break
+            sample *= 2
+        }
+        return sample
+    }
+
+    /** 实际解码尺寸是向上取整，用 ceil 估算位图大小才准确。 */
+    private fun ceilDiv(value: Int, divisor: Int): Long =
+        ((value.toLong() + divisor - 1) / divisor).coerceAtLeast(1L)
+
+    private const val MAX_SAMPLE = 4096
+}
+
 /**
  * 解码一页图片：
- * - inSampleSize 同时约束目标宽度与总像素（约 16MP），超长条漫也不会 OOM；
- * - EXIF 只在 JPEG 上解析（其他格式解析既无意义又可能误判）。
+ * - 采样同时约束目标宽度、总字节上限（约 12MB）与长边（8192），超长条漫也不会 OOM；
+ * - API 28+ 优先 [ImageDecoder] 单次解码（在 header 回调里设采样，并把 EXIF 方向交给它处理）；
+ * - 任何异常/不支持的格式回退到 BitmapFactory + EXIF 旋转的兼容路径（API<28 只走兼容路径）。
  */
 internal fun decodePage(bytes: ByteArray, targetWidth: Int): Bitmap? {
     if (bytes.isEmpty()) return null
+
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+        decodeWithImageDecoder(bytes, targetWidth)?.let { return it }
+    }
+    return decodeWithBitmapFactory(bytes, targetWidth)
+}
+
+/** API 28+：单次解码，省掉 bounds 预解码 + 旋转拷贝；EXIF 方向由 decoder 自动处理。 */
+private fun decodeWithImageDecoder(bytes: ByteArray, targetWidth: Int): Bitmap? {
+    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.P) return null
+    return try {
+        val source = ImageDecoder.createSource(ByteBuffer.wrap(bytes))
+        ImageDecoder.decodeBitmap(source) { decoder, info, _ ->
+            val size = info.size
+            val sample = PageImageSampling.sampleSize(size.width, size.height, targetWidth)
+            if (sample > 1) decoder.setTargetSampleSize(sample)
+            // 统一用软件位图：与 BitmapFactory 路径行为一致，也便于后续做像素/Canvas 操作。
+            decoder.allocator = ImageDecoder.ALLOCATOR_SOFTWARE
+        }
+    } catch (t: Throwable) {
+        null
+    }
+}
+
+/** 兼容路径：BitmapFactory 两趟解码（先 bounds 再采样），JPEG 额外按 EXIF 旋转。 */
+private fun decodeWithBitmapFactory(bytes: ByteArray, targetWidth: Int): Bitmap? {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     val width = bounds.outWidth
     val height = bounds.outHeight
     if (width <= 0 || height <= 0) return null
 
-    val safeTarget = targetWidth.coerceIn(240, 4096)
-    var sample = 1
-    while (sample < 4096) {
-        val next = sample * 2
-        if (width / next < safeTarget) break
-        sample = next
-    }
-    while (sample < 4096) {
-        val pixels = (width.toLong() / sample) * (height.toLong() / sample)
-        if (pixels <= PageIndexing.MAX_DECODE_PIXELS) break
-        sample *= 2
-    }
-
+    val sample = PageImageSampling.sampleSize(width, height, targetWidth)
     val options = BitmapFactory.Options().apply {
         inSampleSize = sample
         inPreferredConfig = Bitmap.Config.ARGB_8888

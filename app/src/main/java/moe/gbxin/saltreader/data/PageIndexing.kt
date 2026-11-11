@@ -20,8 +20,11 @@ internal object PageIndexing {
     /** 单页图片允许读取的最大字节数（解码前先判大小）。 */
     const val MAX_PAGE_BYTES: Long = 32L * 1024L * 1024L
 
-    /** 解码后位图的总像素上限（约 16MP）。 */
-    const val MAX_DECODE_PIXELS: Long = 16_000_000L
+    /**
+     * 位图总像素上限（约 4MP / 16MB，ARGB_8888）。目前只用于 PDF 渲染：
+     * 与图片页的 [PageImageSampling] 预算保持一致，避免超长 PDF 页解出 64MB 单张位图。
+     */
+    const val MAX_DECODE_PIXELS: Long = 4_000_000L
 
     /** 压缩包允许的最大条目数。 */
     const val MAX_ZIP_ENTRIES: Int = 100_000

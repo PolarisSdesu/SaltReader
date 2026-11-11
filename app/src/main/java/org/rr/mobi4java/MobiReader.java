@@ -10,6 +10,7 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 import org.rr.mobi4java.MobiContent.CONTENT_TYPE;
@@ -24,9 +25,7 @@ public class MobiReader {
 	 * @throws IOException
 	 */
 	public MobiDocument read(File file) throws FileNotFoundException, IOException {
-		try (InputStream in = new BufferedInputStream(new FileInputStream(file))) {
-			return read(in);
-		}
+		return readData(readAllBytes(file));
 	}
 
 	/**
@@ -37,7 +36,10 @@ public class MobiReader {
 	 * @throws IOException
 	 */
 	public MobiDocument read(InputStream in) throws IOException {
-		byte[] mobiData = readAllBytes(in);
+		return readData(readAllBytes(in));
+	}
+
+	private MobiDocument readData(byte[] mobiData) throws IOException {
 		PDBHeader pdbHeader = readPDBHeader(mobiData);
 		MobiContentHeader mobiHeader = readMobiHeader(pdbHeader, mobiData);
 		List<MobiContent> mobiContent = readMobiContent(pdbHeader, mobiHeader, mobiData);
@@ -55,6 +57,39 @@ public class MobiReader {
 		} catch (IOException e) {
 			throw new RuntimeException("Failed to load template.", e);
 		}
+	}
+
+	/**
+	 * Read all bytes of the given file. The file length is used to allocate the result array once, which avoids the repeated grow-and-copy of
+	 * a {@link ByteArrayOutputStream} for large books.
+	 *
+	 * @param file The file to read.
+	 * @return All bytes of the file.
+	 * @throws IOException
+	 */
+	private static byte[] readAllBytes(File file) throws IOException {
+		long fileLength = file.length();
+		if (fileLength <= 0 || fileLength > Integer.MAX_VALUE - 8) {
+			// Unknown, empty or too large length: fall back to the generic streaming read.
+			try (InputStream in = new BufferedInputStream(new FileInputStream(file))) {
+				return readAllBytes(in);
+			}
+		}
+		byte[] data = new byte[(int) fileLength];
+		int totalRead = 0;
+		try (InputStream in = new FileInputStream(file)) {
+			while (totalRead < data.length) {
+				int read = in.read(data, totalRead, data.length - totalRead);
+				if (read == -1) {
+					break;
+				}
+				totalRead += read;
+			}
+		}
+		if (totalRead == data.length) {
+			return data;
+		}
+		return totalRead == 0 ? new byte[0] : Arrays.copyOf(data, totalRead);
 	}
 
 	private static byte[] readAllBytes(InputStream in) throws IOException {

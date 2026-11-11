@@ -136,4 +136,135 @@ class RemoteZipReaderTest {
             file.delete()
         }
     }
+
+    @Test
+    fun `entry index resolves names and reads through the entry overload`() {
+        val payload = "indexed ".repeat(1000).toByteArray()
+        val file = zip("a/one.txt" to payload, "a/two.txt" to ByteArray(0))
+        try {
+            withReader(file) { reader ->
+                assertNull(reader.entry("missing.txt"))
+                val entry = assertNotNull(reader.entry("a/one.txt"))
+                assertEquals("a/one.txt", entry.name)
+                // 索引与 entries() 返回同一条记录，缓存不会造成两份不一致的数据。
+                assertEquals(reader.entries().first { it.name == entry.name }, entry)
+                assertContentEquals(payload, assertNotNull(reader.readEntry(entry, 1_000_000L)))
+                assertNull(reader.readEntry(entry, 10L))
+            }
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun `large deflated entry round trips through the preallocated inflate path`() {
+        // 比 64KB 缓冲更大，确保直解路径要循环多次才填满预分配数组。
+        val payload = ByteArray(300_000) { index -> (index * 31 % 251).toByte() }
+        val file = zip("large/page.bin" to payload)
+        try {
+            withReader(file) { reader ->
+                val entry = assertNotNull(reader.entry("large/page.bin"))
+                assertContentEquals(payload, assertNotNull(reader.readEntry(entry, 1_000_000L)))
+            }
+        } finally {
+            file.delete()
+        }
+    }
+
+    @Test
+    fun `wrong declared size falls back to the streaming inflate path`() {
+        val payload = "fallback ".repeat(5000).toByteArray()
+        val file = zip("wrong.txt" to payload)
+        try {
+            // 篡改 central directory 的 uncompressed size，直解校验必然失败，只能回退流式实现。
+            patchCentralDirectoryUncompressedSize(file, payload.size - 10)
+            withReader(file) { reader ->
+                assertContentEquals(payload, assertNotNull(reader.readEntry("wrong.txt", 1_000_000L)))
+            }
+        } finally {
+            file.delete()
+        }
+    }
+
+    private fun patchCentralDirectoryUncompressedSize(file: File, value: Int) {
+        val bytes = file.readBytes()
+        for (index in 0..bytes.size - 46) {
+            val isCentralHeader = bytes[index] == 0x50.toByte() &&
+                bytes[index + 1] == 0x4B.toByte() &&
+                bytes[index + 2] == 0x01.toByte() &&
+                bytes[index + 3] == 0x02.toByte()
+            if (!isCentralHeader) continue
+            for (byteOffset in 0..3) {
+                bytes[index + 24 + byteOffset] = ((value shr (8 * byteOffset)) and 0xFF).toByte()
+            }
+            break
+        }
+        file.writeBytes(bytes)
+    }
+}
+
+/**
+ * 采样纯逻辑单测：[PageImageSampling] 不碰 Android API，可直接在 JVM 上验证。
+ * 长条漫是这次要修的主要回归：旧实现允许单张位图超过 64MB。
+ */
+class PageImageSamplingTest {
+
+    private fun sampledWidth(width: Int, sample: Int): Long = ((width + sample - 1) / sample).toLong()
+    private fun sampledHeight(height: Int, sample: Int): Long = ((height + sample - 1) / sample).toLong()
+
+    private fun assertWithinCaps(
+        width: Int,
+        height: Int,
+        targetWidth: Int,
+        maxBytes: Long = 12L * 1024L * 1024L,
+        maxSide: Int = 8192,
+    ) {
+        val sample = PageImageSampling.sampleSize(width, height, targetWidth, maxBytes, maxSide)
+        val sampledWidth = sampledWidth(width, sample)
+        val sampledHeight = sampledHeight(height, sample)
+        assertTrue(sampledWidth * sampledHeight * 4L <= maxBytes, "decoded bitmap must fit in $maxBytes bytes")
+        assertTrue(maxOf(sampledWidth, sampledHeight) <= maxSide, "decoded bitmap side must be <= $maxSide")
+    }
+
+    @Test
+    fun `portrait page is downsampled to the target width`() {
+        assertEquals(2, PageImageSampling.sampleSize(2000, 3000, 1080))
+        assertWithinCaps(2000, 3000, 1080)
+    }
+
+    @Test
+    fun `small page is not upscaled or downsampled`() {
+        assertEquals(1, PageImageSampling.sampleSize(500, 400, 1080))
+        assertEquals(1, PageImageSampling.sampleSize(1, 1, 1080))
+    }
+
+    @Test
+    fun `tiny or invalid dimensions are treated as sample one`() {
+        assertEquals(1, PageImageSampling.sampleSize(0, 100, 1080))
+        assertEquals(1, PageImageSampling.sampleSize(-10, -10, 1080))
+    }
+
+    @Test
+    fun `long strip is bounded by both the byte budget and the max side`() {
+        // 800x40000 旧逻辑会解出约 128MB 位图（若 targetWidth 1080 时 sample=1），
+        // 新逻辑必须同时压到 12MB 以内且长边 <= 8192。
+        val sample = PageImageSampling.sampleSize(800, 40000, 1080)
+        assertEquals(8, sample)
+        assertWithinCaps(800, 40000, 1080)
+    }
+
+    @Test
+    fun `very long thin strip keeps its long side within the limit`() {
+        assertWithinCaps(100, 100_000, 1080)
+        assertWithinCaps(50, 200_000, 480)
+    }
+
+    @Test
+    fun `custom budgets are honoured`() {
+        val sample = PageImageSampling.sampleSize(4000, 4000, 4000, maxBytes = 1024L * 1024L, maxSide = 1024)
+        val width = sampledWidth(4000, sample)
+        val height = sampledHeight(4000, sample)
+        assertTrue(width * height * 4L <= 1024L * 1024L)
+        assertTrue(maxOf(width, height) <= 1024L)
+    }
 }

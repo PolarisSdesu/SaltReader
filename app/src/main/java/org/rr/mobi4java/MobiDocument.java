@@ -211,8 +211,15 @@ public class MobiDocument {
 	 * @throws IOException
 	 */
   public String getTextContent() throws IOException {
-		ByteArrayOutputStream outputStream = new ByteArrayOutputStream();
   	List<MobiContent> contents = MobiUtils.findContentsByType(mobiContents, CONTENT_TYPE.CONTENT);
+  	// Pre-size the output buffer with the amount of stored content bytes. The compressed records are at
+  	// most as large as the decoded text, so for uncompressed books this is the exact size and avoids the
+  	// repeated grow-and-copy of a default sized ByteArrayOutputStream.
+  	int estimatedTextSize = 0;
+  	for (MobiContent mobiContent : contents) {
+  		estimatedTextSize += mobiContent.getContent().length;
+  	}
+		ByteArrayOutputStream outputStream = new ByteArrayOutputStream(estimatedTextSize);
   	for (MobiContent mobiContent : contents) {
   		byte[] decoded = null;
 			if (mobiHeader.getCompressionCode() == COMPRESSION_CODE.PALM_DOC) {
