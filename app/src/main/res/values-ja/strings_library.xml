@@ -75,7 +75,7 @@
     <string name="search_clear">検索をクリア</string>
     <string name="search_back">戻る</string>
     <string name="search_hint_title">本棚を検索</string>
-    <string name="search_hint_body">タイトルまたは著者を入力して、%1$d 冊の本から検索します。</string>
+    <string name="search_hint_body">%1$d 冊の蔵書から検索…</string>
     <string name="search_empty_title">本棚は空です</string>
     <string name="search_empty_body">本棚に戻って、コミックのフォルダを追加してください。</string>
     <string name="search_no_results_title">「%1$s」は見つかりません</string>

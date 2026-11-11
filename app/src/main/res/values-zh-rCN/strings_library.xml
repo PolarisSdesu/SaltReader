@@ -75,7 +75,7 @@
     <string name="search_clear">清空搜索</string>
     <string name="search_back">返回</string>
     <string name="search_hint_title">搜索你的书架</string>
-    <string name="search_hint_body">输入书名或作者，在 %1$d 本藏书中查找。</string>
+    <string name="search_hint_body">在 %1$d 本藏书中查找…</string>
     <string name="search_empty_title">书架还是空的</string>
     <string name="search_empty_body">回到书架，先添加一个漫画文件夹。</string>
     <string name="search_no_results_title">没有找到「%1$s」</string>

@@ -75,7 +75,7 @@
     <string name="search_clear">清除搜尋</string>
     <string name="search_back">返回</string>
     <string name="search_hint_title">搜尋你的書櫃</string>
-    <string name="search_hint_body">輸入書名或作者，在 %1$d 本藏書中尋找。</string>
+    <string name="search_hint_body">在 %1$d 本藏書中查找…</string>
     <string name="search_empty_title">書櫃還是空的</string>
     <string name="search_empty_body">回到書櫃，先新增一個漫畫資料夾。</string>
     <string name="search_no_results_title">沒有找到「%1$s」</string>
