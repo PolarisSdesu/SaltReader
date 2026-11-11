@@ -264,3 +264,16 @@ A 负责的实现：
    直接写入，`EpubImagePageSource` 打开时优先读它；只有缓存缺失/失效才重新逐页扫描 spine XHTML。
    实测 151 页的图片型 EPUB：首次打开 prepare 84ms（其中分类 48ms）→ 命中缓存 18–25ms；
    索引阶段写入后连首次打开也只需 24ms。
+
+## 第五轮：文字阅读器按章懒加载
+
+- **按章窗口加载**：首屏只把阅读进度附近 `CHAPTER_BATCH = 3` 章注入 WebView；滚动到已加载窗口
+  80% 边界时由 JS `append`/`prepend` 追加/前插下一批，并补偿滚动位置（分页模式补偿 scrollLeft，
+  纵向模式补偿 scrollTop）。已加载窗口之外的章节不进 WebView，因此超大文字书的首次打开成本
+  不再随全书线性增长。
+- **进度仍是全书字符偏移**：窗口内比例会按各章实际 HTML 长度折算回全书比例再持久化
+  （`progressOffset` 不变）；UI 在分页/纵向模式都显示全书百分比，避免「页数随加载增长」的误导。
+- **WebView vh 兼容**：部分 ROM 的 WebView 会把 `100vh` 解析成 0（表现为正文全黑/高度为 0）。
+  CSS 改用 JS 维护的 `--app-vh`（`window.innerHeight` 的 px 值，resize 时更新），
+  不再依赖 `vh`；`100vw` 可继续使用。
+- 进度持久化仍在 `ON_PAUSE` / `ON_STOP` 时 flush，和图片阅读器一致。

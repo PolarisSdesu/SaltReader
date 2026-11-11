@@ -41,6 +41,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -152,24 +153,57 @@ internal fun TextReaderContent(
     val direction = book.direction ?: settings.readingDirection
     val isLightThemeBackground = MaterialTheme.colorScheme.background.luminance() > 0.5f
 
-    // Estimated character count of the book (indexed). Fall back to the actual extracted HTML size
-    // so progress still works when the index value is missing.
-    val totalChars = remember(book.charCount, chapters) {
-        book.charCount.takeIf { it > 0L }
-            ?: chapters.sumOf { it.html.length.toLong() }.coerceAtLeast(1L)
+    // 已加载窗口之外的章节不进入 WebView：首屏只注入进度附近几章，滚动到边界时再追加/前插。
+    // 字符区间按实际 HTML 长度折算，进度仍以全书字符偏移持久化。
+    val chapterChars = remember(chapters) {
+        LongArray(chapters.size) { chapters[it].html.length.toLong().coerceAtLeast(1L) }
     }
-    val initialRatio = remember(book.id, book.progressOffset, totalChars) {
-        (book.progressOffset.toDouble() / totalChars.toDouble()).toFloat().coerceIn(0f, 1f)
+    val chapterPrefix = remember(chapterChars) {
+        val prefix = LongArray(chapterChars.size + 1)
+        for (i in chapterChars.indices) prefix[i + 1] = prefix[i] + chapterChars[i]
+        prefix
     }
+    val totalChars = remember(book.charCount, chapterPrefix) {
+        book.charCount.takeIf { it > 0L } ?: (chapterPrefix.lastOrNull() ?: 1L)
+    }
+    val progressOffset = remember(book.id, book.progressOffset) {
+        book.progressOffset.coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L))
+    }
+    val initialWindow = remember(book.id) {
+        var index = 0
+        while (index + 1 < chapterPrefix.size && chapterPrefix[index + 1] <= progressOffset) index++
+        val start = (index - 1).coerceAtLeast(0)
+        start to (start + CHAPTER_BATCH).coerceAtMost(chapters.size)
+    }
+    var windowStart by remember(book.id) { mutableIntStateOf(initialWindow.first) }
+    var windowEnd by remember(book.id) { mutableIntStateOf(initialWindow.second) }
+    val initialLocalRatio = remember(book.id) {
+        val base = chapterPrefix.getOrElse(initialWindow.first) { 0L }
+        val span = (chapterPrefix.getOrElse(initialWindow.second) { base } - base).coerceAtLeast(1L)
+        ((progressOffset - base).toDouble() / span.toDouble()).toFloat().coerceIn(0f, 1f)
+    }
+    var localRatio by remember(book.id) { mutableFloatStateOf(initialLocalRatio) }
 
     var chromeVisible by rememberSaveable { mutableStateOf(true) }
     var showSettings by rememberSaveable { mutableStateOf(false) }
     var showCustomBackground by rememberSaveable { mutableStateOf(false) }
     var pageInfo by remember(book.id) {
-        mutableStateOf(TextPageInfo(page = 0, pages = 1, ratio = initialRatio))
+        mutableStateOf(
+            TextPageInfo(
+                page = 0,
+                pages = 1,
+                ratio = (progressOffset.toDouble() / totalChars.toDouble()).toFloat().coerceIn(0f, 1f),
+            ),
+        )
     }
 
-    val html = remember(chapters, book.title) { buildBookHtml(chapters, book.title) }
+    val html = remember(chapters, book.title) {
+        buildBookHtml(
+            chapters = chapters.subList(initialWindow.first, initialWindow.second),
+            bookTitle = book.title,
+            startIndex = initialWindow.first,
+        )
+    }
     val events = remember { MutableSharedFlow<TextReaderEvent>(extraBufferCapacity = 32) }
     val bridge = remember { TextJavascriptBridge { event -> events.tryEmit(event) } }
     val holder = remember { WebViewHolder() }
@@ -178,6 +212,7 @@ internal fun TextReaderContent(
     var lastSentOffset by remember { mutableLongStateOf(-1L) }
     var lastSentAt by remember { mutableLongStateOf(0L) }
     val liveRatio = rememberUpdatedState(pageInfo.ratio)
+    val liveLocalRatio = rememberUpdatedState(localRatio)
     val liveTotalChars = rememberUpdatedState(totalChars)
     val liveMode = rememberUpdatedState(settings.readerMode)
     val liveDirection = rememberUpdatedState(direction)
@@ -220,13 +255,56 @@ internal fun TextReaderContent(
         vm.updateTextProgress(offset)
     }
 
+    /** 窗口内比例 -> 全书比例；进度条和持久化都用全书比例。 */
+    fun globalRatio(local: Float): Float {
+        val base = chapterPrefix.getOrElse(windowStart) { 0L }
+        val span = (chapterPrefix.getOrElse(windowEnd) { base } - base).coerceAtLeast(1L)
+        val offset = base + (local.toDouble() * span).toLong()
+        return (offset.toDouble() / totalChars.toDouble()).toFloat().coerceIn(0f, 1f)
+    }
+
+    /**
+     * 接近已加载窗口边界时按批注入章节。章节 HTML 已经在内存里，这里只是重新交给 WebView，
+     * 不触发任何文件读取；JS 侧会保持当前滚动位置。
+     */
+    var lastChapterLoadAt by remember { mutableLongStateOf(0L) }
+    fun maybeLoadMoreChapters(ratio: Float) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastChapterLoadAt < CHAPTER_LOAD_THROTTLE_MS) return
+        if (ratio >= PREFETCH_RATIO && windowEnd < chapters.size) {
+            val nextEnd = (windowEnd + CHAPTER_BATCH).coerceAtMost(chapters.size)
+            val payload = buildString {
+                for (i in windowEnd until nextEnd) {
+                    append(chapterHtml(chapters[i], i, book.title, chapters.size == 1))
+                }
+            }
+            if (payload.isEmpty()) return
+            lastChapterLoadAt = now
+            windowEnd = nextEnd
+            runJs("window.__reader && window.__reader.append(${JSONObject.quote(payload)});")
+        } else if (ratio <= 1f - PREFETCH_RATIO && windowStart > 0) {
+            val nextStart = (windowStart - CHAPTER_BATCH).coerceAtLeast(0)
+            val payload = buildString {
+                for (i in nextStart until windowStart) {
+                    append(chapterHtml(chapters[i], i, book.title, chapters.size == 1))
+                }
+            }
+            if (payload.isEmpty()) return
+            lastChapterLoadAt = now
+            windowStart = nextStart
+            runJs("window.__reader && window.__reader.prepend(${JSONObject.quote(payload)});")
+        }
+    }
+
     // WebView -> Compose events (main thread).
     LaunchedEffect(events) {
         events.collect { event ->
             when (event) {
                 is TextReaderEvent.State -> {
-                    pageInfo = TextPageInfo(event.page, event.pages, event.ratio)
+                    localRatio = event.ratio
+                    pageInfo = TextPageInfo(event.page, event.pages, globalRatio(event.ratio))
                     persistProgress(force = false)
+                    maybeLoadMoreChapters(event.ratio)
                 }
                 TextReaderEvent.MiddleZone -> chromeVisible = !chromeVisible
             }
@@ -244,7 +322,7 @@ internal fun TextReaderContent(
     }
     LaunchedEffect(pageFinishedToken, optionsJson) {
         if (pageFinishedToken == 0) return@LaunchedEffect
-        runJs("window.__reader && window.__reader.apply($optionsJson, ${liveRatio.value});")
+        runJs("window.__reader && window.__reader.apply($optionsJson, ${liveLocalRatio.value});")
     }
 
     DisposableEffect(settings.keepScreenOn) {
@@ -305,15 +383,8 @@ internal fun TextReaderContent(
         volumePageEvents?.collect { delta -> turnPage(delta) }
     }
 
-    val pageLabel = if (settings.readerMode == ReaderMode.PAGED) {
-        stringResource(
-            R.string.reader_page_indicator,
-            (pageInfo.page + 1).coerceAtMost(pageInfo.pages),
-            pageInfo.pages,
-        )
-    } else {
-        stringResource(R.string.reader_percent, (pageInfo.ratio * 100f).roundToInt().coerceIn(0, 100))
-    }
+    // 文字书按章懒加载，页码总数会随窗口增长；显示全书百分比才是稳定、不误导的进度。
+    val pageLabel = stringResource(R.string.reader_percent, (pageInfo.ratio * 100f).roundToInt().coerceIn(0, 100))
     val chromeToggleLabel =
         stringResource(if (chromeVisible) R.string.reader_hide_controls else R.string.reader_show_controls)
     val readingAreaLabel = stringResource(R.string.reader_reading_area)
@@ -568,26 +639,47 @@ private fun escapeHtml(text: String): String = text
  * Single-chapter containers (typically MOBI/AZW3) often have no in-document heading, so the book
  * title is used as the chapter heading there.
  */
-private fun buildBookHtml(chapters: List<EbookChapter>, bookTitle: String): String {
+/** 单章渲染：初始窗口和后续追加/前插共用同一段 HTML，保证章节 id 与顺序一致。 */
+private fun chapterHtml(
+    chapter: EbookChapter,
+    index: Int,
+    bookTitle: String,
+    singleChapter: Boolean,
+): String = buildString {
+    append("<section class=\"chapter\" id=\"ch").append(index).append("\">")
+    val heading = chapter.title?.takeIf { it.isNotBlank() }
+        ?: bookTitle.takeIf { singleChapter && it.isNotBlank() }
+    heading?.let { append("<h2>").append(escapeHtml(it)).append("</h2>") }
+    append(chapter.html)
+    append("</section>")
+}
+
+private fun buildBookHtml(
+    chapters: List<EbookChapter>,
+    bookTitle: String,
+    startIndex: Int = 0,
+): String {
     val body = StringBuilder()
-    for ((index, chapter) in chapters.withIndex()) {
+    for ((offset, chapter) in chapters.withIndex()) {
         // 上限只用于拦截异常巨大的书（正常书远达不到）：整本 HTML 同时存在于内存和 WebView
         // 里，没有上限时超大文件会在打开瞬间把进程内存打满。
         if (body.length >= MAX_TOTAL_HTML_CHARS) break
-        body.append("<section class=\"chapter\" id=\"ch").append(index).append("\">")
-        val heading = chapter.title?.takeIf { it.isNotBlank() }
-            ?: bookTitle.takeIf { chapters.size == 1 && it.isNotBlank() }
-        heading?.let { title ->
-            body.append("<h2>").append(escapeHtml(title)).append("</h2>")
-        }
-        body.append(chapter.html)
-        body.append("</section>")
+        body.append(chapterHtml(chapter, startIndex + offset, bookTitle, chapters.size == 1))
     }
     return HTML_HEAD + body + HTML_TAIL
 }
 
 /** 单本书拼出的 HTML 总量上限（约 24M 字符，正常文字书在 1M 量级）。 */
 private const val MAX_TOTAL_HTML_CHARS = 24 * 1024 * 1024
+
+/** 每次注入 WebView 的章节数：只加载阅读位置附近的窗口。 */
+private const val CHAPTER_BATCH = 3
+
+/** 距离已加载窗口边界多少比例时开始追加/前插。 */
+private const val PREFETCH_RATIO = 0.8f
+
+/** 追加/前插的最小间隔，避免一次滚动连续注入多批。 */
+private const val CHAPTER_LOAD_THROTTLE_MS = 300L
 
 private const val BRIDGE_NAME = "SaltReader"
 
@@ -598,16 +690,16 @@ private val HTML_HEAD = """
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <style>
-html, body { margin: 0; padding: 0; }
+html, body { margin: 0; padding: 0; height: 100%; }
 body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
 h1, h2 { font-size: 1.35em; margin: 0.2em 22px 0.8em 22px; line-height: 1.4; }
 p { margin: 0 22px 0.9em 22px; }
 img { max-width: 100%; height: auto; }
 body.paged { height: 100%; overflow: hidden; }
-body.paged #scroll { width: 100vw; height: 100vh; overflow: hidden; }
-body.paged #book { height: 100vh; column-width: 100vw; column-gap: 0; column-fill: auto; -webkit-column-width: 100vw; -webkit-column-gap: 0; -webkit-column-fill: auto; }
+body.paged #scroll { width: 100vw; height: var(--app-vh, 100%); overflow: hidden; }
+body.paged #book { height: var(--app-vh, 100%); column-width: 100vw; column-gap: 0; column-fill: auto; -webkit-column-width: 100vw; -webkit-column-gap: 0; -webkit-column-fill: auto; }
 body.vertical { height: auto; }
-body.vertical #scroll { width: 100vw; height: 100vh; overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
+body.vertical #scroll { width: 100vw; height: var(--app-vh, 100%); overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; }
 body.vertical #book { height: auto; column-width: auto; }
 </style>
 </head>
@@ -621,6 +713,12 @@ private val HTML_TAIL = """
 (function () {
   var scroll = document.getElementById('scroll');
   var book = document.getElementById('book');
+  // Some WebView builds resolve `vh` to 0 with this viewport meta; keep an explicit height in px.
+  function updateViewportHeight() {
+    document.documentElement.style.setProperty('--app-vh', Math.max(1, window.innerHeight || 0) + 'px');
+  }
+  updateViewportHeight();
+  window.addEventListener('resize', updateViewportHeight);
   var mode = 'paged';
   var restoring = false;
   var scrollTimer = null;
@@ -657,7 +755,7 @@ private val HTML_TAIL = """
     if (mode === 'paged') {
       book.style.webkitColumnWidth = '100vw';
       book.style.width = '100vw';
-      book.style.height = '100vh';
+      book.style.height = Math.max(1, window.innerHeight || 0) + 'px';
     } else {
       book.style.webkitColumnWidth = 'auto';
       book.style.width = 'auto';
@@ -677,6 +775,7 @@ private val HTML_TAIL = """
     setTimeout(function () { restoring = false; report(); }, 120);
   }
   function apply(opts, r) {
+    updateViewportHeight();
     setOptions(opts);
     requestAnimationFrame(function () {
       requestAnimationFrame(function () { restore(r); });
@@ -719,12 +818,32 @@ private val HTML_TAIL = """
       } catch (err) {}
     }
   }, { passive: false });
+  function appendChapters(html) {
+    if (!html) return;
+    book.insertAdjacentHTML('beforeend', html);
+    report();
+  }
+  function prependChapters(html) {
+    if (!html) return;
+    var oldWidth = scroll.scrollWidth;
+    var oldHeight = scroll.scrollHeight;
+    book.insertAdjacentHTML('afterbegin', html);
+    // 保持当前阅读位置：前面插入的内容占用了新宽度/高度，补偿滚动偏移。
+    if (mode === 'paged') {
+      scroll.scrollLeft += Math.max(0, scroll.scrollWidth - oldWidth);
+    } else {
+      scroll.scrollTop += Math.max(0, scroll.scrollHeight - oldHeight);
+    }
+    report();
+  }
   window.__reader = {
     apply: apply,
     turn: turn,
     restore: restore,
     scrollViewport: scrollViewport,
-    state: report
+    state: report,
+    append: appendChapters,
+    prepend: prependChapters
   };
 })();
 </script>

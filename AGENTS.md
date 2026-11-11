@@ -128,6 +128,9 @@ new build is actually published.
   biggest build-time win (and shrinks the debug APK too).
 - On some OEM ROMs (e.g. ColorOS/Android 17), shell `simpleperf` and `run-as` are blocked by
   SELinux; use app-level timing logs or instrumentation instead of assuming they work.
+- Some WebView builds resolve `100vh` to 0 (blank/zero-height text pages). The text reader keeps a
+  JS-maintained `--app-vh` custom property instead of relying on `vh`; keep it that way when
+  touching `TextReaderContent.kt`/its CSS.
 - Device testing: `adb install -r app/build/outputs/apk/release/app-release.apk` preserves the
   library, because book data lives in app-private storage and is not part of the APK.
 
