@@ -2,6 +2,7 @@ package moe.gbxin.saltreader.ui.settings
 
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -978,6 +979,22 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                     modifier = Modifier.padding(start = 16.dp),
                 )
                 SettingsInfoRow(stringResource(R.string.settings_about_build), BuildConfig.BUILD_TYPE)
+                HorizontalDivider(
+                    color = MaterialTheme.colorScheme.outlineVariant,
+                    modifier = Modifier.padding(start = 16.dp),
+                )
+                val context = LocalContext.current
+                SettingsInfoRow(
+                    stringResource(R.string.settings_about_github),
+                    "PolarisSdesu/SaltReader",
+                    onClick = {
+                        runCatching {
+                            context.startActivity(
+                                Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/PolarisSdesu/SaltReader")),
+                            )
+                        }
+                    },
+                )
             }
         }
     }
@@ -1157,9 +1174,11 @@ private fun SettingsFolderRow(
 }
 
 @Composable
-private fun SettingsInfoRow(label: String, value: String) {
+private fun SettingsInfoRow(label: String, value: String, onClick: (() -> Unit)? = null) {
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+        Modifier.fillMaxWidth()
+            .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = MaterialTheme.typography.bodyLarge)
@@ -1167,7 +1186,7 @@ private fun SettingsInfoRow(label: String, value: String) {
         Text(
             value,
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (onClick != null) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.End,
