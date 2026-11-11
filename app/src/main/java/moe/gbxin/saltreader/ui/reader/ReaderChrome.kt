@@ -48,6 +48,8 @@ import androidx.compose.material.icons.rounded.FormatLineSpacing
 import androidx.compose.material.icons.rounded.FormatSize
 import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.Tune
+import androidx.compose.material.icons.rounded.ViewCarousel
+import androidx.compose.material.icons.rounded.ViewStream
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -189,6 +191,8 @@ internal fun ReaderBottomBar(
     onOpenSettings: () -> Unit,
     showTypography: Boolean = false,
     onTypographyToggle: () -> Unit = {},
+    readerMode: ReaderMode,
+    onReaderModeToggle: () -> Unit,
     modifier: Modifier = Modifier,
     containerColor: Color = MaterialTheme.colorScheme.surface,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
@@ -208,6 +212,10 @@ internal fun ReaderBottomBar(
     val themeLabel = stringResource(R.string.reader_bar_theme)
     val settingsLabel = stringResource(R.string.reader_bar_settings)
     val typeLabel = stringResource(R.string.reader_section_typography)
+    val modeLabel = stringResource(
+        if (readerMode == ReaderMode.PAGED) R.string.reader_switch_to_vertical
+        else R.string.reader_switch_to_paged,
+    )
     val sliderLabel = stringResource(R.string.reader_progress_slider)
     val dividerColor = contentColor.copy(alpha = 0.14f)
     Surface(
@@ -276,6 +284,15 @@ internal fun ReaderBottomBar(
                             modifier = Modifier.weight(1f),
                         )
                     }
+                    ReaderBarIcon(
+                        icon = if (readerMode == ReaderMode.PAGED) Icons.Rounded.ViewStream
+                        else Icons.Rounded.ViewCarousel,
+                        label = modeLabel,
+                        active = false,
+                        onClick = onReaderModeToggle,
+                        contentColor = contentColor,
+                        modifier = Modifier.weight(1f),
+                    )
                     ReaderBarIcon(
                         icon = Icons.Rounded.WbSunny,
                         label = themeLabel,

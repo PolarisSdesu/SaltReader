@@ -762,6 +762,18 @@ private fun ReaderContent(
                     onOpenSettings = {
                         context.startActivity(Intent(context, ReaderSettingsActivity::class.java))
                     },
+                    readerMode = settings.readerMode,
+                    onReaderModeToggle = {
+                        onSettingsChange {
+                            it.copy(
+                                readerMode = if (it.readerMode == ReaderMode.PAGED) {
+                                    ReaderMode.VERTICAL
+                                } else {
+                                    ReaderMode.PAGED
+                                },
+                            )
+                        }
+                    },
                     containerColor = chromeBarColor,
                     contentColor = chromeContentColor,
                 )

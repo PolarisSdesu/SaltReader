@@ -280,7 +280,7 @@ internal fun TextReaderContent(
     var prefetchJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     // Fingerprint of the last page that scheduled a window prefetch, so intra-page reports do not
     // restart the debounce coroutine over and over.
-    var lastPrefetchKey by remember(book.id) { mutableIntStateOf(Int.MIN_VALUE) }
+    var lastPrefetchKey by remember(book.id) { mutableLongStateOf(Long.MIN_VALUE) }
     var latestReportedRatio by remember { mutableFloatStateOf(0f) }
     var pageInfo by remember(book.id) {
         mutableStateOf(
@@ -594,7 +594,24 @@ internal fun TextReaderContent(
                     latestReportedRatio = event.ratio
                     // The JS side already dedupes identical reports; restart the prefetch debounce
                     // only when the page (or window start) actually changed.
-                    val prefetchKey = event.page + windowStart * 1024
+                    val prefetchKey = if (liveMode.value == ReaderMode.VERTICAL) {
+                        // Vertical reports always have page=0. Key by the edge being approached and
+                        // both window bounds so each scroll boundary can load another chapter batch.
+                        val edge = when {
+                            event.ratio >= PREFETCH_RATIO && windowEnd < chapters.size -> 1L
+                            event.ratio <= 1f - PREFETCH_RATIO && windowStart > 0 -> -1L
+                            else -> 0L
+                        }
+                        if (edge == 0L) {
+                            0L
+                        } else {
+                            (windowStart.toLong() shl 33) or
+                                (windowEnd.toLong() shl 1) or
+                                if (edge > 0) 1L else 0L
+                        }
+                    } else {
+                        (windowStart.toLong() shl 32) xor event.page.toLong()
+                    }
                     if (prefetchKey != lastPrefetchKey) {
                         lastPrefetchKey = prefetchKey
                         prefetchJob?.cancel()
@@ -960,6 +977,18 @@ internal fun TextReaderContent(
                             ReaderChromePanel.NONE
                         } else {
                             ReaderChromePanel.TYPOGRAPHY
+                        }
+                    },
+                    readerMode = settings.readerMode,
+                    onReaderModeToggle = {
+                        onSettingsChange {
+                            it.copy(
+                                readerMode = if (it.readerMode == ReaderMode.PAGED) {
+                                    ReaderMode.VERTICAL
+                                } else {
+                                    ReaderMode.PAGED
+                                },
+                            )
                         }
                     },
                     containerColor = chromeBarColor,
