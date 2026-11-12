@@ -989,9 +989,7 @@ internal fun TextReaderContent(
             exit = fadeOut(tween(durationMillis = 150)),
             modifier = Modifier.align(Alignment.Center),
         ) {
-            CompositionLocalProvider(LocalContentColor provides readerTextColor.copy(alpha = 0.6f)) {
-                SaltLoading(sizeDp = 48)
-            }
+            SaltLoading(sizeDp = 48, color = readerAccent)
         }
 
         // Paged mode deliberately leaves touch handling to the WebView: the CSS-column strip is a
@@ -1010,9 +1008,7 @@ internal fun TextReaderContent(
                     .background(readerBackground),
                 contentAlignment = Alignment.Center,
             ) {
-                CompositionLocalProvider(LocalContentColor provides readerTextColor.copy(alpha = 0.5f)) {
-                    SaltLoading(sizeDp = 40)
-                }
+                SaltLoading(sizeDp = 40, color = readerAccent)
             }
         }
 

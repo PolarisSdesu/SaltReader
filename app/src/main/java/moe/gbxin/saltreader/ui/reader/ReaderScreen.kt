@@ -54,6 +54,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.LocalContentColor
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
@@ -156,6 +158,7 @@ fun ReaderScreen(
         isSystemInDarkTheme(),
         MaterialTheme.colorScheme.surface,
     )
+    val readerAccent = readerAccentColor(settings.readerBackground, settings.customBackgroundColor)
 
     AnimatedContent(
         targetState = uiState,
@@ -174,6 +177,8 @@ fun ReaderScreen(
         },
         label = "reader state",
     ) { state ->
+        // 加载指示器等未显式指定颜色的组件使用当前纸张的强调色。
+        CompositionLocalProvider(LocalContentColor provides readerAccent) {
         when (state) {
             is ReaderUiState.Loading -> ReaderLoading(
                 message = stringResource(
@@ -258,6 +263,7 @@ fun ReaderScreen(
                     )
                 }
             }
+        }
         }
     }
 }
