@@ -9,6 +9,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -29,6 +30,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.FolderOpen
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.Search
 import androidx.compose.material.icons.outlined.TextFields
@@ -150,17 +152,15 @@ private fun ReaderFontSettingsPage(onBack: () -> Unit) {
                     ) { app.settings.update { it.withFontDirectory(null, null) } }
                 }
             }
-            Text(
-                if (directoryUri != null) {
-                    stringResource(R.string.reader_font_directory_count, directoryFonts.size) +
-                        " · " + stringResource(R.string.reader_font_directory_supported)
-                } else {
-                    stringResource(R.string.reader_font_directory_supported)
-                },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp, vertical = 12.dp),
-            )
+            if (directoryUri != null) {
+                Text(
+                    stringResource(R.string.reader_font_directory_count, directoryFonts.size),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 12.dp),
+                )
+            }
+            ReaderFontFormatNotice()
             if (directoryUri != null && directoryFonts.isEmpty()) {
                 Text(
                     stringResource(R.string.reader_font_directory_empty),
@@ -175,8 +175,7 @@ private fun ReaderFontSettingsPage(onBack: () -> Unit) {
                 ReaderFontEntryRow(
                     icon = Icons.Outlined.TextFields,
                     title = stringResource(R.string.reader_font_read_font),
-                    value = settings.readerCustomFont?.label
-                        ?: stringResource(R.string.reader_font_follow_hei),
+                    value = settings.readerCustomFont?.label,
                 ) { context.startPicker(ReaderFontRole.CUSTOM) }
             }
 
@@ -185,20 +184,17 @@ private fun ReaderFontSettingsPage(onBack: () -> Unit) {
                 ReaderFontEntryRow(
                     icon = Icons.Outlined.TextFields,
                     title = stringResource(R.string.reader_font_default_hei),
-                    value = settings.readerFontHei?.label
-                        ?: stringResource(R.string.reader_font_use_builtin),
+                    value = settings.readerFontHei?.label,
                 ) { context.startPicker(ReaderFontRole.HEI) }
                 ReaderFontEntryRow(
                     icon = Icons.Outlined.FormatSize,
                     title = stringResource(R.string.reader_font_default_song),
-                    value = settings.readerFontSong?.label
-                        ?: stringResource(R.string.reader_font_use_builtin),
+                    value = settings.readerFontSong?.label,
                 ) { context.startPicker(ReaderFontRole.SONG) }
                 ReaderFontEntryRow(
                     icon = Icons.Outlined.Code,
                     title = stringResource(R.string.reader_font_default_mono),
-                    value = settings.readerFontMono?.label
-                        ?: stringResource(R.string.reader_font_use_builtin),
+                    value = settings.readerFontMono?.label,
                 ) { context.startPicker(ReaderFontRole.MONO) }
             }
         }
@@ -361,12 +357,42 @@ private fun ReaderFontPickerPage(role: ReaderFontRole, onBack: () -> Unit) {
     }
 }
 
+/**
+ * 字体格式说明：WebView 的字体消毒器（OTS）会拒绝字体集合，因此 .ttc 无法通过 @font-face
+ * 使用。这里用 M3 的"图标 + 说明文字"排版把限制讲清楚，而不是藏在提示行里。
+ */
+@Composable
+private fun ReaderFontFormatNotice() {
+    Row(
+        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 14.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
+    ) {
+        Box(
+            modifier = Modifier.size(44.dp).clip(CircleShape)
+                .background(MaterialTheme.colorScheme.errorContainer),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                Icons.Outlined.Info,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onErrorContainer,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        Text(
+            stringResource(R.string.reader_font_ttc_notice),
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
 /** 设置卡片里的"标题 + 当前值 + 箭头"行，点进字体选择页。 */
 @Composable
 internal fun ReaderFontEntryRow(
     icon: ImageVector,
     title: String,
-    value: String,
+    value: String?,
     onClick: () -> Unit,
 ) {
     Row(
@@ -378,13 +404,16 @@ internal fun ReaderFontEntryRow(
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(
-                value,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            // 只有真正选过字体才显示字体名；未选择时不显示"跟随黑体/内置系统字体"这类副标题。
+            if (value != null) {
+                Text(
+                    value,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
         Icon(
             Icons.AutoMirrored.Filled.KeyboardArrowRight,

@@ -127,6 +127,6 @@
     <string name="reader_font_picker_search">Search fonts</string>
     <string name="reader_font_picker_empty">No fonts found</string>
     <string name="reader_font_value_none">Not set</string>
-    <string name="reader_font_directory_supported">Supports TTF, OTF, WOFF and WOFF2. Font collections (.ttc) are not supported.</string>
     <string name="reader_font_picker_no_directory">No font folder set. Choose one in Font settings.</string>
+    <string name="reader_font_ttc_notice">Because of a WebView limitation, custom fonts cannot use TTC font collections yet. Use .ttf, .otf, .woff or .woff2 files; if you only have a TTC, export a single font file with a font tool first.</string>
 </resources>
