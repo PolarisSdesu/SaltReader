@@ -193,8 +193,8 @@ fun readerAccentColor(
     moe.gbxin.saltreader.data.ReaderBackground.SEPIA -> Color(0xFF8A6A44)
     // 浅绿纸张：同色系绿（旧数据兼容，UI 已不再提供该选项）。
     moe.gbxin.saltreader.data.ReaderBackground.GREEN -> Color(0xFF4E7A57)
-    // 纯黑纸张：黑纸白墨。
-    moe.gbxin.saltreader.data.ReaderBackground.INK -> Color(0xFFF4EEE4)
+    // 纯黑纸张：黑纸纯白墨。
+    moe.gbxin.saltreader.data.ReaderBackground.INK -> Color.White
     // 自定义背景：直接使用按对比度算出的前景色，保证 slider/边框与正文同色。
     moe.gbxin.saltreader.data.ReaderBackground.CUSTOM -> readerForegroundColor(Color(customColor))
 }
