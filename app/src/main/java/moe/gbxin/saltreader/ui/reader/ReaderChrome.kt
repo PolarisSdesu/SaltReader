@@ -619,11 +619,21 @@ internal fun ReaderTypographyPanel(
                     modifier = Modifier.weight(1f),
                 )
                 TextButton(onClick = onOpenAdvanced) {
-                    Text(
-                        stringResource(R.string.reader_more_settings) + " ›",
-                        style = MaterialTheme.typography.titleSmall,
-                        color = contentColor,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            stringResource(R.string.reader_more_settings),
+                            style = MaterialTheme.typography.titleSmall,
+                            color = contentColor,
+                        )
+                        Spacer(Modifier.width(2.dp))
+                        Icon(
+                            Icons.AutoMirrored.Rounded.KeyboardArrowRight,
+                            contentDescription = null,
+                            tint = contentColor,
+                            // 与 titleSmall 的文字行高一致，不再用字符“›”。
+                            modifier = Modifier.size(16.dp),
+                        )
+                    }
                 }
             }
             Spacer(Modifier.height(4.dp))
