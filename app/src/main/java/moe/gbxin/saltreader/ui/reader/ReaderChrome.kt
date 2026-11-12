@@ -59,16 +59,15 @@ import androidx.compose.material.icons.rounded.ViewCarousel
 import androidx.compose.material.icons.rounded.ViewStream
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
-import androidx.compose.material3.SegmentedButton
-import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SheetValue
-import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Surface
@@ -702,27 +701,29 @@ private fun ReaderTypographySegmentedRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
+        Row(
+            modifier = Modifier.weight(1f),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             options.forEachIndexed { index, label ->
-                SegmentedButton(
+                FilterChip(
                     selected = index == selectedIndex,
                     onClick = { onSelect(index) },
-                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
-                    colors = SegmentedButtonDefaults.colors(
-                        activeContainerColor = accentColor.copy(alpha = 0.16f),
-                        activeContentColor = contentColor,
-                        activeBorderColor = Color.Transparent,
-                        inactiveContainerColor = Color.Transparent,
-                        inactiveContentColor = contentColor.copy(alpha = 0.7f),
-                        inactiveBorderColor = contentColor.copy(alpha = 0.22f),
+                    label = {
+                        Text(
+                            label,
+                            style = MaterialTheme.typography.labelLarge,
+                            maxLines = 1,
+                        )
+                    },
+                    modifier = Modifier.weight(1f),
+                    colors = FilterChipDefaults.filterChipColors(
+                        containerColor = Color.Transparent,
+                        labelColor = contentColor.copy(alpha = 0.7f),
+                        selectedContainerColor = accentColor.copy(alpha = 0.16f),
+                        selectedLabelColor = contentColor,
                     ),
-                ) {
-                    Text(
-                        label,
-                        style = MaterialTheme.typography.labelLarge,
-                        maxLines = 1,
-                    )
-                }
+                )
             }
         }
     }
