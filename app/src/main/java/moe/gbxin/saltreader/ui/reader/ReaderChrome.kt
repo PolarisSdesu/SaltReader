@@ -364,11 +364,10 @@ private fun ReaderBarIcon(
         onClick = onClick,
         modifier = modifier,
     ) {
-        // 激活时整个按钮槽位变成一枚胶囊指示器，图标居中叠在上面（参考图样式）。
+        // 指示器尺寸与按钮本身的按压态高亮一致（48dp 圆形），图标居中叠在上面。
         Box(
             modifier = Modifier
-                .fillMaxWidth(0.94f)
-                .height(48.dp)
+                .size(48.dp)
                 .clip(CircleShape)
                 .background(indicatorColor),
             contentAlignment = Alignment.Center,
