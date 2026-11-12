@@ -58,6 +58,9 @@ import androidx.compose.material.icons.rounded.Tune
 import androidx.compose.material.icons.rounded.ViewCarousel
 import androidx.compose.material.icons.rounded.ViewStream
 import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.ToggleButton
+import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FilterChip
@@ -701,29 +704,42 @@ private fun ReaderTypographySegmentedRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
+        // Material 3 Expressive connected button group (the official single-select pattern):
+        // connected ToggleButtons sharing one track, spacing from ButtonGroupDefaults.
         Row(
             modifier = Modifier.weight(1f),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
         ) {
             options.forEachIndexed { index, label ->
-                FilterChip(
-                    selected = index == selectedIndex,
-                    onClick = { onSelect(index) },
-                    label = {
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.labelLarge,
-                            maxLines = 1,
-                        )
+                ToggleButton(
+                    checked = index == selectedIndex,
+                    onCheckedChange = { checked -> if (checked) onSelect(index) },
+                    shapes = when {
+                        options.size == 1 -> ButtonGroupDefaults.connectedMiddleButtonShapes()
+                        index == 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes()
+                        index == options.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes()
+                        else -> ButtonGroupDefaults.connectedMiddleButtonShapes()
                     },
                     modifier = Modifier.weight(1f),
-                    colors = FilterChipDefaults.filterChipColors(
-                        containerColor = Color.Transparent,
-                        labelColor = contentColor.copy(alpha = 0.7f),
-                        selectedContainerColor = accentColor.copy(alpha = 0.16f),
-                        selectedLabelColor = contentColor,
+                    // 以当前纸张的墨色为主：未选中是 10% 前景色的浅底，选中是实心墨色胶囊，
+                    // 这样在纯白/纯黑/米色纸张下都不会出现突兀的撞色块。
+                    colors = ToggleButtonDefaults.colors(
+                        containerColor = contentColor.copy(alpha = 0.10f),
+                        contentColor = contentColor.copy(alpha = 0.78f),
+                        checkedContainerColor = contentColor,
+                        checkedContentColor = if (contentColor.luminance() > 0.5f) {
+                            Color(0xFF1C1A18)
+                        } else {
+                            Color.White
+                        },
                     ),
-                )
+                ) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                    )
+                }
             }
         }
     }
