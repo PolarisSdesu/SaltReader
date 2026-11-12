@@ -882,12 +882,6 @@ private fun ReaderThemeRow(
                             tint = if (swatchColor.luminance() > 0.5f) Color.Black else Color.White,
                             modifier = Modifier.size(20.dp),
                         )
-                    } else if (background == ReaderBackground.AUTO) {
-                        Text(
-                            "A",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = contentColor.copy(alpha = 0.7f),
-                        )
                     }
                 }
                 Spacer(Modifier.height(6.dp))
