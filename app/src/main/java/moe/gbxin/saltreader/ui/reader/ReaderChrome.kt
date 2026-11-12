@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -835,8 +836,13 @@ private fun ReaderThemeRow(
         ReaderBackground.INK to stringResource(R.string.reader_background_ink),
         ReaderBackground.CUSTOM to stringResource(R.string.reader_background_custom),
     )
+    // 大屏（平板/折叠屏）上不要让色板铺满整个菜单栏：限制最大宽度并居中，两侧留出 margin。
+    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
     Row(
-        Modifier.fillMaxWidth(),
+        Modifier
+            .widthIn(max = 480.dp)
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         options.forEach { (background, label) ->
@@ -895,5 +901,6 @@ private fun ReaderThemeRow(
                 )
             }
         }
+    }
     }
 }
