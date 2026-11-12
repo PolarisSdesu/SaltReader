@@ -48,7 +48,7 @@
     <string name="reader_direction_ltr">左から右</string>
     <string name="reader_direction_rtl">右から左</string>
     <string name="reader_section_background">背景色</string>
-    <string name="reader_background_auto">自動</string>
+    <string name="reader_background_auto">モネ</string>
     <string name="reader_background_white">ホワイト</string>
     <string name="reader_background_ink">ブラック</string>
     <string name="reader_background_sepia">ベージュ</string>

@@ -48,7 +48,7 @@
     <string name="reader_direction_ltr">Left to right</string>
     <string name="reader_direction_rtl">Right to left</string>
     <string name="reader_section_background">Background colour</string>
-    <string name="reader_background_auto">Auto</string>
+    <string name="reader_background_auto">Monet</string>
     <string name="reader_background_white">White</string>
     <string name="reader_background_ink">Black</string>
     <string name="reader_background_sepia">Beige</string>

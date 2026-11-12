@@ -48,7 +48,7 @@
     <string name="reader_direction_ltr">從左到右</string>
     <string name="reader_direction_rtl">從右到左</string>
     <string name="reader_section_background">背景顏色</string>
-    <string name="reader_background_auto">自動</string>
+    <string name="reader_background_auto">莫奈</string>
     <string name="reader_background_white">純白</string>
     <string name="reader_background_ink">純黑</string>
     <string name="reader_background_sepia">米色</string>
