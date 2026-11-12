@@ -354,22 +354,14 @@ private fun ReaderBarIcon(
     // 复刻按压时的 ripple：外层是按钮 bounds 上的浅色胶囊，内层是 48dp 的深色圆。
     val outerIndicatorColor by animateColorAsState(
         targetValue = if (active && showIndicator) {
-            contentColor.copy(alpha = 0.06f)
+            contentColor.copy(alpha = 0.12f)
         } else {
             Color.Transparent
         },
         animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
         label = "readerBarOuterIndicator",
     )
-    val innerIndicatorColor by animateColorAsState(
-        targetValue = if (active && showIndicator) {
-            contentColor.copy(alpha = 0.12f)
-        } else {
-            Color.Transparent
-        },
-        animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
-        label = "readerBarInnerIndicator",
-    )
+
     IconButton(
         onClick = onClick,
         modifier = modifier,
@@ -382,20 +374,12 @@ private fun ReaderBarIcon(
                 .background(outerIndicatorColor),
             contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(innerIndicatorColor),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = label,
-                    tint = if (active) activeColor else contentColor,
-                    modifier = Modifier.size(24.dp),
-                )
-            }
+            Icon(
+                icon,
+                contentDescription = label,
+                tint = if (active) activeColor else contentColor,
+                modifier = Modifier.size(24.dp),
+            )
         }
     }
 }
