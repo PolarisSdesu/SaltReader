@@ -9,7 +9,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -363,26 +362,19 @@ private fun ReaderFontPickerPage(role: ReaderFontRole, onBack: () -> Unit) {
  */
 @Composable
 private fun ReaderFontFormatNotice() {
+    // 与字体/文件夹行同一套排版：40dp 的 Material 圆形图标 + 16dp 间距，
+    // 左边缘对齐卡片内的文件夹图标（16dp 页面边距 + 16dp 卡片内边距）。
     Row(
-        Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 14.dp),
-        horizontalArrangement = Arrangement.spacedBy(14.dp),
+        Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        Box(
-            modifier = Modifier.size(44.dp).clip(CircleShape)
-                .background(MaterialTheme.colorScheme.errorContainer),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                Icons.Outlined.Info,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onErrorContainer,
-                modifier = Modifier.size(22.dp),
-            )
-        }
+        SettingsIcon(Icons.Outlined.Info)
+        Spacer(Modifier.width(16.dp))
         Text(
             stringResource(R.string.reader_font_ttc_notice),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 10.dp),
         )
     }
 }
