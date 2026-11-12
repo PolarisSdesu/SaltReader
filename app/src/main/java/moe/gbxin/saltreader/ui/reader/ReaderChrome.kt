@@ -5,6 +5,9 @@
 
 package moe.gbxin.saltreader.ui.reader
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -223,6 +226,8 @@ internal fun ReaderBottomBar(
     )
     val sliderLabel = stringResource(R.string.reader_progress_slider)
     val dividerColor = contentColor.copy(alpha = 0.14f)
+    // Any open inline panel dims the other toolbar icons slightly so the active one reads at a glance.
+    val hasActivePanel = activePanel != ReaderChromePanel.NONE
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = containerColor,
@@ -287,6 +292,7 @@ internal fun ReaderBottomBar(
                             onClick = onOpenToc,
                             contentColor = contentColor,
                             activeColor = accentColor,
+                            dimmed = hasActivePanel && activePanel != ReaderChromePanel.TOC,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -297,6 +303,7 @@ internal fun ReaderBottomBar(
                         active = false,
                         onClick = onReaderModeToggle,
                         contentColor = contentColor,
+                        dimmed = hasActivePanel,
                         modifier = Modifier.weight(1f),
                     )
                     ReaderBarIcon(
@@ -306,6 +313,7 @@ internal fun ReaderBottomBar(
                         onClick = onThemeToggle,
                         contentColor = contentColor,
                         activeColor = accentColor,
+                        dimmed = hasActivePanel && activePanel != ReaderChromePanel.THEME,
                         modifier = Modifier.weight(1f),
                     )
                     if (showTypography) {
@@ -316,6 +324,7 @@ internal fun ReaderBottomBar(
                             onClick = onTypographyToggle,
                             contentColor = contentColor,
                             activeColor = accentColor,
+                            dimmed = hasActivePanel && activePanel != ReaderChromePanel.TYPOGRAPHY,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -325,6 +334,7 @@ internal fun ReaderBottomBar(
                         active = false,
                         onClick = onOpenSettings,
                         contentColor = contentColor,
+                        dimmed = hasActivePanel,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -342,7 +352,14 @@ private fun ReaderBarIcon(
     contentColor: Color,
     modifier: Modifier = Modifier,
     activeColor: Color = MaterialTheme.colorScheme.primary,
+    dimmed: Boolean = false,
 ) {
+    val iconAlpha by animateFloatAsState(
+        targetValue = if (dimmed) 0.8f else 1f,
+        animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
+        label = "readerBarIconAlpha",
+    )
+    val base = if (active) activeColor else contentColor
     IconButton(
         onClick = onClick,
         modifier = modifier,
@@ -350,7 +367,7 @@ private fun ReaderBarIcon(
         Icon(
             icon,
             contentDescription = label,
-            tint = if (active) activeColor else contentColor,
+            tint = base.copy(alpha = base.alpha * iconAlpha),
             modifier = Modifier.size(24.dp),
         )
     }
