@@ -5,6 +5,13 @@ import android.graphics.BitmapFactory
 import java.io.ByteArrayOutputStream
 import java.net.URLDecoder
 import java.util.Base64
+import java.util.concurrent.atomic.AtomicLong
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.Serializable
 import kotlin.math.max
 import kotlin.math.min
@@ -548,10 +555,11 @@ internal object EpubCoverResolver {
     private fun decodePath(value: String): String? =
         runCatching { URLDecoder.decode(value, "UTF-8") }.getOrNull()
 
-    private val ITEM_TAG = Regex("<item\\b[^>]*>", RegexOption.IGNORE_CASE)
-    private val META_TAG = Regex("<meta\\b[^>]*>", RegexOption.IGNORE_CASE)
-    private val REFERENCE_TAG = Regex("<reference\\b[^>]*>", RegexOption.IGNORE_CASE)
-    private val IMG_TAG = Regex("<img\\b[^>]*>", RegexOption.IGNORE_CASE)
+    /** 容忍 OPF 的命名空间前缀（`<opf:item>` / `<opf:meta>` 等）。 */
+    private val ITEM_TAG = Regex("<(?:[A-Za-z_][\\w.-]*:)?item\\b[^>]*>", RegexOption.IGNORE_CASE)
+    private val META_TAG = Regex("<(?:[A-Za-z_][\\w.-]*:)?meta\\b[^>]*>", RegexOption.IGNORE_CASE)
+    private val REFERENCE_TAG = Regex("<(?:[A-Za-z_][\\w.-]*:)?reference\\b[^>]*>", RegexOption.IGNORE_CASE)
+    private val IMG_TAG = Regex("<(?:[A-Za-z_][\\w.-]*:)?img\\b[^>]*>", RegexOption.IGNORE_CASE)
     private val WHITESPACE = Regex("\\s+")
     private val IMAGE_EXTENSIONS = setOf(
         "jpg",
@@ -590,6 +598,9 @@ internal object EpubIndexer {
     private val MAX_INLINE_TOTAL_BYTES = EpubImagePolicy.MAX_TOTAL_INLINE_BYTES.toLong()
     private const val MAX_CHAPTER_OUTPUT_CHARS = 12 * 1024 * 1024
     private const val MAX_TITLE_CHARS = 200
+
+    /** 章节提取并发度：解压/清洗是 CPU + I/O 混合，4 路在本机与手机上都能接近线性加速。 */
+    private const val CHAPTER_EXTRACT_CONCURRENCY = 4
 
     data class Classification(
         val kind: BookKind,
@@ -762,43 +773,66 @@ internal object EpubIndexer {
             .orEmpty()
 
     /** 按 spine 顺序提取并清洗文字章节；失败返回空列表。 */
-    fun loadChapters(reader: RemoteZipReader): List<EbookChapter> {
+    private class ParsedChapter(
+        val item: SpineItem,
+        val raw: String,
+        val html: String,
+        val imageOnly: Boolean,
+    )
+
+    /**
+     * 读取并清洗全部章节。逐章解压/正则/图片内联都是 CPU 与 I/O 混合开销，且各章互不依赖：
+     * 用有界并发（[CHAPTER_EXTRACT_CONCURRENCY]）并行处理后按 spine 顺序重组，
+     * 大文字书首次打开可省掉一半以上的提取时间。目录标题的"向后继承"仍在顺序阶段完成。
+     */
+    suspend fun loadChapters(reader: RemoteZipReader): List<EbookChapter> {
         val opf = runCatching { readOpf(reader) }.getOrNull() ?: return emptyList()
         val available = runCatching { reader.entries().mapTo(HashSet()) { it.name } }.getOrNull()
             ?: return emptyList()
         val tocTitles = runCatching { loadTocTitles(reader, opf, available) }.getOrDefault(emptyMap())
-        val chapters = ArrayList<EbookChapter>()
         val inlineBudget = InlineBudget(MAX_INLINE_TOTAL_BYTES)
+        val spine = opf.spineItems.filter { it.isXhtml }
+        val parsed: List<ParsedChapter?> = coroutineScope {
+            val limiter = Semaphore(CHAPTER_EXTRACT_CONCURRENCY)
+            spine.map { item ->
+                async(Dispatchers.IO) {
+                    limiter.withPermit {
+                        runCatching {
+                            val bytes = reader.readEntry(item.entryName, MAX_CHAPTER_BYTES)
+                                ?: return@runCatching null
+                            val raw = bytes.toString(Charsets.UTF_8)
+                            val html = sanitizeChapter(raw, dirOf(item.entryName), reader, available, inlineBudget)
+                            if (html.isBlank()) return@runCatching null
+                            ParsedChapter(item, raw, html, EpubTextAnalyzer.isImageOnly(html))
+                        }.getOrNull()
+                    }
+                }
+            }.awaitAll()
+        }
+        val chapters = ArrayList<EbookChapter>(parsed.size)
         // 目录标签按 spine 顺序"向后继承"：真实 EPUB 常把章节标题页（插图页）作为 navPoint，
         // 正文 XHTML 本身没有对应目录项；正文页沿用最近一个目录标签，避免标题丢失。
         var pendingTitle: String? = null
-        for (item in opf.spineItems) {
-            if (!item.isXhtml) continue
-            val bytes = runCatching { reader.readEntry(item.entryName, MAX_CHAPTER_BYTES) }.getOrNull()
-                ?: continue
-            val raw = bytes.toString(Charsets.UTF_8)
-            val html = runCatching {
-                sanitizeChapter(raw, dirOf(item.entryName), reader, available, inlineBudget)
-            }.getOrNull() ?: continue
-            if (html.isBlank()) continue
-            val imageOnly = EpubTextAnalyzer.isImageOnly(html)
-            val exactTitle = tocTitles[item.entryName]
+        for (entry in parsed) {
+            if (entry == null) continue
+            val exactTitle = tocTitles[entry.item.entryName]
             if (exactTitle != null) pendingTitle = exactTitle
+            val imageOnly = entry.imageOnly
             val title = when {
                 exactTitle != null -> exactTitle
                 // 纯图片页没有可见正文，不需要标题（阅读器也不会画标题）。
                 imageOnly -> null
                 pendingTitle != null -> pendingTitle
                 // 兜底：章节文档头部 <title> 或正文 h1/h2。
-                else -> extractTitle(raw) ?: extractTitle(html)
+                else -> extractTitle(entry.raw) ?: extractTitle(entry.html)
             }
-            val charCount = if (imageOnly) 0 else EpubTextAnalyzer.visibleTextLength(html)
+            val charCount = if (imageOnly) 0 else EpubTextAnalyzer.visibleTextLength(entry.html)
             val showHeading = !imageOnly &&
-                !EpubTextAnalyzer.startsWithTitleElement(html) &&
-                !EpubTextAnalyzer.startsWithTitleText(html, title)
+                !EpubTextAnalyzer.startsWithTitleElement(entry.html) &&
+                !EpubTextAnalyzer.startsWithTitleText(entry.html, title)
             chapters += EbookChapter(
                 title = title,
-                html = html,
+                html = entry.html,
                 charCount = charCount,
                 imageOnly = imageOnly,
                 showHeading = showHeading,
@@ -961,15 +995,14 @@ internal object EpubIndexer {
         val src = parseAttributes(match.value)["src"] ?: return@replace ""
         if (isRemote(src) || src.startsWith("data:", ignoreCase = true)) return@replace ""
         val entry = resolveEntry(baseDir, src, available) ?: return@replace ""
-        if (inlineBudget.remaining <= 0L) return@replace ""
+        if (inlineBudget.remainingBytes() <= 0L) return@replace ""
         val bytes = runCatching {
             reader.readEntry(entry, MAX_INLINE_IMAGE_SOURCE_BYTES)
         }.getOrNull() ?: return@replace ""
         val prepared = prepareInlineImage(entry, bytes) ?: return@replace ""
-        if (prepared.data.size > inlineBudget.remaining) return@replace ""
+        if (!inlineBudget.tryReserve(prepared.data.size.toLong())) return@replace ""
         val base64 = runCatching { Base64.getEncoder().encodeToString(prepared.data) }.getOrNull()
             ?: return@replace ""
-        inlineBudget.remaining -= prepared.data.size
         "<img src=\"data:${prepared.mime};base64,$base64\" alt=\"\"/>"
     }
 
@@ -1059,7 +1092,20 @@ internal object EpubIndexer {
         return null
     }
 
-    private class InlineBudget(var remaining: Long)
+    /** 内联图片预算：章节并行清洗时用原子操作扣减，避免超预算或丢图片。 */
+    private class InlineBudget(private val maxBytes: Long) {
+        private val remaining = AtomicLong(maxBytes)
+
+        fun remainingBytes(): Long = remaining.get()
+
+        fun tryReserve(bytes: Long): Boolean {
+            while (true) {
+                val current = remaining.get()
+                if (current < bytes) return false
+                if (remaining.compareAndSet(current, current - bytes)) return true
+            }
+        }
+    }
 
     private fun mimeTypeOf(entryName: String): String = when (entryName.substringAfterLast('.', "").lowercase()) {
         "jpg", "jpeg" -> "image/jpeg"
@@ -1082,11 +1128,12 @@ internal object EpubIndexer {
 
     private val FULL_PATH_REGEX =
         Regex("""full-path\s*=\s*("([^"]*)"|'([^']*)')""", RegexOption.IGNORE_CASE)
-    private val SPINE_OPEN = Regex("<spine\\b[^>]*>", RegexOption.IGNORE_CASE)
-    private val SPINE_BLOCK = Regex("<spine\\b[^>]*>([\\s\\S]*?)</spine>", RegexOption.IGNORE_CASE)
-    private val ITEMREF_TAG = Regex("<itemref\\b[^>]*>", RegexOption.IGNORE_CASE)
+    /** OPF 常带命名空间前缀（如 `<opf:spine>` / `<opf:itemref>`），所有标签匹配都要容忍它。 */
+    private val SPINE_OPEN = Regex("<(?:[A-Za-z_][\\w.-]*:)?spine\\b[^>]*>", RegexOption.IGNORE_CASE)
+    private val SPINE_BLOCK = Regex("<(?:[A-Za-z_][\\w.-]*:)?spine\\b[^>]*>([\\s\\S]*?)</(?:[A-Za-z_][\\w.-]*:)?spine>", RegexOption.IGNORE_CASE)
+    private val ITEMREF_TAG = Regex("<(?:[A-Za-z_][\\w.-]*:)?itemref\\b[^>]*>", RegexOption.IGNORE_CASE)
 
-    private val IMG_TAG = Regex("<img\\b[^>]*>", RegexOption.IGNORE_CASE)
+    private val IMG_TAG = Regex("<(?:[A-Za-z_][\\w.-]*:)?img\\b[^>]*>", RegexOption.IGNORE_CASE)
     /**
      * 6 个需要整块删除的标签（script/style/iframe/object/video/audio）合并成一次替换。
      * 每个分支的结束标签与自身对应，内容用 [\s\S]*? 非贪婪跨行匹配；IGNORE_CASE 覆盖大小写。

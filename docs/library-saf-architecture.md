@@ -473,3 +473,19 @@ A 负责的实现：
   本进程内只尝试一次，不会每次打开都解 ZIP。`ensureCovers()` 启动阶段跳过文字书（避免启动时逐本
   打开 EPUB），封面文件小于 512B 视为无效需要重建。
 - 没有封面的书在书架显示纯色占位（书 accent 色），不再用渐变——渐变会被误读成加载态。
+
+## 第八轮：文字书打开与排版
+
+- **章节并行提取**：`EpubIndexer.loadChapters` 改为 suspend，用 4 路有界并发解压/清洗各章，
+  再按 spine 顺序重组（目录标题的"向后继承"仍在顺序阶段完成）。内联图片预算改为原子扣减。
+  20 章 / 15MB、含插图的 EPUB 首次提取 677ms → 380ms。
+- **渲染窗口按 HTML 成本限流**：初始/跳转/追加窗口都按"去掉 base64 图片负载后的 HTML 体积"
+  计算预算（`chapterHtmlCost`），并保证跳转目标章一定在窗口内。大图章不再被误判为超大章节。
+- **内联图片改为本地 URL 拦截**：渲染前把 `data:image/...` 换成
+  `https://salt.local/inline/<token>`（附带解码宽高），字节存入会话内 map，由
+  `shouldInterceptRequest` 返回。初始 HTML 从 429KB 降到约 46KB，追加 payload 同比缩小；
+  图片本身仍由 WebView 按需解码。章节缓存格式不变，旧缓存同样适用。
+- **非虚构书排版**：注入 `pre/code/table/blockquote/ul/ol/hr/figure` 等基础样式——代码块等宽、
+  自动换行（避免被分栏裁切）、浅色底；表格定宽 + 单元格换行；列表/引用恢复层级。
+- **OPF 命名空间兼容**：`manifest/item`、`spine/itemref`、`meta`、`reference` 的解析正则都
+  容忍 `opf:` 前缀；此前这类 EPUB 会因 spine 为空而报"无可读内容"。

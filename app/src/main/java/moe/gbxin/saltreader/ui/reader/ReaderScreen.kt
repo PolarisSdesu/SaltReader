@@ -201,7 +201,7 @@ fun ReaderScreen(
                 modifier.fillMaxSize().background(textReaderBackground),
                 contentAlignment = Alignment.Center,
             ) {
-                SaltLoading(sizeDp = 36)
+                SaltLoading(sizeDp = 48)
             }
 
             is ReaderUiState.TextFailed -> ReaderFailed(
@@ -266,7 +266,7 @@ private fun ReaderLoading(message: String, modifier: Modifier = Modifier) {
         contentAlignment = Alignment.Center,
     ) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            SaltLoading(sizeDp = 36)
+            SaltLoading(sizeDp = 48)
             Spacer(Modifier.height(12.dp))
             Text(
                 message,
@@ -1178,7 +1178,7 @@ private fun PagePlaceholder(index: Int) {
     }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            if (showIndicator) SaltLoading(sizeDp = 32)
+            if (showIndicator) SaltLoading(sizeDp = 40)
             if (showIndicator) {
                 Spacer(Modifier.height(10.dp))
                 Text(

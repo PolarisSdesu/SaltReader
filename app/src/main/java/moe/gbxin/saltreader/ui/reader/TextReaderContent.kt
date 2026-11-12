@@ -13,6 +13,8 @@ import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
+import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebViewClient
 import androidx.annotation.Keep
 import androidx.compose.animation.AnimatedContent
@@ -41,11 +43,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Surface
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.DisposableEffect
@@ -97,7 +100,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
+import java.io.ByteArrayInputStream
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicInteger
 import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
@@ -221,11 +227,53 @@ internal fun TextReaderContent(
             visible.coerceAtLeast(1L)
         }
     }
+    /** 章节 HTML 的渲染成本（已剔除 base64 图片负载），仅用于窗口预算；进度换算仍用可见字符。 */
+    val chapterHtmlChars = remember(chapters) {
+        LongArray(chapters.size) { index -> chapterHtmlCost(chapters[index].html) }
+    }
     val chapterPrefix = remember(chapterChars) {
         val prefix = LongArray(chapterChars.size + 1)
         for (i in chapterChars.indices) prefix[i + 1] = prefix[i] + chapterChars[i]
         prefix
     }
+    /**
+     * 渲染窗口的字符预算：图片型文字书单章可能有几百 KB（内联插图），一次注入太多会让
+     * WebView 首帧排版明显变慢；轻量章节仍可一次多注入几章，减少追加次数。
+     */
+    fun renderWindowEnd(
+        start: Int,
+        maxChapters: Int,
+        maxChars: Long,
+        mustIncludeIndex: Int? = null,
+    ): Int {
+        var end = start
+        var chars = 0L
+        while (end < chapters.size && end - start < maxChapters) {
+            val next = chapterHtmlChars.getOrElse(end) { 0L }
+            if (end > start && chars + next > maxChars) break
+            chars += next
+            end++
+        }
+        // 跳转目标章必须留在窗口内：预算不够时也至少把它包含进来，避免"跳到图片章却停在上一章"。
+        if (mustIncludeIndex != null && end <= mustIncludeIndex) {
+            end = (mustIncludeIndex + 1).coerceAtMost(chapters.size)
+        }
+        return end.coerceAtLeast((start + 1).coerceAtMost(chapters.size))
+    }
+
+    /** 同 [renderWindowEnd]，但从窗口尾部向前扩展（前插章节时保持与窗口内容连续）。 */
+    fun renderWindowStart(endExclusive: Int, maxChapters: Int, maxChars: Long): Int {
+        var start = endExclusive
+        var chars = 0L
+        while (start > 0 && endExclusive - start < maxChapters) {
+            val prev = chapterHtmlChars.getOrElse(start - 1) { 0L }
+            if (endExclusive - start > 0 && chars + prev > maxChars) break
+            chars += prev
+            start--
+        }
+        return start
+    }
+
     // 全书字符数只认章节可见字符之和（book.charCount 是索引阶段的估算值，图片书会严重偏大）。
     val totalChars = remember(chapterPrefix) {
         (chapterPrefix.lastOrNull() ?: 0L).coerceAtLeast(1L)
@@ -236,8 +284,8 @@ internal fun TextReaderContent(
 
     val initialChunk = remember(book.id, chapters) {
         val index = chapterIndexForOffset(progressOffset, chapterPrefix)
-        val start = (index - 1).coerceAtLeast(0)
-        start to (start + INITIAL_CHAPTER_BATCH).coerceAtMost(chapters.size)
+        val start = (index - CHAPTER_START_LEAD).coerceAtLeast(0)
+        start to renderWindowEnd(start, INITIAL_CHAPTER_BATCH, INITIAL_RENDER_CHAR_BUDGET, index)
     }
 
     fun ratioWithinWindow(offset: Long, start: Int, end: Int): Float {
@@ -306,6 +354,9 @@ internal fun TextReaderContent(
 
     // Building a whole window's HTML can take tens of milliseconds on long chapters; do it off the
     // main thread so opening / jumping never blocks the UI.
+    // 内联图片改为本地 URL 后，WebView 通过 shouldInterceptRequest 按 token 取回字节。
+    val inlineImageStore = remember { ConcurrentHashMap<String, InlineImageResource>() }
+    val inlineImageTokens = remember { AtomicInteger(0) }
     val html by produceState(
         initialValue = "",
         renderToken,
@@ -315,11 +366,15 @@ internal fun TextReaderContent(
         book.title,
     ) {
         value = withContext(Dispatchers.Default) {
-            buildBookHtml(
-                chapters = chapters.subList(renderStart, renderEnd),
-                bookTitle = book.title,
-                startIndex = renderStart,
-                singleChapter = chapters.size == 1,
+            externalizeInlineImages(
+                buildBookHtml(
+                    chapters = chapters.subList(renderStart, renderEnd),
+                    bookTitle = book.title,
+                    startIndex = renderStart,
+                    singleChapter = chapters.size == 1,
+                ),
+                inlineImageStore,
+                inlineImageTokens,
             )
         }
     }
@@ -420,7 +475,7 @@ internal fun TextReaderContent(
     fun windowForChapter(index: Int, batch: Int = CHAPTER_BATCH): Pair<Int, Int> {
         val safe = index.coerceIn(0, chapters.size - 1)
         val start = (safe - CHAPTER_START_LEAD).coerceAtLeast(0)
-        return start to (start + batch).coerceAtMost(chapters.size)
+        return start to renderWindowEnd(start, batch, WINDOW_RENDER_CHAR_BUDGET, safe)
     }
 
     // Use the window container size (stable across system-bar visibility) rather than
@@ -532,11 +587,19 @@ internal fun TextReaderContent(
         if (!append && !prepend) return
         val startBefore = windowStart
         val endBefore = windowEnd
-        val nextStart = if (prepend) (windowStart - CHAPTER_BATCH).coerceAtLeast(0) else windowStart
-        val nextEnd = if (append) (windowEnd + CHAPTER_BATCH).coerceAtMost(chapters.size) else windowEnd
+        val nextStart = if (prepend) {
+            renderWindowStart(windowStart, CHAPTER_BATCH, WINDOW_RENDER_CHAR_BUDGET)
+        } else {
+            windowStart
+        }
+        val nextEnd = if (append) {
+            renderWindowEnd(windowEnd, CHAPTER_BATCH, WINDOW_RENDER_CHAR_BUDGET)
+        } else {
+            windowEnd
+        }
         lastChapterLoadAt = now
         val script = withContext(Dispatchers.Default) {
-            val payload = buildString {
+            val rawPayload = buildString {
                 if (append) {
                     for (i in endBefore until nextEnd) {
                         append(chapterHtml(chapters[i], i, book.title, chapters.size == 1))
@@ -546,6 +609,11 @@ internal fun TextReaderContent(
                         append(chapterHtml(chapters[i], i, book.title, chapters.size == 1))
                     }
                 }
+            }
+            val payload = if (rawPayload.isEmpty()) {
+                ""
+            } else {
+                externalizeInlineImages(rawPayload, inlineImageStore, inlineImageTokens)
             }
             if (payload.isEmpty()) {
                 ""
@@ -845,6 +913,25 @@ internal fun TextReaderContent(
                     overScrollMode = View.OVER_SCROLL_NEVER
                     addJavascriptInterface(bridge, BRIDGE_NAME)
                     webViewClient = object : WebViewClient() {
+                        override fun shouldInterceptRequest(
+                            view: WebView,
+                            request: WebResourceRequest,
+                        ): WebResourceResponse? {
+                            val url = request.url
+                            if (url.scheme == INLINE_IMAGE_SCHEME && url.host == INLINE_IMAGE_HOST) {
+                                val token = url.pathSegments.lastOrNull()
+                                val resource = token?.let { inlineImageStore[it] }
+                                if (resource != null) {
+                                    return WebResourceResponse(
+                                        resource.mime,
+                                        null,
+                                        ByteArrayInputStream(resource.bytes),
+                                    )
+                                }
+                            }
+                            return null
+                        }
+
                         override fun onPageFinished(view: WebView?, url: String?) {
                             pageFinishedToken += 1
                         }
@@ -869,17 +956,27 @@ internal fun TextReaderContent(
                 val bootstrap = """{"options":$optionsJson,"ratio":${localRatio.value}}"""
                 lastAppliedOptionsJson = optionsJson
                 val initialHtml = html.replace(TEXT_READER_BOOTSTRAP_PLACEHOLDER, bootstrap)
-                webView.loadDataWithBaseURL(null, initialHtml, "text/html", "utf-8", null)
+                webView.loadDataWithBaseURL(
+                    INLINE_IMAGE_SCHEME + "://" + INLINE_IMAGE_HOST + "/",
+                    initialHtml,
+                    "text/html",
+                    "utf-8",
+                    null,
+                )
             }
         }
 
+        // 首次排版 / 拖动进度条后重建 WebView 时显示的加载指示器：统一用 Material 3 的
+        // SaltLoading（Expressive LoadingIndicator），尺寸比原来大一号。
         AnimatedVisibility(
             visible = !firstLayoutRendered,
             enter = fadeIn(tween(durationMillis = 90)),
             exit = fadeOut(tween(durationMillis = 150)),
             modifier = Modifier.align(Alignment.Center),
         ) {
-            SaltLoading(sizeDp = 36)
+            CompositionLocalProvider(LocalContentColor provides readerTextColor.copy(alpha = 0.6f)) {
+                SaltLoading(sizeDp = 48)
+            }
         }
 
         // Paged mode deliberately leaves touch handling to the WebView: the CSS-column strip is a
@@ -898,11 +995,9 @@ internal fun TextReaderContent(
                     .background(readerBackground),
                 contentAlignment = Alignment.Center,
             ) {
-                CircularProgressIndicator(
-                    color = readerTextColor.copy(alpha = 0.45f),
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(26.dp),
-                )
+                CompositionLocalProvider(LocalContentColor provides readerTextColor.copy(alpha = 0.5f)) {
+                    SaltLoading(sizeDp = 40)
+                }
             }
         }
 
@@ -1280,6 +1375,64 @@ private fun buildBookHtml(
     return HTML_HEAD + body + HTML_TAIL
 }
 
+/** WebView 内部用来按需取回内联图片的本地域名；请求由 shouldInterceptRequest 截获。 */
+private const val INLINE_IMAGE_HOST = "salt.local"
+private const val INLINE_IMAGE_SCHEME = "https"
+
+/** 一张已内联图片的字节与 MIME，按 token 存放在阅读器会话内。 */
+private class InlineImageResource(val bytes: ByteArray, val mime: String)
+
+/** 匹配 sanitizer 生成的 data URI 图片（只有图片才会内联）。 */
+private val INLINE_DATA_URI = Regex("""src="(data:(image/[^";]+);base64,([^"]+))"""")
+
+/**
+ * 把章节 HTML 里的 base64 图片改成指向 [INLINE_IMAGE_HOST] 的短 URL，并把字节存进 [store]。
+ * WebView 解析 HTML 时不用再吞下几百 KB 的 base64 文本；布局所需宽高直接写进 img 标签，
+ * 图片本身由 shouldInterceptRequest 异步取回。调用方在 Default/IO 线程执行。
+ */
+private fun externalizeInlineImages(
+    html: String,
+    store: ConcurrentHashMap<String, InlineImageResource>,
+    tokenCounter: AtomicInteger,
+): String {
+    if (!html.contains("data:image")) return html
+    return INLINE_DATA_URI.replace(html) { match ->
+        val mime = match.groupValues[2]
+        val payload = match.groupValues[3]
+        val bytes = runCatching { java.util.Base64.getDecoder().decode(payload) }.getOrNull()
+            ?: return@replace match.value
+        val token = "img" + tokenCounter.incrementAndGet()
+        store[token] = InlineImageResource(bytes, mime)
+        val bounds = runCatching {
+            android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                .also { android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, it) }
+        }.getOrNull()
+        val dims = if (bounds != null && bounds.outWidth > 0 && bounds.outHeight > 0) {
+            " width=\"" + bounds.outWidth + "\" height=\"" + bounds.outHeight + "\""
+        } else {
+            ""
+        }
+        "src=\"" + INLINE_IMAGE_SCHEME + "://" + INLINE_IMAGE_HOST + "/inline/" + token + "\"" + dims
+    }
+}
+
+/**
+ * 章节 HTML 的渲染成本：总长度减去 base64 图片负载。图片会被 externalizeInlineImages 换成
+ * 本地短 URL，真正交给 WebView 解析的只有文本和短 URL，因此预算要按这个成本算，
+ * 否则图片章会被误判成超大章节而被排除出窗口。
+ */
+private fun chapterHtmlCost(html: String): Long {
+    var cost = html.length.toLong()
+    var index = html.indexOf("data:image")
+    while (index >= 0) {
+        val quote = html.indexOf('"', index)
+        if (quote < 0) break
+        cost -= (quote - index).toLong()
+        index = html.indexOf("data:image", quote)
+    }
+    return cost.coerceAtLeast(1L)
+}
+
 /** 单本书拼出的 HTML 总量上限（约 24M 字符，正常文字书在 1M 量级）。 */
 private const val MAX_TOTAL_HTML_CHARS = 24 * 1024 * 1024
 
@@ -1287,6 +1440,10 @@ private const val MAX_TOTAL_HTML_CHARS = 24 * 1024 * 1024
 private const val CHAPTER_BATCH = 3
 private const val INITIAL_CHAPTER_BATCH = 2
 private const val JUMP_BATCH = 3
+
+/** 单次注入的字符预算：图片型文字书按章限流，避免首帧/追加时 WebView 排版过重。 */
+private const val INITIAL_RENDER_CHAR_BUDGET = 360_000L
+private const val WINDOW_RENDER_CHAR_BUDGET = 600_000L
 
 /** 跳转时目标章节前保留的章节数，给"上一页"留一点缓冲。 */
 private const val CHAPTER_START_LEAD = 1
@@ -1378,6 +1535,34 @@ body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; line-height: var(
    book's font weight/size/alignment/style are kept. Publisher classes such as .co1 (.white text on
    #FFF) would otherwise be invisible in light mode. */
 #book, #book * { color: inherit !important; text-shadow: none !important; background-color: transparent !important; background-image: none !important; }
+
+/* Non-fiction / programming books: code blocks, tables and lists the publisher CSS would have
+   styled. Code must wrap inside a page column instead of being clipped horizontally. */
+#book pre, #book code, #book kbd, #book samp, #book tt {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+#book pre {
+  white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
+  font-size: 0.86em; line-height: 1.5 !important; text-indent: 0;
+  margin: 0.7em var(--reader-page-margin-x, 30px); padding: 0.55em 0.7em;
+  border-radius: 8px; background: rgba(127, 127, 127, 0.10);
+}
+#book pre code { font-size: 1em; background: transparent; padding: 0; }
+#book code { font-size: 0.92em; padding: 0 0.15em; border-radius: 3px; background: rgba(127, 127, 127, 0.10); }
+#book table { border-collapse: collapse; width: 100%; table-layout: fixed;
+  margin: 0.8em var(--reader-page-margin-x, 30px); font-size: 0.86em; }
+#book th, #book td { border: 1px solid rgba(127, 127, 127, 0.35); padding: 0.3em 0.4em;
+  vertical-align: top; text-indent: 0; text-align: left; overflow-wrap: anywhere; word-break: break-word; }
+#book th { font-weight: 700; background: rgba(127, 127, 127, 0.08); }
+#book blockquote { margin: 0.7em var(--reader-page-margin-x, 30px); padding-left: 0.9em;
+  border-left: 3px solid rgba(127, 127, 127, 0.35); }
+#book blockquote p { margin-left: 0; margin-right: 0; }
+#book ul, #book ol { margin: 0.5em var(--reader-page-margin-x, 30px); padding-left: 1.6em; }
+#book li { text-indent: 0; }
+#book hr { border: 0; border-top: 1px solid rgba(127, 127, 127, 0.35); margin: 1em var(--reader-page-margin-x, 30px); }
+#book figure { margin: 0.8em var(--reader-page-margin-x, 30px); text-align: center; }
+#book figcaption, #book .caption { font-size: 0.85em; text-align: center; opacity: 0.85; text-indent: 0; }
+#book sub, #book sup { line-height: 0; }
 
 /* Paged mode (CSS columns): the column box is inset by page padding so text keeps clear of the
    status bar and the bottom toolbar, like WeChat Reading's page margins. */
