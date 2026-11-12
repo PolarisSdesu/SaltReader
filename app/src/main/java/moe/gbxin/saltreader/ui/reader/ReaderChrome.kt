@@ -351,33 +351,51 @@ private fun ReaderBarIcon(
     /** 面板类按钮（目录/主题/字号）激活时在图标下方画圆角矩形指示器；一次性动作不需要。 */
     showIndicator: Boolean = false,
 ) {
-    val indicatorColor by animateColorAsState(
+    // 复刻按压时的 ripple：外层是按钮 bounds 上的浅色胶囊，内层是 48dp 的深色圆。
+    val outerIndicatorColor by animateColorAsState(
         targetValue = if (active && showIndicator) {
-            activeColor.copy(alpha = 0.16f)
+            contentColor.copy(alpha = 0.06f)
         } else {
             Color.Transparent
         },
         animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
-        label = "readerBarIndicator",
+        label = "readerBarOuterIndicator",
+    )
+    val innerIndicatorColor by animateColorAsState(
+        targetValue = if (active && showIndicator) {
+            contentColor.copy(alpha = 0.12f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
+        label = "readerBarInnerIndicator",
     )
     IconButton(
         onClick = onClick,
         modifier = modifier,
     ) {
-        // 指示器尺寸与按钮本身的按压态高亮一致（48dp 圆形），图标居中叠在上面。
         Box(
             modifier = Modifier
-                .size(48.dp)
+                .fillMaxWidth()
+                .height(48.dp)
                 .clip(CircleShape)
-                .background(indicatorColor),
+                .background(outerIndicatorColor),
             contentAlignment = Alignment.Center,
         ) {
-            Icon(
-                icon,
-                contentDescription = label,
-                tint = if (active) activeColor else contentColor,
-                modifier = Modifier.size(24.dp),
-            )
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(innerIndicatorColor),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = label,
+                    tint = if (active) activeColor else contentColor,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
         }
     }
 }
