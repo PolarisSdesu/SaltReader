@@ -840,7 +840,7 @@ private fun ReaderThemeRow(
     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
     Row(
         Modifier
-            .widthIn(max = 460.dp)
+            .widthIn(max = 470.dp)
             .fillMaxWidth()
             .padding(horizontal = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(14.dp),
