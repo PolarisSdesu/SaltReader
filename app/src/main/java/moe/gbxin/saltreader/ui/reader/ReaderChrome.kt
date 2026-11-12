@@ -836,7 +836,7 @@ private fun ReaderThemeRow(
     )
     Row(
         Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(14.dp),
     ) {
         options.forEach { (background, label) ->
             val swatchColor = when (background) {
