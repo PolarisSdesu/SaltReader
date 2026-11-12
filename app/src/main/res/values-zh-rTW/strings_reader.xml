@@ -129,4 +129,5 @@
     <string name="reader_font_value_none">未選擇</string>
     <string name="reader_font_picker_no_directory">尚未加入字型資料夾，請在字型設定中選擇。</string>
     <string name="reader_font_ttc_notice">由於 WebView 限制，自訂字型暫不支援 .ttc 字型檔。</string>
+    <string name="reader_font_section_custom_defaults">自訂預設字型</string>
 </resources>

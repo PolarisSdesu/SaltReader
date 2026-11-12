@@ -178,7 +178,7 @@ private fun ReaderFontSettingsPage(onBack: () -> Unit) {
                 ) { context.startPicker(ReaderFontRole.CUSTOM) }
             }
 
-            SettingsSectionLabel(stringResource(R.string.reader_font_section_defaults))
+            SettingsSectionLabel(stringResource(R.string.reader_font_section_custom_defaults))
             SettingsCard {
                 ReaderFontEntryRow(
                     icon = Icons.Outlined.TextFields,

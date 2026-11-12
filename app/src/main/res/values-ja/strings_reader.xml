@@ -129,4 +129,5 @@
     <string name="reader_font_value_none">未設定</string>
     <string name="reader_font_picker_no_directory">フォントフォルダーが未設定です。フォント設定で選択してください。</string>
     <string name="reader_font_ttc_notice">WebView の制限により、カスタムフォントは .ttc フォントファイルに未対応です。</string>
+    <string name="reader_font_section_custom_defaults">カスタム既定フォント</string>
 </resources>

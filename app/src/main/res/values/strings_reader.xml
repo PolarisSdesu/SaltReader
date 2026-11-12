@@ -129,4 +129,5 @@
     <string name="reader_font_value_none">Not set</string>
     <string name="reader_font_picker_no_directory">No font folder set. Choose one in Font settings.</string>
     <string name="reader_font_ttc_notice">Due to a WebView limitation, custom fonts do not support .ttc font files yet.</string>
+    <string name="reader_font_section_custom_defaults">Custom default fonts</string>
 </resources>
