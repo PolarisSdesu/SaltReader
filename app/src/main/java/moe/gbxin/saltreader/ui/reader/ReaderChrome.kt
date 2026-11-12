@@ -5,8 +5,8 @@
 
 package moe.gbxin.saltreader.ui.reader
 
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -226,8 +226,6 @@ internal fun ReaderBottomBar(
     )
     val sliderLabel = stringResource(R.string.reader_progress_slider)
     val dividerColor = contentColor.copy(alpha = 0.14f)
-    // Any open inline panel dims the other toolbar icons slightly so the active one reads at a glance.
-    val hasActivePanel = activePanel != ReaderChromePanel.NONE
     Surface(
         modifier = modifier.fillMaxWidth(),
         color = containerColor,
@@ -292,7 +290,7 @@ internal fun ReaderBottomBar(
                             onClick = onOpenToc,
                             contentColor = contentColor,
                             activeColor = accentColor,
-                            dimmed = hasActivePanel && activePanel != ReaderChromePanel.TOC,
+                            showIndicator = true,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -303,7 +301,6 @@ internal fun ReaderBottomBar(
                         active = false,
                         onClick = onReaderModeToggle,
                         contentColor = contentColor,
-                        dimmed = hasActivePanel,
                         modifier = Modifier.weight(1f),
                     )
                     ReaderBarIcon(
@@ -313,7 +310,7 @@ internal fun ReaderBottomBar(
                         onClick = onThemeToggle,
                         contentColor = contentColor,
                         activeColor = accentColor,
-                        dimmed = hasActivePanel && activePanel != ReaderChromePanel.THEME,
+                        showIndicator = true,
                         modifier = Modifier.weight(1f),
                     )
                     if (showTypography) {
@@ -324,7 +321,7 @@ internal fun ReaderBottomBar(
                             onClick = onTypographyToggle,
                             contentColor = contentColor,
                             activeColor = accentColor,
-                            dimmed = hasActivePanel && activePanel != ReaderChromePanel.TYPOGRAPHY,
+                            showIndicator = true,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -334,7 +331,6 @@ internal fun ReaderBottomBar(
                         active = false,
                         onClick = onOpenSettings,
                         contentColor = contentColor,
-                        dimmed = hasActivePanel,
                         modifier = Modifier.weight(1f),
                     )
                 }
@@ -352,24 +348,36 @@ private fun ReaderBarIcon(
     contentColor: Color,
     modifier: Modifier = Modifier,
     activeColor: Color = MaterialTheme.colorScheme.primary,
-    dimmed: Boolean = false,
+    /** 面板类按钮（目录/主题/字号）激活时在图标下方画圆角矩形指示器；一次性动作不需要。 */
+    showIndicator: Boolean = false,
 ) {
-    val iconAlpha by animateFloatAsState(
-        targetValue = if (dimmed) 0.8f else 1f,
-        animationSpec = tween(durationMillis = 120, easing = FastOutSlowInEasing),
-        label = "readerBarIconAlpha",
+    val indicatorColor by animateColorAsState(
+        targetValue = if (active && showIndicator) {
+            activeColor.copy(alpha = 0.16f)
+        } else {
+            Color.Transparent
+        },
+        animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
+        label = "readerBarIndicator",
     )
-    val base = if (active) activeColor else contentColor
     IconButton(
         onClick = onClick,
         modifier = modifier,
     ) {
-        Icon(
-            icon,
-            contentDescription = label,
-            tint = base.copy(alpha = base.alpha * iconAlpha),
-            modifier = Modifier.size(24.dp),
-        )
+        Box(
+            modifier = Modifier
+                .clip(RoundedCornerShape(12.dp))
+                .background(indicatorColor)
+                .padding(horizontal = 10.dp, vertical = 4.dp),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                icon,
+                contentDescription = label,
+                tint = if (active) activeColor else contentColor,
+                modifier = Modifier.size(24.dp),
+            )
+        }
     }
 }
 
