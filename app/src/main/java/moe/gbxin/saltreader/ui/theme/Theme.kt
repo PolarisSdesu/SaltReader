@@ -187,16 +187,16 @@ fun readerAccentColor(
 ): Color = when (background) {
     // 莫奈：跟随 Material You 动态取色的主色。
     moe.gbxin.saltreader.data.ReaderBackground.AUTO -> MaterialTheme.colorScheme.primary
-    // 纯白纸张：Material 主题主色（未开动态取色时即应用品牌色）。
-    moe.gbxin.saltreader.data.ReaderBackground.WHITE -> MaterialTheme.colorScheme.primary
-    // 米色纸张：暖棕调（Material tertiary 的暖色系）。
-    moe.gbxin.saltreader.data.ReaderBackground.SEPIA -> Color(0xFF9A6B3F)
-    // 浅绿纸张：同色系绿。
+    // 纯白纸张：白纸黑墨。
+    moe.gbxin.saltreader.data.ReaderBackground.WHITE -> Color(0xFF1C1A18)
+    // 米色纸张：暖棕墨色。
+    moe.gbxin.saltreader.data.ReaderBackground.SEPIA -> Color(0xFF8A6A44)
+    // 浅绿纸张：同色系绿（旧数据兼容，UI 已不再提供该选项）。
     moe.gbxin.saltreader.data.ReaderBackground.GREEN -> Color(0xFF4E7A57)
-    // 纯黑纸张：象牙白强调，保持暗色下的对比。
-    moe.gbxin.saltreader.data.ReaderBackground.INK -> Color(0xFFE8DCC4)
-    // 自定义背景：保留背景色相，提高饱和度并按明暗调整亮度，得到一组 Material 强调色。
-    moe.gbxin.saltreader.data.ReaderBackground.CUSTOM -> accentFromBackground(Color(customColor))
+    // 纯黑纸张：黑纸白墨。
+    moe.gbxin.saltreader.data.ReaderBackground.INK -> Color(0xFFF4EEE4)
+    // 自定义背景：直接使用按对比度算出的前景色，保证 slider/边框与正文同色。
+    moe.gbxin.saltreader.data.ReaderBackground.CUSTOM -> readerForegroundColor(Color(customColor))
 }
 
 /**
