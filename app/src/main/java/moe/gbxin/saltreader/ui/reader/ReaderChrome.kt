@@ -951,7 +951,7 @@ private fun ReaderThemeRow(
                 Text(
                     label,
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (selected) MaterialTheme.colorScheme.primary else contentColor.copy(alpha = 0.65f),
+                    color = if (selected) accentColor else contentColor.copy(alpha = 0.65f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     textAlign = TextAlign.Center,
