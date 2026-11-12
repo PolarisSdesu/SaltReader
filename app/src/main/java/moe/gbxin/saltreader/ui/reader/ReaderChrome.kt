@@ -315,6 +315,7 @@ internal fun ReaderBottomBar(
                             active = activePanel == ReaderChromePanel.TYPOGRAPHY,
                             onClick = onTypographyToggle,
                             contentColor = contentColor,
+                            activeColor = accentColor,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -590,8 +591,8 @@ internal fun ReaderTypographyPanel(
                 TextButton(onClick = onOpenAdvanced) {
                     Text(
                         stringResource(R.string.reader_more_settings) + " ›",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = contentColor.copy(alpha = 0.75f),
+                        style = MaterialTheme.typography.titleSmall,
+                        color = contentColor,
                     )
                 }
             }
