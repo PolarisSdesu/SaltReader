@@ -29,11 +29,10 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.outlined.Code
 import androidx.compose.material.icons.outlined.FolderOpen
-import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.FormatSize
 import androidx.compose.material.icons.outlined.Search
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.outlined.TextFields
-import androidx.compose.material.icons.outlined.WarningAmber
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -295,7 +294,7 @@ private fun ReaderFontPickerPage(role: ReaderFontRole, onBack: () -> Unit) {
             if (directoryUri == null) {
                 item {
                     ReaderFontNotice(
-                        icon = Icons.Outlined.WarningAmber,
+                        icon = Icons.Outlined.Info,
                         text = stringResource(R.string.reader_font_picker_no_directory),
                     )
                 }
