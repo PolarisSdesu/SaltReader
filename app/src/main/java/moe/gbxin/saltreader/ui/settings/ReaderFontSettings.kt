@@ -293,11 +293,9 @@ private fun ReaderFontPickerPage(role: ReaderFontRole, onBack: () -> Unit) {
             item { SettingsSectionLabel(stringResource(R.string.reader_font_section_directory)) }
             if (directoryUri == null) {
                 item {
-                    Text(
-                        stringResource(R.string.reader_font_picker_no_directory),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                    ReaderFontNotice(
+                        icon = Icons.Outlined.FolderOpen,
+                        text = stringResource(R.string.reader_font_picker_no_directory),
                     )
                 }
             } else if (visibleDirectoryFonts.isEmpty()) {
@@ -362,16 +360,26 @@ private fun ReaderFontPickerPage(role: ReaderFontRole, onBack: () -> Unit) {
  */
 @Composable
 private fun ReaderFontFormatNotice() {
-    // 与字体/文件夹行同一套排版：40dp 的 Material 圆形图标 + 16dp 间距，
-    // 左边缘对齐卡片内的文件夹图标（16dp 页面边距 + 16dp 卡片内边距）。
+    ReaderFontNotice(
+        icon = Icons.Outlined.Info,
+        text = stringResource(R.string.reader_font_ttc_notice),
+    )
+}
+
+/**
+ * 设置类提示：40dp 的 Material 圆形图标 + 说明文字。左边缘与卡片内的图标对齐
+ * （16dp 页面边距 + 16dp 卡片内边距），文字与行标题同一列。
+ */
+@Composable
+private fun ReaderFontNotice(icon: ImageVector, text: String) {
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 4.dp),
         verticalAlignment = Alignment.Top,
     ) {
-        SettingsIcon(Icons.Outlined.Info)
+        SettingsIcon(icon)
         Spacer(Modifier.width(16.dp))
         Text(
-            stringResource(R.string.reader_font_ttc_notice),
+            text,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 10.dp),
