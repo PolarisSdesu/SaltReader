@@ -141,7 +141,7 @@
     <string name="reader_font_choose">選擇字型</string>
     <string name="reader_font_clear">清除</string>
     <string name="reader_font_reorder">拖曳排序</string>
-    <string name="reader_font_section_custom_fallback">自訂字型與備用字型</string>
+    <string name="reader_font_section_custom_fallback">字型鏈</string>
     <string name="reader_font_chain_add">加入字型</string>
     <string name="reader_font_chain_empty">尚未加入字型，加入後即可組成字型鏈。</string>
     <string name="reader_font_remove">移除字型</string>

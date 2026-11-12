@@ -135,7 +135,6 @@
     <string name="settings_appearance_display_language">Display language</string>
     <string name="settings_licenses_view_full">View full text</string>
     <string name="settings_reader_section_typography">Typography</string>
-    <string name="settings_reader_font_family">Font</string>
     <string name="settings_reader_font_size">Font size</string>
     <string name="settings_reader_line_spacing">Line spacing</string>
     <string name="settings_reader_page_margin">Page margins</string>
@@ -144,5 +143,6 @@
     <string name="settings_reader_page_indicator_size">Page text size</string>
     <string name="settings_reader_battery_indicator">Battery indicator</string>
     <string name="settings_reader_battery_indicator_supporting">Show the battery icon and percentage in the lower-left corner while reading</string>
-    <string name="settings_reader_custom_font">Custom font</string>
+    <string name="settings_fonts">Fonts</string>
+    <string name="settings_reader_font_mode">Reader font</string>
 </resources>

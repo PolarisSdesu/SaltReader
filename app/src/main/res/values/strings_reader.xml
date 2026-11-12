@@ -141,7 +141,7 @@
     <string name="reader_font_choose">Choose font</string>
     <string name="reader_font_clear">Clear</string>
     <string name="reader_font_reorder">Drag to reorder</string>
-    <string name="reader_font_section_custom_fallback">Custom and fallback fonts</string>
+    <string name="reader_font_section_custom_fallback">Font chain</string>
     <string name="reader_font_chain_add">Add font</string>
     <string name="reader_font_chain_empty">No fonts added yet. Add one to build the font chain.</string>
     <string name="reader_font_remove">Remove font</string>

@@ -141,7 +141,7 @@
     <string name="reader_font_choose">フォントを選択</string>
     <string name="reader_font_clear">クリア</string>
     <string name="reader_font_reorder">ドラッグで並べ替え</string>
-    <string name="reader_font_section_custom_fallback">カスタムフォントとフォールバックフォント</string>
+    <string name="reader_font_section_custom_fallback">フォントチェーン</string>
     <string name="reader_font_chain_add">フォントを追加</string>
     <string name="reader_font_chain_empty">フォントがまだありません。追加するとフォントチェーンを作れます。</string>
     <string name="reader_font_remove">フォントを削除</string>

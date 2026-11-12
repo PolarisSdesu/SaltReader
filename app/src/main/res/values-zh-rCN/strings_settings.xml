@@ -131,7 +131,6 @@
     <string name="settings_appearance_display_language">显示语言</string>
     <string name="settings_licenses_view_full">查看全文</string>
     <string name="settings_reader_section_typography">排版</string>
-    <string name="settings_reader_font_family">字体</string>
     <string name="settings_reader_font_size">字号</string>
     <string name="settings_reader_line_spacing">行距</string>
     <string name="settings_reader_page_margin">页边距</string>
@@ -140,5 +139,6 @@
     <string name="settings_reader_page_indicator_size">页码文字大小</string>
     <string name="settings_reader_battery_indicator">显示电量</string>
     <string name="settings_reader_battery_indicator_supporting">阅读时在左下角显示电池图标与百分比</string>
-    <string name="settings_reader_custom_font">自定义字体</string>
+    <string name="settings_fonts">字体</string>
+    <string name="settings_reader_font_mode">阅读器字体</string>
 </resources>

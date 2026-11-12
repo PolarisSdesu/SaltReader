@@ -266,6 +266,10 @@ private fun SettingsHomePage(onBack: () -> Unit) {
                         title = stringResource(R.string.settings_appearance_title),
                     ) { context.startActivity(Intent(context, AppearanceSettingsActivity::class.java)) }
                     SettingsNavigateRow(
+                        icon = Icons.Outlined.TextFields,
+                        title = stringResource(R.string.settings_fonts),
+                    ) { context.startActivity(Intent(context, ReaderFontSettingsActivity::class.java)) }
+                    SettingsNavigateRow(
                         icon = Icons.AutoMirrored.Outlined.MenuBook,
                         title = stringResource(R.string.settings_reader_title),
                     ) { context.startActivity(Intent(context, ReaderSettingsActivity::class.java)) }
@@ -470,17 +474,11 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
             SettingsCard {
                 SettingsMenuRow(
                     icon = Icons.Outlined.FormatSize,
-                    title = stringResource(R.string.settings_reader_font_family),
+                    title = stringResource(R.string.settings_reader_font_mode),
                     selected = settings.readerFontFamily,
                     options = ReaderFontFamily.entries.toList(),
                     labelRes = { it.labelRes() },
                 ) { family -> app.settings.update { it.copy(readerFontFamily = family) } }
-                // 这一行固定不带副标题：当前字体名在字体设置页里看，避免阅读器设置页多出一行。
-                ReaderFontEntryRow(
-                    icon = Icons.Outlined.TextFields,
-                    title = stringResource(R.string.settings_reader_custom_font),
-                    value = null,
-                ) { context.startActivity(Intent(context, ReaderFontSettingsActivity::class.java)) }
                 SettingsSliderRow(
                     icon = Icons.Outlined.FormatSize,
                     title = stringResource(R.string.settings_reader_font_size),

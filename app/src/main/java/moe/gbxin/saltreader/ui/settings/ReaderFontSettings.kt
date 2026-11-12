@@ -6,9 +6,6 @@ import android.graphics.Typeface
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.snap
-import androidx.compose.animation.core.tween
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.zIndex
 import androidx.compose.foundation.background
@@ -26,6 +23,9 @@ import androidx.compose.foundation.layout.width
 
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material3.Surface
@@ -41,7 +41,6 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.items
@@ -160,13 +159,8 @@ private fun ReaderFontFallbackPage(onBack: () -> Unit) {
     }
     var draggedId by remember { mutableStateOf<String?>(null) }
     var dragOffset by remember { mutableFloatStateOf(0f) }
-    val rowHeightPx = with(LocalDensity.current) { 72.dp.toPx() }
-    val thresholdPx = rowHeightPx * 0.55f
-    val visualOffset by animateFloatAsState(
-        targetValue = if (draggedId != null) dragOffset else 0f,
-        animationSpec = if (draggedId != null) snap() else tween(durationMillis = 150),
-        label = "font chain drag",
-    )
+    val listState = rememberLazyListState()
+    val haptics = LocalHapticFeedback.current
 
     fun persistChain() {
         val list = chain.toList()
@@ -180,12 +174,38 @@ private fun ReaderFontFallbackPage(onBack: () -> Unit) {
         else -> ReaderFontRole.FALLBACK3
     }
 
-    fun moveDraggedItem(direction: Int) {
-        val id = draggedId ?: return
+    fun visibleInfo(key: Any) =
+        listState.layoutInfo.visibleItemsInfo.firstOrNull { it.key == key }
+
+    /**
+     * 只有拖动行的中心越过相邻行中心时才换位，并按相邻行的真实高度补偿偏移，
+     * 这样拖动过程中行始终贴着手指，不会出现"跳一下"或"漂移"。
+     * 返回是否发生了换位（用于触感反馈）。
+     */
+    fun moveDraggedItemIfNeeded(): Boolean {
+        val id = draggedId ?: return false
         val from = chain.indexOfFirst { it.id == id }
-        val to = from + direction
-        if (from < 0 || to !in chain.indices) return
-        chain.add(to, chain.removeAt(from))
+        val info = visibleInfo(id) ?: return false
+        if (from < 0) return false
+        val center = info.offset + info.size / 2f + dragOffset
+        if (dragOffset > 0f) {
+            val next = chain.getOrNull(from + 1) ?: return false
+            val nextInfo = visibleInfo(next.id) ?: return false
+            if (center > nextInfo.offset + nextInfo.size / 2f) {
+                chain.add(from + 1, chain.removeAt(from))
+                dragOffset -= nextInfo.size
+                return true
+            }
+        } else if (dragOffset < 0f) {
+            val previous = chain.getOrNull(from - 1) ?: return false
+            val previousInfo = visibleInfo(previous.id) ?: return false
+            if (center < previousInfo.offset + previousInfo.size / 2f) {
+                chain.add(from - 1, chain.removeAt(from))
+                dragOffset += previousInfo.size
+                return true
+            }
+        }
+        return false
     }
 
     fun startDrag(id: String) {
@@ -201,6 +221,7 @@ private fun ReaderFontFallbackPage(onBack: () -> Unit) {
 
     SettingsScaffold(stringResource(R.string.reader_font_fallback_title), onBack) { innerPadding ->
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize().padding(innerPadding),
             contentPadding = PaddingValues(
                 start = 16.dp,
@@ -242,23 +263,30 @@ private fun ReaderFontFallbackPage(onBack: () -> Unit) {
                     shape = shape,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .animateItem()
+                        // 拖动行自己做位移，不能再叠加 placement 动画，否则会和手指打架。
+                        .then(if (isDragged) Modifier else Modifier.animateItem())
                         .zIndex(if (isDragged) 1f else 0f)
-                        .graphicsLayer { translationY = if (isDragged) visualOffset else 0f }
+                        .graphicsLayer {
+                            translationY = if (isDragged) dragOffset else 0f
+                            val scale = if (isDragged) 1.02f else 1f
+                            scaleX = scale
+                            scaleY = scale
+                            shadowElevation = if (isDragged) 10.dp.toPx() else 0f
+                            this.shape = shape
+                        }
                         .pointerInput(ref.id) {
                             detectDragGesturesAfterLongPress(
-                                onDragStart = { startDrag(ref.id) },
+                                onDragStart = {
+                                    startDrag(ref.id)
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                },
                                 onDragEnd = { endDrag() },
                                 onDragCancel = { endDrag() },
                                 onDrag = { change, dragAmount ->
                                     change.consume()
                                     dragOffset += dragAmount.y
-                                    if (dragOffset > thresholdPx) {
-                                        moveDraggedItem(1)
-                                        dragOffset -= rowHeightPx
-                                    } else if (dragOffset < -thresholdPx) {
-                                        moveDraggedItem(-1)
-                                        dragOffset += rowHeightPx
+                                    if (moveDraggedItemIfNeeded()) {
+                                        haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                                     }
                                 },
                             )
@@ -647,15 +675,31 @@ private fun ReaderFontFormatNotice() {
 private fun ReaderFontNotice(icon: ImageVector, text: String) {
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.Top,
+        // 图标容器与文字容器水平居中（同一水平轴线），不再给文字加顶部偏移。
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        SettingsIcon(icon)
+        // 只有 info 图标需要反色（浅圆底 + 主色图标），其他图标沿用设置行的常规配色。
+        if (icon === Icons.Outlined.Info) {
+            Box(
+                Modifier.size(40.dp).clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.onPrimaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        } else {
+            SettingsIcon(icon)
+        }
         Spacer(Modifier.width(16.dp))
         Text(
             text,
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 10.dp),
         )
     }
 }
@@ -673,7 +717,23 @@ internal fun ReaderFontEntryRow(
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        SettingsIcon(icon)
+        // 只有 info 图标需要反色（浅圆底 + 主色图标），其他图标沿用设置行的常规配色。
+        if (icon === Icons.Outlined.Info) {
+            Box(
+                Modifier.size(40.dp).clip(CircleShape)
+                    .background(MaterialTheme.colorScheme.onPrimaryContainer),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    icon,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.size(20.dp),
+                )
+            }
+        } else {
+            SettingsIcon(icon)
+        }
         Spacer(Modifier.width(16.dp))
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleMedium)
