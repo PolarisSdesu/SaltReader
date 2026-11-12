@@ -478,7 +478,7 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                 ReaderFontEntryRow(
                     icon = Icons.Outlined.TextFields,
                     title = stringResource(R.string.settings_reader_custom_font),
-                    value = settings.readerCustomFont?.label ?: stringResource(R.string.reader_font_follow_hei),
+                    value = settings.readerCustomFont?.label,
                 ) { context.startActivity(Intent(context, ReaderFontSettingsActivity::class.java)) }
                 SettingsSliderRow(
                     icon = Icons.Outlined.FormatSize,
