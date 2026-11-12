@@ -796,12 +796,16 @@ internal fun TextReaderContent(
     // Reader chrome follows the paper colour (like WeChat Reading): a beige/white page gets a light
     // bar with dark icons, a black page a dark bar with warm text.
     val darkPaper = readerBackground.luminance() < 0.5f
-    val chromeBarColor = if (darkPaper) {
-        blendOver(readerBackground, Color.Black.copy(alpha = 0.62f))
-    } else {
-        blendOver(readerBackground, Color.White.copy(alpha = 0.72f))
+    // 莫奈（AUTO）跟随 Material 动态色，上下栏直接使用主题色；固定纸张色则沿用纸张混色，
+    // 保证纯黑/米色等自定义背景下的栏体与页面仍是一体。
+    val monetChrome = settings.readerBackground == moe.gbxin.saltreader.data.ReaderBackground.AUTO
+    val chromeBarColor = when {
+        monetChrome -> MaterialTheme.colorScheme.surfaceContainer
+        darkPaper -> blendOver(readerBackground, Color.Black.copy(alpha = 0.62f))
+        else -> blendOver(readerBackground, Color.White.copy(alpha = 0.72f))
     }
     val chromeContentColor = when {
+        monetChrome -> MaterialTheme.colorScheme.onSurface
         darkPaper && readerBackground == Color.Black -> Color.White
         darkPaper -> Color(0xFFEDE6DD)
         else -> Color(0xFF2A2622)

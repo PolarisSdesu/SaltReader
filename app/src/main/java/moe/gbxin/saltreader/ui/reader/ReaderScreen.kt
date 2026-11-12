@@ -430,8 +430,14 @@ private fun ReaderContent(
     }
 
     // Comic chrome uses the reading background colour itself, so the menu blends into the page.
-    val chromeBarColor = readerBackground
+    val monetChrome = settings.readerBackground == moe.gbxin.saltreader.data.ReaderBackground.AUTO
+    val chromeBarColor = if (monetChrome) {
+        MaterialTheme.colorScheme.surfaceContainer
+    } else {
+        readerBackground
+    }
     val chromeContentColor = when {
+        monetChrome -> MaterialTheme.colorScheme.onSurface
         readerBackground == Color.Black -> Color.White
         readerBackground.luminance() < 0.5f -> Color(0xFFEDE6DD)
         else -> Color(0xFF2A2622)
