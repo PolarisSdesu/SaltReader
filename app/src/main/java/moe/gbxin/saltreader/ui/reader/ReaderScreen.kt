@@ -152,6 +152,7 @@ fun ReaderScreen(
         settings.readerBackground,
         settings.customBackgroundColor,
         isSystemInDarkTheme(),
+        MaterialTheme.colorScheme.surface,
     )
 
     AnimatedContent(
@@ -422,6 +423,7 @@ private fun ReaderContent(
         settings.readerBackground,
         settings.customBackgroundColor,
         isSystemInDarkTheme(),
+        MaterialTheme.colorScheme.surface,
     )
     val pageFilter = remember(settings.grayscale, settings.invertColors) {
         readerColorFilter(settings.grayscale, settings.invertColors)

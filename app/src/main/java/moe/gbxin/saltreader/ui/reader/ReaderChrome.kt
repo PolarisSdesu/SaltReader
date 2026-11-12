@@ -834,7 +834,7 @@ private fun ReaderThemeRow(
     ) {
         options.forEach { (background, label) ->
             val swatchColor = when (background) {
-                ReaderBackground.AUTO -> MaterialTheme.colorScheme.surfaceContainerHighest
+                ReaderBackground.AUTO -> MaterialTheme.colorScheme.surface
                 ReaderBackground.WHITE -> Color.White
                 ReaderBackground.SEPIA -> Color(0xFFF5EFE2)
                 ReaderBackground.GREEN -> Color(0xFFE7EFE4)

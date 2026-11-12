@@ -203,6 +203,7 @@ internal fun TextReaderContent(
         settings.readerBackground,
         settings.customBackgroundColor,
         isSystemInDarkTheme(),
+        MaterialTheme.colorScheme.surface,
     )
     // Pure black paper (AUTO in dark mode / INK) gets pure white text instead of warm white.
     val readerTextColor = when {

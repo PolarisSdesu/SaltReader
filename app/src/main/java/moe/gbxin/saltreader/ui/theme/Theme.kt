@@ -178,9 +178,11 @@ fun pageBackgroundColor(
     background: moe.gbxin.saltreader.data.ReaderBackground,
     customColor: Long = 0xFFFDFCFF,
     darkTheme: Boolean = false,
+    /** "莫奈"：跟随 Material You 动态取色的 surface 颜色（未启用动态取色时即主题 surface）。 */
+    monetSurface: Color = if (darkTheme) Color.Black else Color.White,
 ): Color = when (background) {
-    // AUTO follows the system theme: pure white in light mode, pure black in dark mode.
-    moe.gbxin.saltreader.data.ReaderBackground.AUTO -> if (darkTheme) Color.Black else Color.White
+    // AUTO（莫奈）uses the Material You dynamic palette: the wallpaper-derived surface colour.
+    moe.gbxin.saltreader.data.ReaderBackground.AUTO -> monetSurface
     moe.gbxin.saltreader.data.ReaderBackground.WHITE -> Color.White
     moe.gbxin.saltreader.data.ReaderBackground.SEPIA -> Color(0xFFF5EFE2)
     moe.gbxin.saltreader.data.ReaderBackground.GREEN -> Color(0xFFE7EFE4)
