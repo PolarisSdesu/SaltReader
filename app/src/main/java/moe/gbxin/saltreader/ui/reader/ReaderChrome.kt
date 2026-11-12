@@ -581,28 +581,6 @@ internal fun ReaderTypographyPanel(
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     accentColor: Color = MaterialTheme.colorScheme.primary,
 ) {
-    val marginOptions = listOf(
-        stringResource(R.string.reader_level_small),
-        stringResource(R.string.reader_level_medium),
-        stringResource(R.string.reader_level_large),
-    )
-    val spacingOptions = listOf(
-        stringResource(R.string.reader_spacing_tight),
-        stringResource(R.string.reader_level_medium),
-        stringResource(R.string.reader_spacing_loose),
-    )
-    val marginIndex = when {
-        settings.readerPageMarginDp <= 24 -> 0
-        settings.readerPageMarginDp <= 34 -> 1
-        else -> 2
-    }
-    val spacingIndex = when {
-        settings.readerLineHeight <= 1.65f -> 0
-        settings.readerLineHeight <= 1.95f -> 1
-        else -> 2
-    }
-    val marginValues = intArrayOf(20, 30, 40)
-    val spacingValues = floatArrayOf(1.5f, 1.8f, 2.1f)
     ReaderPanelSurface(containerColor) {
         Column(
             Modifier
@@ -640,29 +618,93 @@ internal fun ReaderTypographyPanel(
                     onSettingsChange { it.copy(readerFontFamily = ReaderFontFamily.entries[index]) }
                 },
             )
-            Spacer(Modifier.height(10.dp))
-            ReaderTypographySegmentedRow(
+            Spacer(Modifier.height(12.dp))
+            ReaderTypographySliderRow(
                 icon = Icons.Outlined.Margin,
                 title = stringResource(R.string.reader_page_margin),
-                options = marginOptions,
-                selectedIndex = marginIndex,
+                value = settings.readerPageMarginDp.toFloat().coerceIn(20f, 40f),
+                valueRange = 20f..40f,
+                steps = 1,
+                valueLabel = settings.readerPageMarginDp.toString() + "dp",
                 contentColor = contentColor,
                 accentColor = accentColor,
-                onSelect = { index ->
-                    onSettingsChange { it.copy(readerPageMarginDp = marginValues[index]) }
+                onValueChange = { value ->
+                    onSettingsChange { it.copy(readerPageMarginDp = value.roundToInt()) }
                 },
             )
-            Spacer(Modifier.height(10.dp))
-            ReaderTypographySegmentedRow(
+            Spacer(Modifier.height(6.dp))
+            ReaderTypographySliderRow(
                 icon = Icons.Outlined.FormatLineSpacing,
                 title = stringResource(R.string.reader_line_height),
-                options = spacingOptions,
-                selectedIndex = spacingIndex,
+                value = settings.readerLineHeight.toFloat().coerceIn(1.5f, 2.1f),
+                valueRange = 1.5f..2.1f,
+                steps = 1,
+                valueLabel = String.format(Locale.US, "%.1f×", settings.readerLineHeight),
                 contentColor = contentColor,
                 accentColor = accentColor,
-                onSelect = { index ->
-                    onSettingsChange { it.copy(readerLineHeight = spacingValues[index]) }
+                onValueChange = { value ->
+                    onSettingsChange { it.copy(readerLineHeight = (value * 10f).roundToInt() / 10f) }
                 },
+            )
+        }
+    }
+}
+
+/** Slider row for continuous typography values (page margin / line height). */
+@Composable
+private fun ReaderTypographySliderRow(
+    icon: ImageVector,
+    title: String,
+    value: Float,
+    valueRange: ClosedFloatingPointRange<Float>,
+    steps: Int,
+    valueLabel: String,
+    contentColor: Color,
+    accentColor: Color,
+    onValueChange: (Float) -> Unit,
+) {
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier.width(96.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = contentColor.copy(alpha = 0.65f),
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = contentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
+            Slider(
+                value = value,
+                onValueChange = onValueChange,
+                valueRange = valueRange,
+                steps = steps,
+                colors = SliderDefaults.colors(
+                    thumbColor = accentColor,
+                    activeTrackColor = accentColor,
+                    inactiveTrackColor = contentColor.copy(alpha = 0.20f),
+                    activeTickColor = accentColor.copy(alpha = 0.55f),
+                    inactiveTickColor = contentColor.copy(alpha = 0.16f),
+                ),
+                modifier = Modifier.fillMaxWidth(),
+            )
+            Text(
+                valueLabel,
+                style = MaterialTheme.typography.labelSmall,
+                color = contentColor.copy(alpha = 0.7f),
             )
         }
     }
@@ -702,7 +744,10 @@ private fun ReaderTypographySegmentedRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
+        SingleChoiceSegmentedButtonRow(
+            modifier = Modifier.weight(1f),
+            space = 4.dp,
+        ) {
             options.forEachIndexed { index, label ->
                 SegmentedButton(
                     selected = index == selectedIndex,
