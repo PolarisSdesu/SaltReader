@@ -1147,6 +1147,7 @@ internal fun TextReaderContent(
                         },
                         containerColor = chromeBarColor,
                         contentColor = chromeContentColor,
+                        accentColor = readerAccent,
                     )
 
                     ReaderChromePanel.TOC -> {

@@ -38,6 +38,9 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
+import androidx.compose.material.icons.outlined.FormatLineSpacing
+import androidx.compose.material.icons.outlined.Margin
+import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.filled.Add
@@ -547,6 +550,7 @@ internal fun ReaderTypographyPanel(
     onOpenAdvanced: () -> Unit,
     containerColor: Color = MaterialTheme.colorScheme.surface,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    accentColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     val marginOptions = listOf(
         stringResource(R.string.reader_level_small),
@@ -574,15 +578,26 @@ internal fun ReaderTypographyPanel(
         Column(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 20.dp, end = 20.dp, top = 10.dp, bottom = 8.dp),
+                .padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 6.dp),
         ) {
-            Text(
-                stringResource(R.string.reader_section_typography),
-                style = MaterialTheme.typography.titleSmall,
-                color = contentColor,
-            )
-            Spacer(Modifier.height(8.dp))
-            ReaderLevelPill(
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(R.string.reader_section_typography),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = contentColor,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onOpenAdvanced) {
+                    Text(
+                        stringResource(R.string.reader_more_settings) + " ›",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = contentColor.copy(alpha = 0.75f),
+                    )
+                }
+            }
+            Spacer(Modifier.height(4.dp))
+            ReaderTypographySegmentedRow(
+                icon = Icons.Outlined.TextFields,
                 title = stringResource(R.string.reader_font_family),
                 options = listOf(
                     stringResource(R.string.reader_font_family_system),
@@ -591,80 +606,93 @@ internal fun ReaderTypographyPanel(
                 ),
                 selectedIndex = settings.readerFontFamily.ordinal,
                 contentColor = contentColor,
+                accentColor = accentColor,
                 onSelect = { index ->
                     onSettingsChange { it.copy(readerFontFamily = ReaderFontFamily.entries[index]) }
                 },
             )
             Spacer(Modifier.height(10.dp))
-            ReaderLevelPill(
+            ReaderTypographySegmentedRow(
+                icon = Icons.Outlined.Margin,
                 title = stringResource(R.string.reader_page_margin),
                 options = marginOptions,
                 selectedIndex = marginIndex,
                 contentColor = contentColor,
+                accentColor = accentColor,
                 onSelect = { index ->
                     onSettingsChange { it.copy(readerPageMarginDp = marginValues[index]) }
                 },
             )
             Spacer(Modifier.height(10.dp))
-            ReaderLevelPill(
+            ReaderTypographySegmentedRow(
+                icon = Icons.Outlined.FormatLineSpacing,
                 title = stringResource(R.string.reader_line_height),
                 options = spacingOptions,
                 selectedIndex = spacingIndex,
                 contentColor = contentColor,
+                accentColor = accentColor,
                 onSelect = { index ->
                     onSettingsChange { it.copy(readerLineHeight = spacingValues[index]) }
                 },
             )
-            Spacer(Modifier.height(6.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                TextButton(onClick = onOpenAdvanced) {
-                    Text(stringResource(R.string.reader_more_settings) + " ›", color = contentColor)
-                }
-            }
         }
     }
 }
 
-/** Three-option pill used for page margin / line spacing, like WeChat Reading's segmented pills. */
+/** Material 3 segmented row: icon + label on the left, three-option segmented buttons on the right. */
 @Composable
-private fun ReaderLevelPill(
+private fun ReaderTypographySegmentedRow(
+    icon: ImageVector,
     title: String,
     options: List<String>,
     selectedIndex: Int,
     contentColor: Color,
+    accentColor: Color,
     onSelect: (Int) -> Unit,
 ) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
-        Text(
-            title,
-            style = MaterialTheme.typography.labelLarge,
-            color = contentColor.copy(alpha = 0.7f),
-            modifier = Modifier.width(76.dp),
-        )
-        Surface(
-            shape = CircleShape,
-            color = contentColor.copy(alpha = 0.08f),
-            modifier = Modifier.weight(1f),
+    Row(
+        Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Row(
+            modifier = Modifier.width(96.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(Modifier.padding(3.dp)) {
-                options.forEachIndexed { index, label ->
-                    val selected = index == selectedIndex
-                    Box(
-                        Modifier
-                            .weight(1f)
-                            .clip(CircleShape)
-                            .background(if (selected) contentColor.copy(alpha = 0.18f) else Color.Transparent)
-                            .clickable { onSelect(index) }
-                            .padding(vertical = 7.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Text(
-                            label,
-                            style = MaterialTheme.typography.labelMedium,
-                            color = contentColor,
-                            maxLines = 1,
-                        )
-                    }
+            Icon(
+                icon,
+                contentDescription = null,
+                tint = contentColor.copy(alpha = 0.65f),
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                title,
+                style = MaterialTheme.typography.bodyMedium,
+                color = contentColor,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
+        SingleChoiceSegmentedButtonRow(Modifier.weight(1f)) {
+            options.forEachIndexed { index, label ->
+                SegmentedButton(
+                    selected = index == selectedIndex,
+                    onClick = { onSelect(index) },
+                    shape = SegmentedButtonDefaults.itemShape(index = index, count = options.size),
+                    colors = SegmentedButtonDefaults.colors(
+                        activeContainerColor = accentColor.copy(alpha = 0.16f),
+                        activeContentColor = contentColor,
+                        activeBorderColor = Color.Transparent,
+                        inactiveContainerColor = Color.Transparent,
+                        inactiveContentColor = contentColor.copy(alpha = 0.7f),
+                        inactiveBorderColor = contentColor.copy(alpha = 0.22f),
+                    ),
+                ) {
+                    Text(
+                        label,
+                        style = MaterialTheme.typography.labelLarge,
+                        maxLines = 1,
+                    )
                 }
             }
         }
