@@ -41,9 +41,6 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.FormatListBulleted
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowLeft
-import androidx.compose.material.icons.outlined.FormatLineSpacing
-import androidx.compose.material.icons.outlined.Margin
-import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.automirrored.rounded.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.rounded.MenuBook
 import androidx.compose.material.icons.filled.Add
@@ -637,9 +634,8 @@ internal fun ReaderTypographyPanel(
                     }
                 }
             }
-            Spacer(Modifier.height(4.dp))
+            Spacer(Modifier.height(12.dp))
             ReaderTypographySegmentedRow(
-                icon = Icons.Outlined.TextFields,
                 title = stringResource(R.string.reader_font_family),
                 options = listOf(
                     stringResource(R.string.reader_font_family_hei),
@@ -659,9 +655,8 @@ internal fun ReaderTypographyPanel(
                     }
                 },
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(16.dp))
             ReaderTypographySegmentedRow(
-                icon = Icons.Outlined.Margin,
                 title = stringResource(R.string.reader_page_margin),
                 options = marginOptions,
                 selectedIndex = marginIndex,
@@ -671,9 +666,8 @@ internal fun ReaderTypographyPanel(
                     onSettingsChange { it.copy(readerPageMarginDp = marginValues[index]) }
                 },
             )
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(16.dp))
             ReaderTypographySegmentedRow(
-                icon = Icons.Outlined.FormatLineSpacing,
                 title = stringResource(R.string.reader_line_height),
                 options = spacingOptions,
                 selectedIndex = spacingIndex,
@@ -687,10 +681,12 @@ internal fun ReaderTypographyPanel(
     }
 }
 
-/** Material 3 segmented row: icon + label on the left, three-option segmented buttons on the right. */
+/**
+ * 排版面板的一行：上方是小标题，下方是占满整行的 M3 Expressive 连接按钮组。
+ * 纵向排布让按钮有足够宽度，长标签（如日文的「ゴシック体」）不会被截断。
+ */
 @Composable
 private fun ReaderTypographySegmentedRow(
-    icon: ImageVector,
     title: String,
     options: List<String>,
     selectedIndex: Int,
@@ -698,33 +694,19 @@ private fun ReaderTypographySegmentedRow(
     accentColor: Color,
     onSelect: (Int) -> Unit,
 ) {
-    Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Row(
-            modifier = Modifier.width(96.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                tint = contentColor.copy(alpha = 0.65f),
-                modifier = Modifier.size(18.dp),
-            )
-            Spacer(Modifier.width(8.dp))
-            Text(
-                title,
-                style = MaterialTheme.typography.bodyMedium,
-                color = contentColor,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
+    Column(Modifier.fillMaxWidth()) {
+        Text(
+            title,
+            style = MaterialTheme.typography.labelLarge,
+            color = contentColor.copy(alpha = 0.7f),
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.height(6.dp))
         // Material 3 Expressive connected button group (the official single-select pattern):
         // connected ToggleButtons sharing one track, spacing from ButtonGroupDefaults.
         Row(
-            modifier = Modifier.weight(1f),
+            modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(ButtonGroupDefaults.ConnectedSpaceBetween),
         ) {
             options.forEachIndexed { index, label ->

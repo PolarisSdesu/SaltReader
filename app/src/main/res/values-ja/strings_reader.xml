@@ -104,7 +104,7 @@
     <!-- 自定义字体 / 字体目录 -->
     <string name="reader_font_family_custom">カスタム</string>
     <string name="reader_font_follow_hei">ゴシック体に従う</string>
-    <string name="reader_font_settings_title">フォント設定</string>
+    <string name="reader_font_settings_title">フォント</string>
     <string name="reader_font_section_directory">フォントフォルダー</string>
     <string name="reader_font_section_defaults">既定のフォント</string>
     <string name="reader_font_read_font">カスタムフォント</string>

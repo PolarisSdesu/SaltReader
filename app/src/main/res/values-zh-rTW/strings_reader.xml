@@ -104,7 +104,7 @@
     <!-- 自定义字体 / 字体目录 -->
     <string name="reader_font_family_custom">自訂</string>
     <string name="reader_font_follow_hei">跟隨黑體</string>
-    <string name="reader_font_settings_title">字型設定</string>
+    <string name="reader_font_settings_title">字型</string>
     <string name="reader_font_section_directory">字型資料夾</string>
     <string name="reader_font_section_defaults">預設字型</string>
     <string name="reader_font_read_font">自訂字型</string>
