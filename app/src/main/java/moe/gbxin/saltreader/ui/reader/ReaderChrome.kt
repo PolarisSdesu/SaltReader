@@ -830,6 +830,7 @@ private fun ReaderThemeRow(
 ) {
     val options = listOf(
         ReaderBackground.AUTO to stringResource(R.string.reader_background_auto),
+        ReaderBackground.SEPIA to stringResource(R.string.reader_background_sepia),
         ReaderBackground.WHITE to stringResource(R.string.reader_background_white),
         ReaderBackground.INK to stringResource(R.string.reader_background_ink),
         ReaderBackground.CUSTOM to stringResource(R.string.reader_background_custom),

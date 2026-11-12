@@ -540,6 +540,7 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                     selected = settings.readerBackground,
                     options = listOf(
                         ReaderBackground.AUTO,
+                        ReaderBackground.SEPIA,
                         ReaderBackground.WHITE,
                         ReaderBackground.INK,
                         ReaderBackground.CUSTOM,
