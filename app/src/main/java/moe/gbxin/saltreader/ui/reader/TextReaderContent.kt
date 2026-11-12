@@ -780,6 +780,11 @@ internal fun TextReaderContent(
             put("safeRight", safeRightDp.toDouble())
         }.toString()
     }
+    // 切换纸张颜色时立即同步 WebView 的原生背景色：CSS 重绘要等下一次 apply/布局，
+    // 原生 background 先变，避免出现"换色后页面还是旧底色"的一帧延迟。
+    LaunchedEffect(readerBackground) {
+        holder.webView?.setBackgroundColor(readerBackground.toArgb())
+    }
     LaunchedEffect(pageFinishedToken, optionsJson) {
         if (pageFinishedToken == 0) return@LaunchedEffect
         if (lastAppliedOptionsJson == optionsJson) return@LaunchedEffect
@@ -896,7 +901,7 @@ internal fun TextReaderContent(
             factory = { context ->
                 WebView(context).apply {
                     if (BuildConfig.DEBUG) WebView.setWebContentsDebuggingEnabled(true)
-                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    setBackgroundColor(readerBackground.toArgb())
                     this.settings.apply {
                         javaScriptEnabled = true
                         blockNetworkLoads = true
