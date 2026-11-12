@@ -784,6 +784,11 @@ internal fun TextReaderContent(
     // 原生 background 先变，避免出现"换色后页面还是旧底色"的一帧延迟。
     LaunchedEffect(readerBackground) {
         holder.webView?.setBackgroundColor(readerBackground.toArgb())
+        runJs("window.__reader && window.__reader.paint(${JSONObject.quote(cssColor(readerBackground))});")
+    }
+    LaunchedEffect(chromeVisible) {
+        // Hiding the chrome relayouts the page; repaint so the paper colour cannot flash back.
+        runJs("window.__reader && window.__reader.paint(${JSONObject.quote(cssColor(readerBackground))});")
     }
     LaunchedEffect(pageFinishedToken, optionsJson) {
         if (pageFinishedToken == 0) return@LaunchedEffect
@@ -1764,11 +1769,23 @@ private val HTML_TAIL = """
     if (pending === 0) finish();
     setTimeout(finish, 1500);
   }
+  function paint(color) {
+    // A dedicated !important style guarantees the page background follows the paper colour even if
+    // a later relayout (or a WebView that ignores inline html/body styles) would repaint the old one.
+    var style = document.getElementById('salt-reader-bg');
+    if (!style) {
+      style = document.createElement('style');
+      style.id = 'salt-reader-bg';
+      document.head.appendChild(style);
+    }
+    style.textContent = 'html,body,#scroll,#book{background-color:' + color + ' !important;}';
+    document.body.style.background = color;
+    document.documentElement.style.background = color;
+  }
   function setOptions(opts) {
     mode = opts.mode === 'vertical' ? 'vertical' : 'paged';
     document.body.className = mode;
-    document.body.style.background = opts.background;
-    document.documentElement.style.background = opts.background;
+    paint(opts.background);
     document.body.style.color = opts.color;
     document.body.style.fontSize = opts.fontSize + 'px';
     var lineHeight = Number(opts.lineHeight);
@@ -2024,6 +2041,7 @@ private val HTML_TAIL = """
   }
   window.__reader = {
     apply: apply,
+    paint: paint,
     turn: turn,
     turnInstant: turnInstant,
     turnFast: turnFast,
