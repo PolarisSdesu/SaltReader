@@ -354,7 +354,7 @@ private fun ReaderBarIcon(
     // 复刻按压时的 ripple：外层是按钮 bounds 上的浅色胶囊，内层是 48dp 的深色圆。
     val outerIndicatorColor by animateColorAsState(
         targetValue = if (active && showIndicator) {
-            contentColor.copy(alpha = 0.12f)
+            contentColor.copy(alpha = 0.08f)
         } else {
             Color.Transparent
         },
