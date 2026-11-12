@@ -123,6 +123,8 @@ import moe.gbxin.saltreader.ui.components.CustomColorPickerDialog
 import moe.gbxin.saltreader.ui.components.SaltLoading
 import moe.gbxin.saltreader.ui.settings.ReaderSettingsActivity
 import moe.gbxin.saltreader.ui.theme.pageBackgroundColor
+import moe.gbxin.saltreader.ui.theme.readerAccentColor
+import moe.gbxin.saltreader.ui.theme.readerForegroundColor
 import org.json.JSONObject
 
 /** Latest reported layout state of the text reader WebView. */
@@ -205,11 +207,13 @@ internal fun TextReaderContent(
         isSystemInDarkTheme(),
         MaterialTheme.colorScheme.surface,
     )
-    // Pure black paper (AUTO in dark mode / INK) gets pure white text instead of warm white.
-    val readerTextColor = when {
-        readerBackground == Color.Black -> Color.White
-        readerBackground.luminance() < 0.5f -> Color(0xFFEDE6DD)
-        else -> Color(0xFF2A2622)
+    // 每个纸张色对应一组 Material 强调色，供 slider/激活图标等控件使用。
+    val readerAccent = readerAccentColor(settings.readerBackground, settings.customBackgroundColor)
+    // 纯黑纸张保持纯白字；其余（含自定义背景）按对比度自动计算前景色。
+    val readerTextColor = if (readerBackground == Color.Black) {
+        Color.White
+    } else {
+        readerForegroundColor(readerBackground)
     }
     val direction = book.direction ?: settings.readingDirection
     val isLightThemeBackground = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -811,11 +815,7 @@ internal fun TextReaderContent(
         else -> Color(0xFF2A2622)
     }
     // Both quiet corner read-outs (page label, battery) share one paper-tinted colour.
-    val pageIndicatorColor = when {
-        readerBackground == Color.Black -> Color.White.copy(alpha = 0.6f)
-        readerBackground.luminance() < 0.5f -> Color(0xFFEDE6DD).copy(alpha = 0.6f)
-        else -> Color(0xFF2A2622).copy(alpha = 0.55f)
-    }
+    val pageIndicatorColor = readerTextColor.copy(alpha = 0.6f)
     val statusBarBackground = if (chromeVisible) chromeBarColor else readerBackground
     val navigationBarBackground = if (chromeVisible) chromeBarColor else readerBackground
     DisposableEffect(insetsController) {
@@ -1073,6 +1073,7 @@ internal fun TextReaderContent(
                     },
                     onJump = { fraction -> jumpToFraction(fraction) },
                     progressLabelSizeSp = settings.readerProgressLabelSizeSp,
+                    accentColor = readerAccent,
                     activePanel = activePanel,
                     onThemeToggle = {
                         activePanel = if (activePanel == ReaderChromePanel.THEME) {
@@ -1122,6 +1123,7 @@ internal fun TextReaderContent(
                         onSettingsChange = onSettingsChange,
                         onCustomBackground = { showCustomBackground = true },
                         showTextSize = true,
+                        accentColor = readerAccent,
                         containerColor = chromeBarColor,
                         contentColor = chromeContentColor,
                     )

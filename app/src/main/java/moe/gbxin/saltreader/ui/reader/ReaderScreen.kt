@@ -128,6 +128,8 @@ import moe.gbxin.saltreader.ui.components.CustomColorPickerDialog
 import moe.gbxin.saltreader.ui.components.SaltLoading
 import moe.gbxin.saltreader.ui.settings.ReaderSettingsActivity
 import moe.gbxin.saltreader.ui.theme.pageBackgroundColor
+import moe.gbxin.saltreader.ui.theme.readerAccentColor
+import moe.gbxin.saltreader.ui.theme.readerForegroundColor
 
 /**
  * Reader entry point. Renders the top-level states instead of assuming the book is already usable:
@@ -430,6 +432,7 @@ private fun ReaderContent(
     }
 
     // Comic chrome uses the reading background colour itself, so the menu blends into the page.
+    val readerAccent = readerAccentColor(settings.readerBackground, settings.customBackgroundColor)
     val monetChrome = settings.readerBackground == moe.gbxin.saltreader.data.ReaderBackground.AUTO
     val chromeBarColor = if (monetChrome) {
         MaterialTheme.colorScheme.surfaceContainer
@@ -439,8 +442,7 @@ private fun ReaderContent(
     val chromeContentColor = when {
         monetChrome -> MaterialTheme.colorScheme.onSurface
         readerBackground == Color.Black -> Color.White
-        readerBackground.luminance() < 0.5f -> Color(0xFFEDE6DD)
-        else -> Color(0xFF2A2622)
+        else -> readerForegroundColor(readerBackground)
     }
     val statusBarBackground = chromeBarColor
     val navigationBarBackground = chromeBarColor
@@ -827,6 +829,7 @@ private fun ReaderContent(
                         jumpTo((fraction * (count - 1)).roundToInt().coerceIn(0, count - 1))
                     },
                     progressLabelSizeSp = settings.readerProgressLabelSizeSp,
+                    accentColor = readerAccent,
                     activePanel = activePanel,
                     onThemeToggle = {
                         activePanel = if (activePanel == ReaderChromePanel.THEME) {
@@ -860,6 +863,7 @@ private fun ReaderContent(
                         settings = settings,
                         onSettingsChange = onSettingsChange,
                         onCustomBackground = { showCustomBackground = true },
+                        accentColor = readerAccent,
                         containerColor = chromeBarColor,
                         contentColor = chromeContentColor,
                     )

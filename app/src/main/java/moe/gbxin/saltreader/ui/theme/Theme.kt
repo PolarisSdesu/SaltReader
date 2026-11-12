@@ -5,6 +5,7 @@ import android.os.Build
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.ColorScheme
 import androidx.compose.material3.MaterialExpressiveTheme
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.MotionScheme
 import androidx.compose.material3.Shapes
 import androidx.compose.material3.darkColorScheme
@@ -18,6 +19,8 @@ import androidx.compose.foundation.background
 import androidx.compose.runtime.SideEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -173,7 +176,84 @@ private fun ColorScheme.withAmoledBlack(): ColorScheme = copy(
     surfaceContainerHighest = Color(0xFF202225),
 )
 
+/**
+ * 阅读器控件的 Material 强调色：每个纸张色对应一组 Material 颜色，slider 的 active 部分、
+ * 激活图标、进度面板等都用它，而不是永远用内容色（灰/黑）。
+ */
 @Composable
+fun readerAccentColor(
+    background: moe.gbxin.saltreader.data.ReaderBackground,
+    customColor: Long = 0xFFFDFCFF,
+): Color = when (background) {
+    // 莫奈：跟随 Material You 动态取色的主色。
+    moe.gbxin.saltreader.data.ReaderBackground.AUTO -> MaterialTheme.colorScheme.primary
+    // 纯白纸张：Material 主题主色（未开动态取色时即应用品牌色）。
+    moe.gbxin.saltreader.data.ReaderBackground.WHITE -> MaterialTheme.colorScheme.primary
+    // 米色纸张：暖棕调（Material tertiary 的暖色系）。
+    moe.gbxin.saltreader.data.ReaderBackground.SEPIA -> Color(0xFF9A6B3F)
+    // 浅绿纸张：同色系绿。
+    moe.gbxin.saltreader.data.ReaderBackground.GREEN -> Color(0xFF4E7A57)
+    // 纯黑纸张：象牙白强调，保持暗色下的对比。
+    moe.gbxin.saltreader.data.ReaderBackground.INK -> Color(0xFFE8DCC4)
+    // 自定义背景：保留背景色相，提高饱和度并按明暗调整亮度，得到一组 Material 强调色。
+    moe.gbxin.saltreader.data.ReaderBackground.CUSTOM -> accentFromBackground(Color(customColor))
+}
+
+/**
+ * 依据背景色计算阅读器前景色：用 WCAG 对比度挑黑/白，而不是只看亮度阈值，
+ * 这样自定义中间调背景上的文字也能保持可读。
+ */
+fun readerForegroundColor(background: Color): Color {
+    val white = Color(0xFFF4EEE4)
+    val black = Color(0xFF1C1A18)
+    return if (contrastRatio(background, white) >= contrastRatio(background, black)) white else black
+}
+
+private fun contrastRatio(background: Color, foreground: Color): Float {
+    val bg = background.luminance()
+    val fg = foreground.luminance()
+    val lighter = kotlin.math.max(bg, fg)
+    val darker = kotlin.math.min(bg, fg)
+    return (lighter + 0.05f) / (darker + 0.05f)
+}
+
+/** 从自定义背景色推导强调色：同色相、提高饱和度，按背景明暗选对比够的亮度。 */
+private fun accentFromBackground(background: Color): Color {
+    val argb = background.toArgb()
+    val r = ((argb shr 16) and 0xFF) / 255f
+    val g = ((argb shr 8) and 0xFF) / 255f
+    val b = (argb and 0xFF) / 255f
+    val max = maxOf(r, g, b)
+    val min = minOf(r, g, b)
+    val delta = max - min
+    var hue = when {
+        delta < 1e-4f -> 0f
+        max == r -> 60f * (((g - b) / delta) % 6f)
+        max == g -> 60f * (((b - r) / delta) + 2f)
+        else -> 60f * (((r - g) / delta) + 4f)
+    }
+    if (hue < 0f) hue += 360f
+    val saturation = if (max <= 0f) 0f else delta / max
+    val s = saturation.coerceIn(0.35f, 0.85f)
+    val l = if (background.luminance() > 0.5f) 0.38f else 0.72f
+    return hslToColor(hue, s, l)
+}
+
+private fun hslToColor(hue: Float, saturation: Float, lightness: Float): Color {
+    val c = (1f - kotlin.math.abs(2f * lightness - 1f)) * saturation
+    val x = c * (1f - kotlin.math.abs((hue / 60f) % 2f - 1f))
+    val m = lightness - c / 2f
+    val (r, g, b) = when {
+        hue < 60f -> Triple(c, x, 0f)
+        hue < 120f -> Triple(x, c, 0f)
+        hue < 180f -> Triple(0f, c, x)
+        hue < 240f -> Triple(0f, x, c)
+        hue < 300f -> Triple(x, 0f, c)
+        else -> Triple(c, 0f, x)
+    }
+    return Color(r + m, g + m, b + m)
+}
+
 fun pageBackgroundColor(
     background: moe.gbxin.saltreader.data.ReaderBackground,
     customColor: Long = 0xFFFDFCFF,

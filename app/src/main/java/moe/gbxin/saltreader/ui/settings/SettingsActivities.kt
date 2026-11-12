@@ -541,8 +541,6 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                     options = listOf(
                         ReaderBackground.AUTO,
                         ReaderBackground.WHITE,
-                        ReaderBackground.SEPIA,
-                        ReaderBackground.GREEN,
                         ReaderBackground.INK,
                         ReaderBackground.CUSTOM,
                     ),

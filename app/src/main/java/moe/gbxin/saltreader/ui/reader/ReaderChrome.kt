@@ -185,6 +185,7 @@ internal fun ReaderBottomBar(
     label: @Composable () -> String,
     onJump: (Float) -> Unit,
     progressLabelSizeSp: Int = 12,
+    accentColor: Color = MaterialTheme.colorScheme.primary,
     activePanel: ReaderChromePanel,
     onThemeToggle: () -> Unit,
     onOpenToc: (() -> Unit)?,
@@ -245,9 +246,9 @@ internal fun ReaderBottomBar(
                         },
                         onValueChangeFinished = { onJump(sliderState.value) },
                         colors = SliderDefaults.colors(
-                            thumbColor = contentColor,
-                            activeTrackColor = contentColor,
-                            activeTickColor = contentColor.copy(alpha = 0.55f),
+                            thumbColor = accentColor,
+                            activeTrackColor = accentColor,
+                            activeTickColor = accentColor.copy(alpha = 0.55f),
                             inactiveTrackColor = contentColor.copy(alpha = 0.20f),
                             inactiveTickColor = contentColor.copy(alpha = 0.16f),
                         ),
@@ -281,6 +282,7 @@ internal fun ReaderBottomBar(
                             active = activePanel == ReaderChromePanel.TOC,
                             onClick = onOpenToc,
                             contentColor = contentColor,
+                            activeColor = accentColor,
                             modifier = Modifier.weight(1f),
                         )
                     }
@@ -299,6 +301,7 @@ internal fun ReaderBottomBar(
                         active = activePanel == ReaderChromePanel.THEME,
                         onClick = onThemeToggle,
                         contentColor = contentColor,
+                        activeColor = accentColor,
                         modifier = Modifier.weight(1f),
                     )
                     if (showTypography) {
@@ -333,6 +336,7 @@ private fun ReaderBarIcon(
     onClick: () -> Unit,
     contentColor: Color,
     modifier: Modifier = Modifier,
+    activeColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     IconButton(
         onClick = onClick,
@@ -341,7 +345,7 @@ private fun ReaderBarIcon(
         Icon(
             icon,
             contentDescription = label,
-            tint = if (active) MaterialTheme.colorScheme.primary else contentColor,
+            tint = if (active) activeColor else contentColor,
             modifier = Modifier.size(24.dp),
         )
     }
@@ -373,6 +377,7 @@ internal fun ReaderProgressPanel(
     onNextChapter: (() -> Unit)? = null,
     containerColor: Color = MaterialTheme.colorScheme.surface,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    accentColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     val safeProgress = progress.coerceIn(0f, 1f)
     val sliderState = rememberSliderState(value = safeProgress, trackRange = 0f..1f)
@@ -462,6 +467,7 @@ internal fun ReaderThemePanel(
     showTextSize: Boolean = false,
     containerColor: Color = MaterialTheme.colorScheme.surface,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    accentColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     ReaderPanelSurface(containerColor) {
         Column(
@@ -503,9 +509,9 @@ internal fun ReaderThemePanel(
                             onSettingsChange { it.copy(readerFontSizeSp = sp) }
                         },
                         colors = SliderDefaults.colors(
-                            thumbColor = contentColor,
-                            activeTrackColor = contentColor,
-                            activeTickColor = contentColor.copy(alpha = 0.55f),
+                            thumbColor = accentColor,
+                            activeTrackColor = accentColor,
+                            activeTickColor = accentColor.copy(alpha = 0.55f),
                             inactiveTrackColor = contentColor.copy(alpha = 0.20f),
                             inactiveTickColor = contentColor.copy(alpha = 0.16f),
                         ),
@@ -526,6 +532,7 @@ internal fun ReaderThemePanel(
                 onSettingsChange = onSettingsChange,
                 onCustomBackground = onCustomBackground,
                 contentColor = contentColor,
+                accentColor = accentColor,
             )
         }
     }
@@ -819,18 +826,17 @@ private fun ReaderThemeRow(
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
     onCustomBackground: () -> Unit,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
+    accentColor: Color = MaterialTheme.colorScheme.primary,
 ) {
     val options = listOf(
         ReaderBackground.AUTO to stringResource(R.string.reader_background_auto),
         ReaderBackground.WHITE to stringResource(R.string.reader_background_white),
-        ReaderBackground.SEPIA to stringResource(R.string.reader_background_sepia),
-        ReaderBackground.GREEN to stringResource(R.string.reader_background_green),
         ReaderBackground.INK to stringResource(R.string.reader_background_ink),
         ReaderBackground.CUSTOM to stringResource(R.string.reader_background_custom),
     )
     Row(
         Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
         options.forEach { (background, label) ->
             val swatchColor = when (background) {
@@ -846,15 +852,17 @@ private fun ReaderThemeRow(
                 modifier = Modifier.weight(1f),
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
+                // 100% 圆角矩形（胶囊形）色块：四个纸张选项等宽排列。
                 Box(
                     Modifier
-                        .size(40.dp)
+                        .fillMaxWidth()
+                        .height(44.dp)
                         .clip(CircleShape)
                         .background(swatchColor)
                         .border(
                             width = if (selected) 2.dp else 1.dp,
                             color = if (selected) {
-                                MaterialTheme.colorScheme.primary
+                                accentColor
                             } else {
                                 contentColor.copy(alpha = 0.25f)
                             },
