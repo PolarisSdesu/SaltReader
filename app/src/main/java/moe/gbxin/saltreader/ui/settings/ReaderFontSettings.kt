@@ -6,6 +6,11 @@ import android.graphics.Typeface
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.tween
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.zIndex
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -18,7 +23,27 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.outlined.Add
+import androidx.compose.material3.Surface
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.filled.DragHandle
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.outlined.Sort
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
@@ -43,6 +68,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -60,7 +86,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -98,6 +123,243 @@ class ReaderFontPickerActivity : BaseSettingsActivity() {
     companion object {
         const val EXTRA_FONT_ROLE = "moe.gbxin.saltreader.extra.FONT_ROLE"
     }
+}
+
+/**
+ * 回退字体页：按优先级排列的字体链，第一项就是阅读（自定义）字体。
+ * 采用 Compose 标准的可拖拽列表写法：长按行进入拖动，行跟手、其余行平滑让位。
+ */
+class ReaderFontFallbackActivity : BaseSettingsActivity() {
+    @Composable
+    override fun Content(onBack: () -> Unit) = ReaderFontFallbackPage(onBack)
+}
+
+@Composable
+private fun ReaderFontFallbackPage(onBack: () -> Unit) {
+    val context = LocalContext.current
+    val app = context.applicationContext as SaltReaderApplication
+    val settings by app.settings.state.collectAsStateWithLifecycle()
+    // 链上只展示已选字体：位置 0 是阅读字体，1–3 是回退字体。
+    val chain = remember { mutableStateListOf<ReaderFontRef>() }
+    LaunchedEffect(
+        settings.readerCustomFont,
+        settings.readerFontFallback1,
+        settings.readerFontFallback2,
+        settings.readerFontFallback3,
+    ) {
+        val latest = listOfNotNull(
+            settings.readerCustomFont,
+            settings.readerFontFallback1,
+            settings.readerFontFallback2,
+            settings.readerFontFallback3,
+        ).distinctBy { it.id }
+        if (latest != chain.toList()) {
+            chain.clear()
+            chain.addAll(latest)
+        }
+    }
+    var draggedId by remember { mutableStateOf<String?>(null) }
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val rowHeightPx = with(LocalDensity.current) { 72.dp.toPx() }
+    val thresholdPx = rowHeightPx * 0.55f
+    val visualOffset by animateFloatAsState(
+        targetValue = if (draggedId != null) dragOffset else 0f,
+        animationSpec = if (draggedId != null) snap() else tween(durationMillis = 150),
+        label = "font chain drag",
+    )
+
+    fun persistChain() {
+        val list = chain.toList()
+        app.settings.update { it.withChainFonts(list) }
+    }
+
+    fun roleAt(index: Int): ReaderFontRole = when (index) {
+        0 -> ReaderFontRole.CUSTOM
+        1 -> ReaderFontRole.FALLBACK1
+        2 -> ReaderFontRole.FALLBACK2
+        else -> ReaderFontRole.FALLBACK3
+    }
+
+    fun moveDraggedItem(direction: Int) {
+        val id = draggedId ?: return
+        val from = chain.indexOfFirst { it.id == id }
+        val to = from + direction
+        if (from < 0 || to !in chain.indices) return
+        chain.add(to, chain.removeAt(from))
+    }
+
+    fun startDrag(id: String) {
+        draggedId = id
+        dragOffset = 0f
+    }
+
+    fun endDrag() {
+        draggedId = null
+        dragOffset = 0f
+        persistChain()
+    }
+
+    SettingsScaffold(stringResource(R.string.reader_font_fallback_title), onBack) { innerPadding ->
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(innerPadding),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 4.dp,
+                bottom = 32.dp + navigationBarBottomPadding(),
+            ),
+        ) {
+            item {
+                Text(
+                    stringResource(R.string.reader_font_fallback_hint),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp),
+                )
+            }
+            if (chain.isEmpty()) {
+                item {
+                    ReaderFontNotice(
+                        icon = Icons.Outlined.Info,
+                        text = stringResource(R.string.reader_font_chain_empty),
+                    )
+                }
+            }
+            itemsIndexed(chain, key = { _, ref -> ref.id }) { index, ref ->
+                val isDragged = ref.id == draggedId
+                val typeface = rememberFontTypeface(ref)
+                val shape = when {
+                    chain.size == 1 -> MaterialTheme.shapes.extraLarge
+                    index == 0 ->
+                        RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp)
+                    index == chain.lastIndex ->
+                        RoundedCornerShape(bottomStart = 24.dp, bottomEnd = 24.dp)
+                    else -> RectangleShape
+                }
+                Surface(
+                    onClick = { context.startPicker(roleAt(index)) },
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = shape,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateItem()
+                        .zIndex(if (isDragged) 1f else 0f)
+                        .graphicsLayer { translationY = if (isDragged) visualOffset else 0f }
+                        .pointerInput(ref.id) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = { startDrag(ref.id) },
+                                onDragEnd = { endDrag() },
+                                onDragCancel = { endDrag() },
+                                onDrag = { change, dragAmount ->
+                                    change.consume()
+                                    dragOffset += dragAmount.y
+                                    if (dragOffset > thresholdPx) {
+                                        moveDraggedItem(1)
+                                        dragOffset -= rowHeightPx
+                                    } else if (dragOffset < -thresholdPx) {
+                                        moveDraggedItem(-1)
+                                        dragOffset += rowHeightPx
+                                    }
+                                },
+                            )
+                        },
+                ) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 72.dp)
+                            .padding(start = 8.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(
+                            Icons.Filled.DragHandle,
+                            contentDescription = stringResource(R.string.reader_font_reorder),
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.size(28.dp),
+                        )
+                        Spacer(Modifier.width(6.dp))
+                        ReaderFontSample(typeface = typeface, icon = null, size = 40.dp)
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                ref.label,
+                                style = MaterialTheme.typography.titleMedium,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                            Text(
+                                stringResource(fontChainSlotLabelRes(index)),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        var menuOpen by remember(ref.id) { mutableStateOf(false) }
+                        Box {
+                            IconButton(onClick = { menuOpen = true }) {
+                                Icon(
+                                    Icons.Filled.MoreVert,
+                                    contentDescription = stringResource(R.string.reader_font_fallback_menu),
+                                )
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.reader_font_choose)) },
+                                    onClick = {
+                                        menuOpen = false
+                                        context.startPicker(roleAt(index))
+                                    },
+                                )
+                                DropdownMenuItem(
+                                    text = { Text(stringResource(R.string.reader_font_remove)) },
+                                    onClick = {
+                                        menuOpen = false
+                                        chain.removeAt(index)
+                                        persistChain()
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                if (index != chain.lastIndex) {
+                    HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                }
+            }
+            item {
+                if (chain.size < 4) {
+                    Spacer(Modifier.height(8.dp))
+                    Surface(
+                        onClick = { context.startPicker(roleAt(chain.size)) },
+                        color = MaterialTheme.colorScheme.surfaceContainerLow,
+                        shape = MaterialTheme.shapes.extraLarge,
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Icon(
+                                Icons.Outlined.Add,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.primary,
+                            )
+                            Spacer(Modifier.width(16.dp))
+                            Text(
+                                stringResource(R.string.reader_font_chain_add),
+                                style = MaterialTheme.typography.titleMedium,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** 字体链每一行的角色名：位置 0 是阅读（自定义）字体，其余是回退槽位。 */
+private fun fontChainSlotLabelRes(index: Int): Int = when (index) {
+    0 -> R.string.reader_font_read_font
+    1 -> R.string.reader_font_fallback_1
+    2 -> R.string.reader_font_fallback_2
+    else -> R.string.reader_font_fallback_3
 }
 
 @Composable
@@ -169,13 +431,29 @@ private fun ReaderFontSettingsPage(onBack: () -> Unit) {
                 )
             }
 
-            SettingsSectionLabel(stringResource(R.string.reader_font_section_custom))
+            // 自定义字体与回退字体属于同一条字体链，合并在一个分组里展示。
+            val fallbackCount = listOf(
+                settings.readerFontFallback1,
+                settings.readerFontFallback2,
+                settings.readerFontFallback3,
+            ).count { it != null }
+            SettingsSectionLabel(stringResource(R.string.reader_font_section_custom_fallback))
             SettingsCard {
                 ReaderFontEntryRow(
                     icon = Icons.Outlined.TextFields,
                     title = stringResource(R.string.reader_font_read_font),
                     value = settings.readerCustomFont?.label,
                 ) { context.startPicker(ReaderFontRole.CUSTOM) }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                ReaderFontEntryRow(
+                    icon = Icons.Outlined.Sort,
+                    title = stringResource(R.string.reader_font_fallback_title),
+                    value = fallbackCount.takeIf { it > 0 }?.let {
+                        stringResource(R.string.reader_font_directory_count, it)
+                    },
+                ) {
+                    context.startActivity(Intent(context, ReaderFontFallbackActivity::class.java))
+                }
             }
 
             SettingsSectionLabel(stringResource(R.string.reader_font_section_custom_defaults))
@@ -196,6 +474,7 @@ private fun ReaderFontSettingsPage(onBack: () -> Unit) {
                     value = settings.readerFontMono?.label,
                 ) { context.startPicker(ReaderFontRole.MONO) }
             }
+
         }
     }
 }
@@ -230,7 +509,7 @@ private fun ReaderFontPickerPage(role: ReaderFontRole, onBack: () -> Unit) {
     }
     val directorySources = stringResource(R.string.reader_font_picker_added)
 
-    SettingsScaffold(stringResource(role.pickerTitleRes()), onBack) { innerPadding ->
+    SettingsScaffold(role.pickerTitle(), onBack) { innerPadding ->
         LazyColumn(
             modifier = Modifier.fillMaxSize().padding(innerPadding),
             contentPadding = PaddingValues(
@@ -270,13 +549,7 @@ private fun ReaderFontPickerPage(role: ReaderFontRole, onBack: () -> Unit) {
             item {
                 SettingsSectionLabel(stringResource(R.string.reader_font_section_defaults))
                 ReaderFontListItem(
-                    label = stringResource(
-                        if (role == ReaderFontRole.CUSTOM) {
-                            R.string.reader_font_follow_hei
-                        } else {
-                            R.string.reader_font_use_builtin
-                        },
-                    ),
+                    label = stringResource(role.defaultOptionLabelRes()),
                     supporting = if (role == ReaderFontRole.CUSTOM) {
                         stringResource(R.string.reader_font_use_builtin)
                     } else {
@@ -484,9 +757,13 @@ private fun ReaderFontListItem(
 
 /** 字体样张：有 Typeface 时直接用该字体的字形渲染 "Aa"，否则显示图标。 */
 @Composable
-private fun ReaderFontSample(typeface: Typeface?, icon: ImageVector?) {
+private fun ReaderFontSample(
+    typeface: Typeface?,
+    icon: ImageVector?,
+    size: Dp = 44.dp,
+) {
     Box(
-        modifier = Modifier.size(44.dp).clip(CircleShape)
+        modifier = Modifier.size(size).clip(CircleShape)
             .background(MaterialTheme.colorScheme.surfaceContainerHighest),
         contentAlignment = Alignment.Center,
     ) {
@@ -505,6 +782,15 @@ private fun ReaderFontSample(typeface: Typeface?, icon: ImageVector?) {
                 tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.size(20.dp),
             )
+        } else {
+            // 未选择字体时用一个默认字形占位，保持行高与左侧留白一致。
+            Text(
+                "Aa",
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.55f),
+                maxLines = 1,
+                softWrap = false,
+            )
         }
     }
 }
@@ -514,19 +800,23 @@ private fun ReaderFontSample(typeface: Typeface?, icon: ImageVector?) {
  * 映射（Typeface.Builder），不复制文件、也不阻塞主线程。
  */
 @Composable
-private fun rememberFontTypeface(ref: ReaderFontRef): Typeface? {
+private fun rememberFontTypeface(ref: ReaderFontRef?): Typeface? {
     val context = LocalContext.current
     val typeface by produceState<Typeface?>(initialValue = null, ref) {
-        value = withContext(Dispatchers.IO) {
-            runCatching {
-                when (ref.source) {
-                    ReaderFontSource.SYSTEM -> Typeface.create(ref.key, Typeface.NORMAL)
-                    ReaderFontSource.DOCUMENT -> {
-                        context.contentResolver.openFileDescriptor(Uri.parse(ref.key), "r")
-                            ?.use { descriptor -> Typeface.Builder(descriptor.fileDescriptor).build() }
+        value = if (ref == null) {
+            null
+        } else {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    when (ref.source) {
+                        ReaderFontSource.SYSTEM -> Typeface.create(ref.key, Typeface.NORMAL)
+                        ReaderFontSource.DOCUMENT -> {
+                            context.contentResolver.openFileDescriptor(Uri.parse(ref.key), "r")
+                                ?.use { descriptor -> Typeface.Builder(descriptor.fileDescriptor).build() }
+                        }
                     }
-                }
-            }.getOrNull()
+                }.getOrNull()
+            }
         }
     }
     return typeface
@@ -537,6 +827,9 @@ private fun ReaderFontRole.currentFont(settings: AppSettings): ReaderFontRef? = 
     ReaderFontRole.HEI -> settings.readerFontHei
     ReaderFontRole.SONG -> settings.readerFontSong
     ReaderFontRole.MONO -> settings.readerFontMono
+    ReaderFontRole.FALLBACK1 -> settings.readerFontFallback1
+    ReaderFontRole.FALLBACK2 -> settings.readerFontFallback2
+    ReaderFontRole.FALLBACK3 -> settings.readerFontFallback3
 }
 
 private fun AppSettings.withRoleFont(role: ReaderFontRole, ref: ReaderFontRef?): AppSettings = when (role) {
@@ -544,6 +837,48 @@ private fun AppSettings.withRoleFont(role: ReaderFontRole, ref: ReaderFontRef?):
     ReaderFontRole.HEI -> copy(readerFontHei = ref)
     ReaderFontRole.SONG -> copy(readerFontSong = ref)
     ReaderFontRole.MONO -> copy(readerFontMono = ref)
+    ReaderFontRole.FALLBACK1 -> copy(readerFontFallback1 = ref)
+    ReaderFontRole.FALLBACK2 -> copy(readerFontFallback2 = ref)
+    ReaderFontRole.FALLBACK3 -> copy(readerFontFallback3 = ref)
+}
+
+/**
+ * 把可拖动列表的顺序写回设置：位置 0 = 阅读（自定义）字体，1–3 = 回退字体。
+ * 拖动后的顺序就是阅读器 CSS 字体链的顺序。
+ */
+private fun AppSettings.withChainFonts(chain: List<ReaderFontRef>): AppSettings = copy(
+    readerCustomFont = chain.getOrNull(0),
+    readerFontFallback1 = chain.getOrNull(1),
+    readerFontFallback2 = chain.getOrNull(2),
+    readerFontFallback3 = chain.getOrNull(3),
+)
+
+private fun ReaderFontRole.defaultOptionLabelRes(): Int = when (this) {
+    ReaderFontRole.CUSTOM -> R.string.reader_font_follow_hei
+    ReaderFontRole.FALLBACK1,
+    ReaderFontRole.FALLBACK2,
+    ReaderFontRole.FALLBACK3,
+    -> R.string.reader_font_value_none
+    else -> R.string.reader_font_use_builtin
+}
+
+/** 回退槽位在页面上的名字（第一/第二/第三字体）。 */
+private fun ReaderFontRole.slotLabelRes(): Int? = when (this) {
+    ReaderFontRole.FALLBACK1 -> R.string.reader_font_fallback_1
+    ReaderFontRole.FALLBACK2 -> R.string.reader_font_fallback_2
+    ReaderFontRole.FALLBACK3 -> R.string.reader_font_fallback_3
+    else -> null
+}
+
+/** 选择页标题；回退槽位带槽位名（"选择第一字体"）。 */
+@Composable
+private fun ReaderFontRole.pickerTitle(): String {
+    val slot = slotLabelRes()
+    return if (slot != null) {
+        stringResource(R.string.reader_font_pick_fallback, stringResource(slot))
+    } else {
+        stringResource(pickerTitleRes())
+    }
 }
 
 /**
@@ -561,6 +896,9 @@ private fun AppSettings.withFontDirectory(uri: String?, label: String?): AppSett
         readerFontHei = readerFontHei.keepSystemOnly(),
         readerFontSong = readerFontSong.keepSystemOnly(),
         readerFontMono = readerFontMono.keepSystemOnly(),
+        readerFontFallback1 = readerFontFallback1.keepSystemOnly(),
+        readerFontFallback2 = readerFontFallback2.keepSystemOnly(),
+        readerFontFallback3 = readerFontFallback3.keepSystemOnly(),
     )
 }
 
@@ -572,6 +910,11 @@ private fun ReaderFontRole.pickerTitleRes(): Int = when (this) {
     ReaderFontRole.HEI -> R.string.reader_font_pick_hei
     ReaderFontRole.SONG -> R.string.reader_font_pick_song
     ReaderFontRole.MONO -> R.string.reader_font_pick_mono
+    // 回退槽位的标题由 pickerTitle() 用槽位名拼出来，这里只用于兜底。
+    ReaderFontRole.FALLBACK1,
+    ReaderFontRole.FALLBACK2,
+    ReaderFontRole.FALLBACK3,
+    -> R.string.reader_font_pick_fallback
 }
 
 private fun Context.startPicker(role: ReaderFontRole) {

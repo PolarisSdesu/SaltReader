@@ -652,8 +652,11 @@ internal fun ReaderTypographyPanel(
                 onSelect = { index ->
                     val family = ReaderFontFamily.entries[index]
                     onSettingsChange { it.copy(readerFontFamily = family) }
-                    // 选中"自定义"时直接进字体设置页：没有选过字体时这是唯一能配置的入口。
-                    if (family == ReaderFontFamily.CUSTOM) onOpenFontSettings()
+                    // 只有还没选过自定义字体时才跳去配置；已配置后点击只切换模式，
+                    // 避免每次点"自定义"都被带离阅读器。
+                    if (family == ReaderFontFamily.CUSTOM && settings.readerCustomFont == null) {
+                        onOpenFontSettings()
+                    }
                 },
             )
             Spacer(Modifier.height(10.dp))

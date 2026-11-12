@@ -106,7 +106,6 @@
     <string name="reader_font_follow_hei">跟隨黑體</string>
     <string name="reader_font_settings_title">字型設定</string>
     <string name="reader_font_section_directory">字型資料夾</string>
-    <string name="reader_font_section_custom">閱讀字型</string>
     <string name="reader_font_section_defaults">預設字型</string>
     <string name="reader_font_read_font">自訂字型</string>
     <string name="reader_font_directory_choose">選擇字型資料夾</string>
@@ -130,4 +129,20 @@
     <string name="reader_font_picker_no_directory">尚未加入字型資料夾，請在字型設定中選擇。</string>
     <string name="reader_font_ttc_notice">由於 WebView 限制，自訂字型暫不支援 .ttc 字型檔。</string>
     <string name="reader_font_section_custom_defaults">自訂預設字型</string>
+
+    <!-- 回退字体 -->
+    <string name="reader_font_fallback_title">備用字型</string>
+    <string name="reader_font_fallback_1">第一字型</string>
+    <string name="reader_font_fallback_2">第二字型</string>
+    <string name="reader_font_fallback_3">第三字型</string>
+    <string name="reader_font_fallback_hint">字型依序回退：前面的字型缺少某個字時，會用後面的字型顯示。可以自由組合西文與中日韓字型。</string>
+    <string name="reader_font_fallback_menu">字型操作</string>
+    <string name="reader_font_pick_fallback">選擇%1$s</string>
+    <string name="reader_font_choose">選擇字型</string>
+    <string name="reader_font_clear">清除</string>
+    <string name="reader_font_reorder">拖曳排序</string>
+    <string name="reader_font_section_custom_fallback">自訂字型與備用字型</string>
+    <string name="reader_font_chain_add">加入字型</string>
+    <string name="reader_font_chain_empty">尚未加入字型，加入後即可組成字型鏈。</string>
+    <string name="reader_font_remove">移除字型</string>
 </resources>

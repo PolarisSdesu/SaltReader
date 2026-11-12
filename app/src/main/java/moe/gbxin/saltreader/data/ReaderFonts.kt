@@ -37,7 +37,7 @@ data class ReaderFontRef(
 }
 
 /** 自定义字体设置页里可以单独指定的字体角色。 */
-enum class ReaderFontRole { CUSTOM, HEI, SONG, MONO }
+enum class ReaderFontRole { CUSTOM, HEI, SONG, MONO, FALLBACK1, FALLBACK2, FALLBACK3 }
 
 /** 字体引用的 JSON 编解码；旧版本/损坏的值一律当成"未选择"。 */
 object ReaderFontCodec {
@@ -143,34 +143,35 @@ object ReaderFonts {
     /** 一份可直接交给 WebView 的字体资源。 */
     class FontResource(val token: String, val file: File, val mime: String)
 
-    /** 解析后的字体：familyCss 是完整 font-family 值，resource 为 null 表示纯系统字体族。 */
-    class ResolvedFont(val familyCss: String, val resource: FontResource?, val faceCss: String?)
+    /**
+     * 解析后的单个字体：familyName 是可直接放进 CSS 字体链的一个字体族片段
+     * （如 `"casual"` 或 `'SaltFont_x'`），null 表示没有可用字体；
+     * resource 非空时需要由 WebView 拦截器供给字节。
+     */
+    class ResolvedFont(val familyName: String?, val resource: FontResource?, val faceCss: String?)
 
     /**
-     * 把 [ref] 解析成 CSS 字体栈。
+     * 把 [ref] 解析成单个字体族（不含兜底栈；字体链由 [ReaderFontSetup] 拼接）。
      *
      * - 系统字体：直接使用字体族名（WebView 通过平台字体配置解析，无需复制大文件）；
      * - 字体目录文件：复制到缓存并生成 @font-face，族名用哈希避免碰撞。
      */
-    fun resolve(context: Context, ref: ReaderFontRef?, fallbackStack: String): ResolvedFont {
-        if (ref == null || ref.key.isBlank()) return ResolvedFont(fallbackStack, null, null)
+    fun resolve(context: Context, ref: ReaderFontRef?): ResolvedFont {
+        if (ref == null || ref.key.isBlank()) return ResolvedFont(null, null, null)
         return when (ref.source) {
-            ReaderFontSource.SYSTEM -> {
-                val family = quoteCssFamily(ref.key)
-                ResolvedFont(stack(family, fallbackStack), null, null)
-            }
+            ReaderFontSource.SYSTEM -> ResolvedFont(quoteCssFamily(ref.key), null, null)
 
             ReaderFontSource.DOCUMENT -> {
                 val cached = ensureCached(context, ref)
                 if (cached == null) {
-                    ResolvedFont(fallbackStack, null, null)
+                    ResolvedFont(null, null, null)
                 } else {
                     val token = tokenFor(ref)
                     val familyName = documentFamilyName(token)
                     val url = FONT_URL_BASE + token
                     val resource = FontResource(token, cached, mimeFor(ref.label))
                     ResolvedFont(
-                        stack("'$familyName'", fallbackStack),
+                        "'$familyName'",
                         resource,
                         fontFace(familyName, url),
                     )
@@ -335,30 +336,50 @@ data class ReaderFontSetup(
             resources = emptyMap(),
         )
 
-        /** 按设置解析四种字体角色；任何一步失败都回退到默认栈（打开书籍优先于字体完美）。 */
+        /**
+         * 按设置解析全部字体角色并拼出 CSS 字体链。
+         *
+         * 字体链 = 首选字体 → 回退字体 1/2/3 → 内置兜底栈。这样可以让西文字体排在前面、
+         * CJK 字体排在后面，WebView 会按字形逐个回退。任何一步失败都回退到默认栈
+         * （打开书籍优先于字体完美）。
+         */
         fun build(context: Context, settings: AppSettings): ReaderFontSetup {
-            val hei = ReaderFonts.resolve(context, settings.readerFontHei, ReaderFonts.HEI_FALLBACK_STACK)
-            val song = ReaderFonts.resolve(context, settings.readerFontSong, ReaderFonts.SONG_FALLBACK_STACK)
-            val mono = ReaderFonts.resolve(context, settings.readerFontMono, ReaderFonts.MONO_FALLBACK_STACK)
+            val hei = ReaderFonts.resolve(context, settings.readerFontHei)
+            val song = ReaderFonts.resolve(context, settings.readerFontSong)
+            val mono = ReaderFonts.resolve(context, settings.readerFontMono)
             // 自定义模式没有选字体时跟随"黑体"，这样至少和默认阅读体验一致。
             val custom = if (settings.readerCustomFont == null) {
-                ReaderFonts.ResolvedFont(hei.familyCss, null, null)
+                hei
             } else {
-                ReaderFonts.resolve(context, settings.readerCustomFont, hei.familyCss)
+                ReaderFonts.resolve(context, settings.readerCustomFont)
             }
+            val fallbacks = listOf(
+                settings.readerFontFallback1,
+                settings.readerFontFallback2,
+                settings.readerFontFallback3,
+            ).map { ref -> ReaderFonts.resolve(context, ref) }
+            val fallbackFamilies = fallbacks.mapNotNull { it.familyName }
+
+            /** 首选字体 + 回退字体 + 内置兜底栈。 */
+            fun chain(main: ReaderFonts.ResolvedFont, base: String): String {
+                val families = listOfNotNull(main.familyName) + fallbackFamilies
+                return ReaderFonts.stack(families.joinToString(", ").takeIf { it.isNotBlank() }, base)
+            }
+
             val resources = LinkedHashMap<String, ReaderFonts.FontResource>()
             val faces = StringBuilder()
-            for (font in listOf(hei, song, mono, custom)) {
+            for (font in listOf(hei, song, mono, custom) + fallbacks) {
                 val resource = font.resource ?: continue
                 if (resources.put(resource.token, resource) == null) {
                     faces.append(font.faceCss.orEmpty())
                 }
             }
             return ReaderFontSetup(
-                familyHei = hei.familyCss,
-                familySong = song.familyCss,
-                familyCustom = custom.familyCss,
-                familyMono = mono.familyCss,
+                familyHei = chain(hei, ReaderFonts.HEI_FALLBACK_STACK),
+                familySong = chain(song, ReaderFonts.SONG_FALLBACK_STACK),
+                familyCustom = chain(custom, ReaderFonts.HEI_FALLBACK_STACK),
+                // 等宽字体只作用于代码块，不参与正文的中英混排回退。
+                familyMono = ReaderFonts.stack(mono.familyName, ReaderFonts.MONO_FALLBACK_STACK),
                 fontFacesCss = faces.toString(),
                 resources = resources,
             )

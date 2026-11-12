@@ -106,7 +106,6 @@
     <string name="reader_font_follow_hei">Follow sans-serif</string>
     <string name="reader_font_settings_title">Fonts</string>
     <string name="reader_font_section_directory">Font folder</string>
-    <string name="reader_font_section_custom">Reading font</string>
     <string name="reader_font_section_defaults">Default fonts</string>
     <string name="reader_font_read_font">Custom font</string>
     <string name="reader_font_directory_choose">Choose font folder</string>
@@ -130,4 +129,20 @@
     <string name="reader_font_picker_no_directory">No font folder set. Choose one in Font settings.</string>
     <string name="reader_font_ttc_notice">Due to a WebView limitation, custom fonts do not support .ttc font files yet.</string>
     <string name="reader_font_section_custom_defaults">Custom default fonts</string>
+
+    <!-- 回退字体 -->
+    <string name="reader_font_fallback_title">Fallback fonts</string>
+    <string name="reader_font_fallback_1">First font</string>
+    <string name="reader_font_fallback_2">Second font</string>
+    <string name="reader_font_fallback_3">Third font</string>
+    <string name="reader_font_fallback_hint">Fonts are tried in order: when the current font lacks a glyph, the next one is used. Combine Latin and CJK fonts freely for mixed text.</string>
+    <string name="reader_font_fallback_menu">Font actions</string>
+    <string name="reader_font_pick_fallback">Choose %1$s</string>
+    <string name="reader_font_choose">Choose font</string>
+    <string name="reader_font_clear">Clear</string>
+    <string name="reader_font_reorder">Drag to reorder</string>
+    <string name="reader_font_section_custom_fallback">Custom and fallback fonts</string>
+    <string name="reader_font_chain_add">Add font</string>
+    <string name="reader_font_chain_empty">No fonts added yet. Add one to build the font chain.</string>
+    <string name="reader_font_remove">Remove font</string>
 </resources>

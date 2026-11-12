@@ -106,7 +106,6 @@
     <string name="reader_font_follow_hei">ゴシック体に従う</string>
     <string name="reader_font_settings_title">フォント設定</string>
     <string name="reader_font_section_directory">フォントフォルダー</string>
-    <string name="reader_font_section_custom">本文フォント</string>
     <string name="reader_font_section_defaults">既定のフォント</string>
     <string name="reader_font_read_font">カスタムフォント</string>
     <string name="reader_font_directory_choose">フォントフォルダーを選択</string>
@@ -130,4 +129,20 @@
     <string name="reader_font_picker_no_directory">フォントフォルダーが未設定です。フォント設定で選択してください。</string>
     <string name="reader_font_ttc_notice">WebView の制限により、カスタムフォントは .ttc フォントファイルに未対応です。</string>
     <string name="reader_font_section_custom_defaults">カスタム既定フォント</string>
+
+    <!-- 回退字体 -->
+    <string name="reader_font_fallback_title">フォールバックフォント</string>
+    <string name="reader_font_fallback_1">1 番目のフォント</string>
+    <string name="reader_font_fallback_2">2 番目のフォント</string>
+    <string name="reader_font_fallback_3">3 番目のフォント</string>
+    <string name="reader_font_fallback_hint">フォントは上から順に使われ、文字がない場合は次のフォントで表示されます。英字と CJK フォントを自由に組み合わせられます。</string>
+    <string name="reader_font_fallback_menu">フォント操作</string>
+    <string name="reader_font_pick_fallback">%1$sを選択</string>
+    <string name="reader_font_choose">フォントを選択</string>
+    <string name="reader_font_clear">クリア</string>
+    <string name="reader_font_reorder">ドラッグで並べ替え</string>
+    <string name="reader_font_section_custom_fallback">カスタムフォントとフォールバックフォント</string>
+    <string name="reader_font_chain_add">フォントを追加</string>
+    <string name="reader_font_chain_empty">フォントがまだありません。追加するとフォントチェーンを作れます。</string>
+    <string name="reader_font_remove">フォントを削除</string>
 </resources>

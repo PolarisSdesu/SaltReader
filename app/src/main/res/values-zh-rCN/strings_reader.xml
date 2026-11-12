@@ -106,7 +106,6 @@
     <string name="reader_font_follow_hei">跟随黑体</string>
     <string name="reader_font_settings_title">字体设置</string>
     <string name="reader_font_section_directory">字体目录</string>
-    <string name="reader_font_section_custom">阅读字体</string>
     <string name="reader_font_section_defaults">默认字体</string>
     <string name="reader_font_read_font">自定义字体</string>
     <string name="reader_font_directory_choose">选择字体目录</string>
@@ -130,4 +129,20 @@
     <string name="reader_font_picker_no_directory">还没有添加字体目录，请在字体设置里选择。</string>
     <string name="reader_font_ttc_notice">由于 WebView 限制，自定义字体暂不支持 .ttc 字体文件。</string>
     <string name="reader_font_section_custom_defaults">自定义默认字体</string>
+
+    <!-- 回退字体 -->
+    <string name="reader_font_fallback_title">回退字体</string>
+    <string name="reader_font_fallback_1">第一字体</string>
+    <string name="reader_font_fallback_2">第二字体</string>
+    <string name="reader_font_fallback_3">第三字体</string>
+    <string name="reader_font_fallback_hint">字体按顺序回退：前面的字体缺少某个字时，会用后面的字体显示。可以自由组合西文与中日韩字体。</string>
+    <string name="reader_font_fallback_menu">字体操作</string>
+    <string name="reader_font_pick_fallback">选择%1$s</string>
+    <string name="reader_font_choose">选择字体</string>
+    <string name="reader_font_clear">清除</string>
+    <string name="reader_font_reorder">拖动排序</string>
+    <string name="reader_font_section_custom_fallback">自定义字体与回退字体</string>
+    <string name="reader_font_chain_add">添加字体</string>
+    <string name="reader_font_chain_empty">还没有添加字体，添加后即可组成字体链。</string>
+    <string name="reader_font_remove">移除字体</string>
 </resources>

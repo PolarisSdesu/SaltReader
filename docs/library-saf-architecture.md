@@ -501,10 +501,18 @@ A 负责的实现：
   已计入 `appDataBytes()` 并由 `clearCaches()` 清理），`@font-face` 的 URL 指向
   `https://salt.local/font/<token>`，由阅读器 WebView 的 `shouldInterceptRequest` 返回字节；
   字体引用本身只存 Document URI，不复制到别处。
-- **四种字体角色**：`ReaderFontFamily` 为 黑体 / 宋体 / 自定义；字体设置页可另行为
+- **字体角色**：`ReaderFontFamily` 为 黑体 / 宋体 / 自定义；字体设置页可另行为
   「默认黑体 / 默认宋体 / 默认等宽」指定替换字体（为空 = 内置字体栈），
   「自定义」模式使用的字体单独选择（未选择时跟随黑体）。等宽字体通过 CSS 变量
   `--reader-mono-family` 作用于 `pre/code/table` 等。
+- **回退字体（第九轮追加）**：设置里另有 3 个有序回退槽位（`readerFontFallback1..3`）。
+  CSS 字体链拼成「首选字体 → 回退 1/2/3 → 内置兜底栈」，WebView 按字形逐个回退，
+  因此可以把西文字体放前面、CJK 字体放后面自由混排。回退字体同时作用于黑体/宋体/自定义
+  三种模式，但不影响等宽（代码块）字体链。回退页用 Compose 标准的可拖拽列表（LazyColumn +
+  长按拖动 + animateItem）展示已选字体的有序链：位置 0 即阅读（自定义）字体
+  （`readerCustomFont`），1–3 是回退槽位；行跟手、其余行平滑让位，拖动结束把顺序写回设置，
+  因此顺序就是 CSS 字体链的应用顺序。支持添加、更换和移除字体；字体设置页里
+  「自定义字体与回退字体」合并为一个分组。
 - **加载与排版**：`@font-face` 由 JS `apply()` 写入 `<style id="salt-reader-fonts">`；分页位置在
   `document.fonts.ready` 之后才恢复（`whenFontsReady`），避免字体换行后停在半页。
 - **设置入口**：阅读器排版面板「自定义」→ 字体设置页（目录 + 各角色字体）→ 字体选择页

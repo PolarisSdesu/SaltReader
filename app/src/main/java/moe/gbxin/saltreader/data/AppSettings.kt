@@ -82,6 +82,10 @@ data class AppSettings(
     val readerFontSong: ReaderFontRef? = null,
     /** 等宽字体（代码块）；为空表示使用内置等宽字体栈。 */
     val readerFontMono: ReaderFontRef? = null,
+    /** 回退字体 1–3：首选字体缺字时按顺序使用，用于中英文/CJK 混排。 */
+    val readerFontFallback1: ReaderFontRef? = null,
+    val readerFontFallback2: ReaderFontRef? = null,
+    val readerFontFallback3: ReaderFontRef? = null,
     /** 用户字体目录（持久化 SAF tree URI）。 */
     val readerFontDirectoryUri: String? = null,
     /** 字体目录的显示名，避免每次打开设置都去查 provider。 */
@@ -126,6 +130,9 @@ class SettingsRepository(context: Context) {
         readerFontHei = ReaderFontCodec.decode(prefs.getString("reader_font_hei", null)),
         readerFontSong = ReaderFontCodec.decode(prefs.getString("reader_font_song", null)),
         readerFontMono = ReaderFontCodec.decode(prefs.getString("reader_font_mono", null)),
+        readerFontFallback1 = ReaderFontCodec.decode(prefs.getString("reader_font_fallback_1", null)),
+        readerFontFallback2 = ReaderFontCodec.decode(prefs.getString("reader_font_fallback_2", null)),
+        readerFontFallback3 = ReaderFontCodec.decode(prefs.getString("reader_font_fallback_3", null)),
         readerFontDirectoryUri = prefs.getString("reader_font_directory_uri", null),
         readerFontDirectoryLabel = prefs.getString("reader_font_directory_label", null),
         readerProgressLabelSizeSp = prefs.getInt("reader_progress_label_size", READER_PROGRESS_LABEL_SIZE_DEFAULT_SP)
@@ -194,6 +201,15 @@ class SettingsRepository(context: Context) {
         }
         if (next.readerFontMono != old.readerFontMono) {
             editor.putString("reader_font_mono", ReaderFontCodec.encode(next.readerFontMono))
+        }
+        if (next.readerFontFallback1 != old.readerFontFallback1) {
+            editor.putString("reader_font_fallback_1", ReaderFontCodec.encode(next.readerFontFallback1))
+        }
+        if (next.readerFontFallback2 != old.readerFontFallback2) {
+            editor.putString("reader_font_fallback_2", ReaderFontCodec.encode(next.readerFontFallback2))
+        }
+        if (next.readerFontFallback3 != old.readerFontFallback3) {
+            editor.putString("reader_font_fallback_3", ReaderFontCodec.encode(next.readerFontFallback3))
         }
         if (next.readerFontDirectoryUri != old.readerFontDirectoryUri) {
             editor.putString("reader_font_directory_uri", next.readerFontDirectoryUri)
