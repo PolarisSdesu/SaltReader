@@ -140,4 +140,5 @@
     <string name="settings_reader_page_indicator_size">ページ表示の文字サイズ</string>
     <string name="settings_reader_battery_indicator">バッテリー表示</string>
     <string name="settings_reader_battery_indicator_supporting">閲覧中に左下へバッテリーアイコンとパーセントを表示します</string>
+    <string name="settings_reader_custom_font">カスタムフォント</string>
 </resources>

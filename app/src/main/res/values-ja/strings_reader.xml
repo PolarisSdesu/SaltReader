@@ -56,7 +56,6 @@
     <string name="reader_background_custom">カスタム</string>
     <string name="reader_font_size">文字サイズ</string>
     <string name="reader_font_family">フォント</string>
-    <string name="reader_font_family_system">システム</string>
     <string name="reader_font_family_song">明朝体</string>
     <string name="reader_font_family_hei">ゴシック体</string>
     <string name="reader_show_page_number">ページ番号を表示</string>
@@ -101,4 +100,33 @@
     <string name="reader_spacing_loose">広め</string>
     <string name="reader_page_info_hidden">非表示</string>
     <string name="reader_page_info_pages">ページ番号</string>
+
+    <!-- 自定义字体 / 字体目录 -->
+    <string name="reader_font_family_custom">カスタム</string>
+    <string name="reader_font_follow_hei">ゴシック体に従う</string>
+    <string name="reader_font_settings_title">フォント設定</string>
+    <string name="reader_font_section_directory">フォントフォルダー</string>
+    <string name="reader_font_section_custom">本文フォント</string>
+    <string name="reader_font_section_defaults">既定のフォント</string>
+    <string name="reader_font_read_font">カスタムフォント</string>
+    <string name="reader_font_directory_choose">フォントフォルダーを選択</string>
+    <string name="reader_font_directory_clear">フォントフォルダーを解除</string>
+    <string name="reader_font_directory_none">フォントフォルダー未選択</string>
+    <string name="reader_font_directory_count">%1$d 個のフォント</string>
+    <string name="reader_font_directory_empty">このフォルダーにフォントファイルがありません</string>
+    <string name="reader_font_default_hei">既定のゴシック体</string>
+    <string name="reader_font_default_song">既定の明朝体</string>
+    <string name="reader_font_default_mono">等幅フォント</string>
+    <string name="reader_font_use_builtin">システム標準フォント</string>
+    <string name="reader_font_pick_custom">カスタムフォントを選択</string>
+    <string name="reader_font_pick_hei">既定のゴシック体を選択</string>
+    <string name="reader_font_pick_song">既定の明朝体を選択</string>
+    <string name="reader_font_pick_mono">等幅フォントを選択</string>
+    <string name="reader_font_picker_system">システムフォント</string>
+    <string name="reader_font_picker_added">フォントフォルダー</string>
+    <string name="reader_font_picker_search">フォントを検索</string>
+    <string name="reader_font_picker_empty">フォントが見つかりません</string>
+    <string name="reader_font_value_none">未設定</string>
+    <string name="reader_font_directory_supported">TTF・OTF・WOFF・WOFF2 に対応。フォントコレクション（.ttc）は未対応です。</string>
+    <string name="reader_font_picker_no_directory">フォントフォルダーが未設定です。フォント設定で選択してください。</string>
 </resources>

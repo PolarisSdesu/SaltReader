@@ -61,6 +61,20 @@
             android:parentActivityName=".ui.settings.SettingsActivity"
             android:theme="@style/Theme.SaltReader" />
         <activity
+            android:name=".ui.settings.ReaderFontSettingsActivity"
+            android:exported="false"
+            android:configChanges="locale|layoutDirection|fontScale|uiMode|colorMode|orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"
+            android:enableOnBackInvokedCallback="true"
+            android:parentActivityName=".ui.settings.ReaderSettingsActivity"
+            android:theme="@style/Theme.SaltReader" />
+        <activity
+            android:name=".ui.settings.ReaderFontPickerActivity"
+            android:exported="false"
+            android:configChanges="locale|layoutDirection|fontScale|uiMode|colorMode|orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"
+            android:enableOnBackInvokedCallback="true"
+            android:parentActivityName=".ui.settings.ReaderFontSettingsActivity"
+            android:theme="@style/Theme.SaltReader" />
+        <activity
             android:name=".ui.settings.StorageSettingsActivity"
             android:exported="false"
             android:configChanges="locale|layoutDirection|fontScale|uiMode|colorMode|orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|density"

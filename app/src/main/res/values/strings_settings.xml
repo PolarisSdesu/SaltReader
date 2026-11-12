@@ -144,4 +144,5 @@
     <string name="settings_reader_page_indicator_size">Page text size</string>
     <string name="settings_reader_battery_indicator">Battery indicator</string>
     <string name="settings_reader_battery_indicator_supporting">Show the battery icon and percentage in the lower-left corner while reading</string>
+    <string name="settings_reader_custom_font">Custom font</string>
 </resources>

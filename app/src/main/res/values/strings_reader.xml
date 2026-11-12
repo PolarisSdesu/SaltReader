@@ -56,7 +56,6 @@
     <string name="reader_background_custom">Custom</string>
     <string name="reader_font_size">Font size</string>
     <string name="reader_font_family">Font</string>
-    <string name="reader_font_family_system">System</string>
     <string name="reader_font_family_song">Serif</string>
     <string name="reader_font_family_hei">Sans-serif</string>
     <string name="reader_show_page_number">Show page number</string>
@@ -101,4 +100,33 @@
     <string name="reader_spacing_loose">Loose</string>
     <string name="reader_page_info_hidden">Hidden</string>
     <string name="reader_page_info_pages">Page number</string>
+
+    <!-- 自定义字体 / 字体目录 -->
+    <string name="reader_font_family_custom">Custom</string>
+    <string name="reader_font_follow_hei">Follow sans-serif</string>
+    <string name="reader_font_settings_title">Fonts</string>
+    <string name="reader_font_section_directory">Font folder</string>
+    <string name="reader_font_section_custom">Reading font</string>
+    <string name="reader_font_section_defaults">Default fonts</string>
+    <string name="reader_font_read_font">Custom font</string>
+    <string name="reader_font_directory_choose">Choose font folder</string>
+    <string name="reader_font_directory_clear">Clear font folder</string>
+    <string name="reader_font_directory_none">No font folder selected</string>
+    <string name="reader_font_directory_count">%1$d fonts</string>
+    <string name="reader_font_directory_empty">No font files in this folder</string>
+    <string name="reader_font_default_hei">Default sans-serif</string>
+    <string name="reader_font_default_song">Default serif</string>
+    <string name="reader_font_default_mono">Monospace</string>
+    <string name="reader_font_use_builtin">Built-in system font</string>
+    <string name="reader_font_pick_custom">Choose custom font</string>
+    <string name="reader_font_pick_hei">Choose default sans-serif</string>
+    <string name="reader_font_pick_song">Choose default serif</string>
+    <string name="reader_font_pick_mono">Choose monospace font</string>
+    <string name="reader_font_picker_system">System fonts</string>
+    <string name="reader_font_picker_added">Font folder</string>
+    <string name="reader_font_picker_search">Search fonts</string>
+    <string name="reader_font_picker_empty">No fonts found</string>
+    <string name="reader_font_value_none">Not set</string>
+    <string name="reader_font_directory_supported">Supports TTF, OTF, WOFF and WOFF2. Font collections (.ttc) are not supported.</string>
+    <string name="reader_font_picker_no_directory">No font folder set. Choose one in Font settings.</string>
 </resources>

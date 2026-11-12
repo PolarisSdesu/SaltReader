@@ -101,6 +101,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
+import java.io.FileInputStream
 import java.util.Locale
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
@@ -115,12 +116,15 @@ import moe.gbxin.saltreader.data.ComicBook
 import moe.gbxin.saltreader.data.EbookChapter
 import moe.gbxin.saltreader.data.ReaderBackground
 import moe.gbxin.saltreader.data.ReaderFontFamily
+import moe.gbxin.saltreader.data.ReaderFontSetup
+import moe.gbxin.saltreader.data.ReaderFonts
 import moe.gbxin.saltreader.data.ReaderMode
 import moe.gbxin.saltreader.data.ReaderPageInfo
 import moe.gbxin.saltreader.data.ReadingDirection
 import moe.gbxin.saltreader.ui.components.BatteryIndicator
 import moe.gbxin.saltreader.ui.components.CustomColorPickerDialog
 import moe.gbxin.saltreader.ui.components.SaltLoading
+import moe.gbxin.saltreader.ui.settings.ReaderFontSettingsActivity
 import moe.gbxin.saltreader.ui.settings.ReaderSettingsActivity
 import moe.gbxin.saltreader.ui.theme.pageBackgroundColor
 import moe.gbxin.saltreader.ui.theme.readerAccentColor
@@ -408,6 +412,21 @@ internal fun TextReaderContent(
     val view = LocalView.current
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
+
+    // 字体方案：系统字体直接写字体族名，目录字体先复制到缓存再由 shouldInterceptRequest
+    // 按 token 供给 @font-face。解析/复制都是阻塞 IO，必须离开主线程。
+    val fontResources = remember { mutableStateOf<Map<String, ReaderFonts.FontResource>>(emptyMap()) }
+    val fontSetup by produceState(
+        initialValue = ReaderFontSetup.DEFAULT,
+        settings.readerCustomFont,
+        settings.readerFontHei,
+        settings.readerFontSong,
+        settings.readerFontMono,
+    ) {
+        val setup = withContext(Dispatchers.IO) { ReaderFontSetup.build(context, settings) }
+        fontResources.value = setup.resources
+        value = setup
+    }
 
     // 解析完成后回填权威字符数，让书架进度和阅读器进度条使用同一个分母。
     LaunchedEffect(book.id, totalChars) {
@@ -759,6 +778,7 @@ internal fun TextReaderContent(
         settings.readerLineHeight,
         settings.readerPageMarginDp,
         settings.readerFontFamily,
+        fontSetup,
         readerBackground,
         readerTextColor,
         safeTopDp,
@@ -771,7 +791,9 @@ internal fun TextReaderContent(
             put("fontSize", settings.readerFontSizeSp)
             put("lineHeight", settings.readerLineHeight.toDouble())
             put("pageMargin", settings.readerPageMarginDp)
-            put("fontFamily", cssFontFamily(settings.readerFontFamily))
+            put("fontFamily", fontSetup.familyFor(settings.readerFontFamily))
+            put("fontFaces", fontSetup.fontFacesCss)
+            put("monoFamily", fontSetup.familyMono)
             put("background", cssColor(readerBackground))
             put("color", cssColor(readerTextColor))
             put("safeTop", safeTopDp.toDouble())
@@ -934,7 +956,24 @@ internal fun TextReaderContent(
                         ): WebResourceResponse? {
                             val url = request.url
                             if (url.scheme == INLINE_IMAGE_SCHEME && url.host == INLINE_IMAGE_HOST) {
-                                val token = url.pathSegments.lastOrNull()
+                                val segments = url.pathSegments
+                                val token = segments.lastOrNull()
+                                if (segments.size >= 2 && segments[0] == FONT_PATH_SEGMENT) {
+                                    // @font-face 的字体文件：直接读缓存文件，避免整份字节进内存。
+                                    val font = token?.let { fontResources.value[it] }
+                                    val file = font?.file
+                                    if (file != null) {
+                                        return WebResourceResponse(
+                                            font.mime,
+                                            null,
+                                            200,
+                                            "OK",
+                                            mapOf("Cache-Control" to "public, max-age=86400"),
+                                            FileInputStream(file),
+                                        )
+                                    }
+                                    return null
+                                }
                                 val resource = token?.let { inlineImageStore[it] }
                                 if (resource != null) {
                                     return WebResourceResponse(
@@ -1141,6 +1180,10 @@ internal fun TextReaderContent(
                             activePanel = ReaderChromePanel.NONE
                             context.startActivity(Intent(context, ReaderSettingsActivity::class.java))
                         },
+                        onOpenFontSettings = {
+                            activePanel = ReaderChromePanel.NONE
+                            context.startActivity(Intent(context, ReaderFontSettingsActivity::class.java))
+                        },
                         containerColor = chromeBarColor,
                         contentColor = chromeContentColor,
                         accentColor = readerAccent,
@@ -1329,19 +1372,6 @@ private fun estimateCharsPerPage(
 private fun cssColor(color: Color): String =
     String.format(Locale.US, "#%06X", color.toArgb() and 0xFFFFFF)
 
-/**
- * Font stacks for the reflowable reader. Chinese novels read best in a Song face, but the exact
- * family name differs per ROM, so each stack lists the common CJK families before the CSS generic.
- * SYSTEM keeps the WebView default (system sans), which is what most readers expect.
- */
-private fun cssFontFamily(family: ReaderFontFamily): String = when (family) {
-    ReaderFontFamily.SYSTEM -> ""
-    ReaderFontFamily.SONG ->
-        "\"Noto Serif CJK SC\", \"Source Han Serif SC\", \"Noto Serif SC\", \"Songti SC\", \"STSong\", SimSun, serif"
-    ReaderFontFamily.HEI ->
-        "\"Noto Sans CJK SC\", \"Source Han Sans SC\", \"Noto Sans SC\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif"
-}
-
 private fun escapeHtml(text: String): String = text
     .replace("&", "&amp;")
     .replace("<", "&lt;")
@@ -1392,6 +1422,9 @@ private fun buildBookHtml(
 /** WebView 内部用来按需取回内联图片的本地域名；请求由 shouldInterceptRequest 截获。 */
 private const val INLINE_IMAGE_HOST = "salt.local"
 private const val INLINE_IMAGE_SCHEME = "https"
+
+/** 字体资源 URL 的第一段路径（见 [ReaderFonts.FONT_URL_BASE]）。 */
+private const val FONT_PATH_SEGMENT = "font"
 
 /** 一张已内联图片的字节与 MIME，按 token 存放在阅读器会话内。 */
 private class InlineImageResource(val bytes: ByteArray, val mime: String)
@@ -1553,7 +1586,8 @@ body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; line-height: var(
 /* Non-fiction / programming books: code blocks, tables and lists the publisher CSS would have
    styled. Code must wrap inside a page column instead of being clipped horizontally. */
 #book pre, #book code, #book kbd, #book samp, #book tt {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  /* 等宽字体由"字体设置"里的默认等宽字体决定，--reader-mono-family 由 JS apply() 写入。 */
+  font-family: var(--reader-mono-family, ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace);
 }
 #book pre {
   white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
@@ -1766,6 +1800,21 @@ private val HTML_TAIL = """
     if (pending === 0) finish();
     setTimeout(finish, 1500);
   }
+  function whenFontsReady(callback) {
+    var finished = false;
+    function finish() {
+      if (finished) return;
+      finished = true;
+      callback();
+    }
+    // 本地字体同样是网络式加载：@font-face 插入后 status 会短暂变成 loading。
+    if (document.fonts && document.fonts.status === 'loading') {
+      document.fonts.ready.then(finish);
+      setTimeout(finish, 2500);
+    } else {
+      finish();
+    }
+  }
   function paint(color) {
     // A dedicated !important style guarantees the page background follows the paper colour even if
     // a later relayout (or a WebView that ignores inline html/body styles) would repaint the old one.
@@ -1803,6 +1852,25 @@ private val HTML_TAIL = """
       document.documentElement.style.setProperty('--reader-font-family', fontFamily);
     } else {
       document.documentElement.style.removeProperty('--reader-font-family');
+    }
+    // 自定义字体目录里的字体：@font-face 规则随选项一起下发，字体字节由原生拦截器供给。
+    var fontFaces = typeof opts.fontFaces === 'string' ? opts.fontFaces : '';
+    var fontFacesStyle = document.getElementById('salt-reader-fonts');
+    if (fontFaces) {
+      if (!fontFacesStyle) {
+        fontFacesStyle = document.createElement('style');
+        fontFacesStyle.id = 'salt-reader-fonts';
+        document.head.appendChild(fontFacesStyle);
+      }
+      if (fontFacesStyle.textContent !== fontFaces) fontFacesStyle.textContent = fontFaces;
+    } else if (fontFacesStyle) {
+      fontFacesStyle.textContent = '';
+    }
+    var monoFamily = typeof opts.monoFamily === 'string' ? opts.monoFamily : '';
+    if (monoFamily) {
+      document.documentElement.style.setProperty('--reader-mono-family', monoFamily);
+    } else {
+      document.documentElement.style.removeProperty('--reader-mono-family');
     }
     if (mode === 'paged') {
       var pageWidth = applyPageWidth();
@@ -1848,7 +1916,10 @@ private val HTML_TAIL = """
   function apply(opts, r) {
     updateViewportHeight();
     setOptions(opts);
-    whenImagesReady(function () { restore(r); });
+    // 字体加载会改变分页宽度：先等字体就绪再恢复位置，避免跳到半页/旧页。
+    whenFontsReady(function () {
+      whenImagesReady(function () { restore(r); });
+    });
   }
   function turn(delta) {
     if (mode !== 'paged') return;

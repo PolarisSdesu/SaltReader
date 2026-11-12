@@ -56,7 +56,6 @@
     <string name="reader_background_custom">自訂</string>
     <string name="reader_font_size">字級</string>
     <string name="reader_font_family">字型</string>
-    <string name="reader_font_family_system">系統</string>
     <string name="reader_font_family_song">宋體</string>
     <string name="reader_font_family_hei">黑體</string>
     <string name="reader_show_page_number">顯示頁碼</string>
@@ -101,4 +100,33 @@
     <string name="reader_spacing_loose">鬆</string>
     <string name="reader_page_info_hidden">隱藏</string>
     <string name="reader_page_info_pages">頁碼</string>
+
+    <!-- 自定义字体 / 字体目录 -->
+    <string name="reader_font_family_custom">自訂</string>
+    <string name="reader_font_follow_hei">跟隨黑體</string>
+    <string name="reader_font_settings_title">字型設定</string>
+    <string name="reader_font_section_directory">字型資料夾</string>
+    <string name="reader_font_section_custom">閱讀字型</string>
+    <string name="reader_font_section_defaults">預設字型</string>
+    <string name="reader_font_read_font">自訂字型</string>
+    <string name="reader_font_directory_choose">選擇字型資料夾</string>
+    <string name="reader_font_directory_clear">清除字型資料夾</string>
+    <string name="reader_font_directory_none">未選擇字型資料夾</string>
+    <string name="reader_font_directory_count">%1$d 個字型</string>
+    <string name="reader_font_directory_empty">這個資料夾裡沒有字型檔</string>
+    <string name="reader_font_default_hei">預設黑體</string>
+    <string name="reader_font_default_song">預設宋體</string>
+    <string name="reader_font_default_mono">預設等寬</string>
+    <string name="reader_font_use_builtin">內建系統字型</string>
+    <string name="reader_font_pick_custom">選擇自訂字型</string>
+    <string name="reader_font_pick_hei">選擇預設黑體</string>
+    <string name="reader_font_pick_song">選擇預設宋體</string>
+    <string name="reader_font_pick_mono">選擇預設等寬字型</string>
+    <string name="reader_font_picker_system">系統字型</string>
+    <string name="reader_font_picker_added">字型資料夾</string>
+    <string name="reader_font_picker_search">搜尋字型</string>
+    <string name="reader_font_picker_empty">找不到字型</string>
+    <string name="reader_font_value_none">未選擇</string>
+    <string name="reader_font_directory_supported">支援 TTF、OTF、WOFF、WOFF2；不支援字型集合（.ttc）。</string>
+    <string name="reader_font_picker_no_directory">尚未加入字型資料夾，請在字型設定中選擇。</string>
 </resources>

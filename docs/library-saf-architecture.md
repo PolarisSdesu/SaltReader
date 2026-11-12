@@ -489,3 +489,23 @@ A 负责的实现：
   自动换行（避免被分栏裁切）、浅色底；表格定宽 + 单元格换行；列表/引用恢复层级。
 - **OPF 命名空间兼容**：`manifest/item`、`spine/itemref`、`meta`、`reference` 的解析正则都
   容忍 `opf:` 前缀；此前这类 EPUB 会因 spine 为空而报"无可读内容"。
+
+## 第九轮：自定义字体
+
+- **两类字体来源**：系统字体与用户字体目录。系统字体解析 `/system/etc/fonts.xml`（以及
+  `/product`、`/system_ext`、`/vendor` 下的同名配置）里的 `<family name>` / `<alias name>`，
+  得到平台字体族名后直接写进 CSS `font-family`，由 WebView 通过平台字体配置解析；配置读不到时
+  退回一组常见族名。目录字体来自一个持久化 SAF 目录树，只读直接子文件，支持 `ttf`/`otf`/
+  `woff`/`woff2`——`ttc` 字体集合会被 WebView 的字体消毒器（OTS）拒绝，因此不列出、不支持。
+- **@font-face 供给**：目录字体在 IO 线程复制到 `cacheDir/fonts/<sha1(id)>.<ext>`（派生缓存，
+  已计入 `appDataBytes()` 并由 `clearCaches()` 清理），`@font-face` 的 URL 指向
+  `https://salt.local/font/<token>`，由阅读器 WebView 的 `shouldInterceptRequest` 返回字节；
+  字体引用本身只存 Document URI，不复制到别处。
+- **四种字体角色**：`ReaderFontFamily` 为 黑体 / 宋体 / 自定义；字体设置页可另行为
+  「默认黑体 / 默认宋体 / 默认等宽」指定替换字体（为空 = 内置字体栈），
+  「自定义」模式使用的字体单独选择（未选择时跟随黑体）。等宽字体通过 CSS 变量
+  `--reader-mono-family` 作用于 `pre/code/table` 等。
+- **加载与排版**：`@font-face` 由 JS `apply()` 写入 `<style id="salt-reader-fonts">`；分页位置在
+  `document.fonts.ready` 之后才恢复（`whenFontsReady`），避免字体换行后停在半页。
+- **设置入口**：阅读器排版面板「自定义」→ 字体设置页（目录 + 各角色字体）→ 字体选择页
+  （搜索、系统字体、目录字体，行内用真实字形预览）。

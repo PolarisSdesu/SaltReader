@@ -1220,8 +1220,9 @@ class LibraryRepository(private val context: Context) {
     fun pageSource(book: ComicBook): ComicPageSource =
         ComicPageSourceFactory.open(book, context)
 
-    /** 封面 + 文字提取缓存占用；遍历目录，调用方应在 IO 线程调用。 */
-    fun appDataBytes(): Long = dirSize(coversDir) + dirSize(textCacheDir)
+    /** 封面 + 文字提取缓存 + 字体缓存占用；遍历目录，调用方应在 IO 线程调用。 */
+    fun appDataBytes(): Long =
+        dirSize(coversDir) + dirSize(textCacheDir) + dirSize(ReaderFonts.fontCacheDir(context))
 
     /** 只清文字提取缓存（保留封面与 books.json），返回释放字节数；旧版拍平缓存目录一并清掉。 */
     suspend fun clearCaches(): Long = withContext(Dispatchers.IO) {
@@ -1232,6 +1233,8 @@ class LibraryRepository(private val context: Context) {
                 if (dir.deleteRecursively()) freed += size
             }
         }
+        // 用户字体目录的副本也属于派生数据：字体引用仍保留，下次打开书籍会自动重新复制。
+        freed += ReaderFonts.clearCache(context)
         Log.i(TAG, "已清理派生缓存 $freed 字节")
         freed
     }

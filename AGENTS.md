@@ -83,6 +83,9 @@ new build is actually published.
 4. **Derived caches are disposable and share one cleanup rule.** Cache files live under
    `cacheDir/text/` and are named `<bookId>_<modifiedAt>_<sizeBytes>.<suffix>`, so deletion by the
    `<bookId>_` prefix (and "clear cache") keeps working. New caches must follow this convention.
+   The only other cache root is `cacheDir/fonts/` (copies of user fonts picked from the SAF font
+   folder), keyed by the font reference's SHA-1 and wiped by `ReaderFonts.clearCache()`; it is
+   counted in `appDataBytes()` and cleared by "clear cache". Don't add more cache roots.
 5. **ZIP/EPUB parsers are in-repo.** `RemoteZipReader` parses the central directory and does local
    header + data reads; it also provides `EntryView` (byte range) reads used by the decode path.
    EPUB spine parsing/sanitizing is `EpubIndexer`; don't reintroduce epub4j/reflection parsers.

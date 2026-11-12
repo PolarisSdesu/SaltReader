@@ -28,14 +28,14 @@ const val READER_PAGE_INDICATOR_SIZE_MIN_SP = 10
 const val READER_PAGE_INDICATOR_SIZE_MAX_SP = 16
 const val READER_PAGE_INDICATOR_SIZE_DEFAULT_SP = 10
 
-/** Typeface used by the reflowable (text EPUB) reader. Mirrors WeChat-Reading's font picker. */
+/** 文字书阅读器可选的字体类型；"自定义"具体用哪一款字体由 [AppSettings.readerCustomFont] 决定。 */
 enum class ReaderFontFamily {
-    /** WebView default (system sans-serif). */
-    SYSTEM,
-    /** Serif / Song typeface, the traditional choice for Chinese novels. */
-    SONG,
-    /** Hei / sans typeface. */
+    /** 黑体 / 无衬线：阅读器的默认选择。 */
     HEI,
+    /** 宋体 / 衬线：中文小说的传统排版。 */
+    SONG,
+    /** 用户在"字体设置"里选定的字体。 */
+    CUSTOM,
 }
 
 /** Book-card metadata label font size. */
@@ -72,8 +72,20 @@ data class AppSettings(
     val readerPageIndicatorSizeSp: Int = READER_PAGE_INDICATOR_SIZE_DEFAULT_SP,
     /** Lower-left battery icon + percentage while the chrome is hidden, next to the page indicator. */
     val readerBatteryIndicator: Boolean = true,
-    /** Typeface used by the text EPUB reader. */
-    val readerFontFamily: ReaderFontFamily = ReaderFontFamily.SYSTEM,
+    /** 文字书使用的字体类型。 */
+    val readerFontFamily: ReaderFontFamily = ReaderFontFamily.HEI,
+    /** "自定义"模式使用的字体；为空时跟随黑体。 */
+    val readerCustomFont: ReaderFontRef? = null,
+    /** 默认黑体替换字体；为空表示使用内置系统字体栈。 */
+    val readerFontHei: ReaderFontRef? = null,
+    /** 默认宋体替换字体；为空表示使用内置系统字体栈。 */
+    val readerFontSong: ReaderFontRef? = null,
+    /** 等宽字体（代码块）；为空表示使用内置等宽字体栈。 */
+    val readerFontMono: ReaderFontRef? = null,
+    /** 用户字体目录（持久化 SAF tree URI）。 */
+    val readerFontDirectoryUri: String? = null,
+    /** 字体目录的显示名，避免每次打开设置都去查 provider。 */
+    val readerFontDirectoryLabel: String? = null,
     val libraryLayout: LibraryLayout = LibraryLayout.COMFORTABLE,
     val libraryColumns: Int = 0,
     val libraryTitleSizeSp: Int = 20,
@@ -109,7 +121,13 @@ class SettingsRepository(context: Context) {
             .coerceIn(READER_LINE_HEIGHT_MIN, READER_LINE_HEIGHT_MAX),
         readerPageMarginDp = prefs.getInt("reader_page_margin", READER_PAGE_MARGIN_DEFAULT)
             .coerceIn(READER_PAGE_MARGIN_MIN, READER_PAGE_MARGIN_MAX),
-        readerFontFamily = prefs.enum("reader_font_family", ReaderFontFamily.SYSTEM),
+        readerFontFamily = prefs.enum("reader_font_family", ReaderFontFamily.HEI),
+        readerCustomFont = ReaderFontCodec.decode(prefs.getString("reader_font_custom", null)),
+        readerFontHei = ReaderFontCodec.decode(prefs.getString("reader_font_hei", null)),
+        readerFontSong = ReaderFontCodec.decode(prefs.getString("reader_font_song", null)),
+        readerFontMono = ReaderFontCodec.decode(prefs.getString("reader_font_mono", null)),
+        readerFontDirectoryUri = prefs.getString("reader_font_directory_uri", null),
+        readerFontDirectoryLabel = prefs.getString("reader_font_directory_label", null),
         readerProgressLabelSizeSp = prefs.getInt("reader_progress_label_size", READER_PROGRESS_LABEL_SIZE_DEFAULT_SP)
             .coerceIn(READER_PROGRESS_LABEL_SIZE_MIN_SP, READER_PROGRESS_LABEL_SIZE_MAX_SP),
         readerPageIndicatorSizeSp = prefs.getInt("reader_page_indicator_size", READER_PAGE_INDICATOR_SIZE_DEFAULT_SP)
@@ -164,6 +182,24 @@ class SettingsRepository(context: Context) {
         }
         if (next.readerFontFamily != old.readerFontFamily) {
             editor.putString("reader_font_family", next.readerFontFamily.name)
+        }
+        if (next.readerCustomFont != old.readerCustomFont) {
+            editor.putString("reader_font_custom", ReaderFontCodec.encode(next.readerCustomFont))
+        }
+        if (next.readerFontHei != old.readerFontHei) {
+            editor.putString("reader_font_hei", ReaderFontCodec.encode(next.readerFontHei))
+        }
+        if (next.readerFontSong != old.readerFontSong) {
+            editor.putString("reader_font_song", ReaderFontCodec.encode(next.readerFontSong))
+        }
+        if (next.readerFontMono != old.readerFontMono) {
+            editor.putString("reader_font_mono", ReaderFontCodec.encode(next.readerFontMono))
+        }
+        if (next.readerFontDirectoryUri != old.readerFontDirectoryUri) {
+            editor.putString("reader_font_directory_uri", next.readerFontDirectoryUri)
+        }
+        if (next.readerFontDirectoryLabel != old.readerFontDirectoryLabel) {
+            editor.putString("reader_font_directory_label", next.readerFontDirectoryLabel)
         }
         if (next.readerBatteryIndicator != old.readerBatteryIndicator) {
             editor.putBoolean("reader_battery_indicator", next.readerBatteryIndicator)

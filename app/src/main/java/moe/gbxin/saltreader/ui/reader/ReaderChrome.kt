@@ -579,6 +579,7 @@ internal fun ReaderTypographyPanel(
     settings: AppSettings,
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
     onOpenAdvanced: () -> Unit,
+    onOpenFontSettings: () -> Unit,
     containerColor: Color = MaterialTheme.colorScheme.surface,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
     accentColor: Color = MaterialTheme.colorScheme.primary,
@@ -641,15 +642,18 @@ internal fun ReaderTypographyPanel(
                 icon = Icons.Outlined.TextFields,
                 title = stringResource(R.string.reader_font_family),
                 options = listOf(
-                    stringResource(R.string.reader_font_family_system),
-                    stringResource(R.string.reader_font_family_song),
                     stringResource(R.string.reader_font_family_hei),
+                    stringResource(R.string.reader_font_family_song),
+                    stringResource(R.string.reader_font_family_custom),
                 ),
                 selectedIndex = settings.readerFontFamily.ordinal,
                 contentColor = contentColor,
                 accentColor = accentColor,
                 onSelect = { index ->
-                    onSettingsChange { it.copy(readerFontFamily = ReaderFontFamily.entries[index]) }
+                    val family = ReaderFontFamily.entries[index]
+                    onSettingsChange { it.copy(readerFontFamily = family) }
+                    // 选中"自定义"时直接进字体设置页：没有选过字体时这是唯一能配置的入口。
+                    if (family == ReaderFontFamily.CUSTOM) onOpenFontSettings()
                 },
             )
             Spacer(Modifier.height(10.dp))

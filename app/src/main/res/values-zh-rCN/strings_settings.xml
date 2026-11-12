@@ -140,4 +140,5 @@
     <string name="settings_reader_page_indicator_size">页码文字大小</string>
     <string name="settings_reader_battery_indicator">显示电量</string>
     <string name="settings_reader_battery_indicator_supporting">阅读时在左下角显示电池图标与百分比</string>
+    <string name="settings_reader_custom_font">自定义字体</string>
 </resources>

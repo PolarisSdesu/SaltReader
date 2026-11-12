@@ -58,6 +58,7 @@ import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material.icons.automirrored.outlined.FormatIndentIncrease
 import androidx.compose.material.icons.outlined.FormatLineSpacing
 import androidx.compose.material.icons.outlined.FormatSize
+import androidx.compose.material.icons.outlined.TextFields
 import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Numbers
@@ -214,7 +215,7 @@ class LicensesSettingsActivity : BaseSettingsActivity() {
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun SettingsScaffold(
+internal fun SettingsScaffold(
     title: String,
     onBack: () -> Unit,
     snackbarHost: @Composable () -> Unit = {},
@@ -439,7 +440,8 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
 
 @Composable
 private fun ReaderSettingsPage(onBack: () -> Unit) {
-    val app = LocalContext.current.applicationContext as SaltReaderApplication
+    val context = LocalContext.current
+    val app = context.applicationContext as SaltReaderApplication
     val settings by app.settings.state.collectAsStateWithLifecycle()
     var showCustomBackground by remember { mutableStateOf(false) }
     SettingsScaffold(stringResource(R.string.settings_reader_title), onBack) { innerPadding ->
@@ -473,6 +475,11 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                     options = ReaderFontFamily.entries.toList(),
                     labelRes = { it.labelRes() },
                 ) { family -> app.settings.update { it.copy(readerFontFamily = family) } }
+                ReaderFontEntryRow(
+                    icon = Icons.Outlined.TextFields,
+                    title = stringResource(R.string.settings_reader_custom_font),
+                    value = settings.readerCustomFont?.label ?: stringResource(R.string.reader_font_follow_hei),
+                ) { context.startActivity(Intent(context, ReaderFontSettingsActivity::class.java)) }
                 SettingsSliderRow(
                     icon = Icons.Outlined.FormatSize,
                     title = stringResource(R.string.settings_reader_font_size),
@@ -874,6 +881,10 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                                 displayName = root.displayName,
                                 treeUri = root.treeUri,
                                 enabled = !scanning,
+                                removeDescription = stringResource(
+                                    R.string.settings_storage_remove_folder,
+                                    root.displayName,
+                                ),
                                 onRemove = { removeRoot(root) },
                             )
                         }
@@ -1215,11 +1226,11 @@ private fun SettingsDivider() {
 }
 
 @Composable
-private fun navigationBarBottomPadding(): Dp =
+internal fun navigationBarBottomPadding(): Dp =
     WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
 @Composable
-private fun SettingsSectionLabel(text: String) {
+internal fun SettingsSectionLabel(text: String) {
     Text(
         text,
         style = MaterialTheme.typography.labelLarge,
@@ -1229,7 +1240,7 @@ private fun SettingsSectionLabel(text: String) {
 }
 
 @Composable
-private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
+internal fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
         color = MaterialTheme.colorScheme.surfaceContainerLow,
@@ -1240,7 +1251,7 @@ private fun SettingsCard(content: @Composable ColumnScope.() -> Unit) {
 }
 
 @Composable
-private fun SettingsIcon(icon: ImageVector) {
+internal fun SettingsIcon(icon: ImageVector) {
     Box(
         Modifier.size(40.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
         contentAlignment = Alignment.Center,
@@ -1255,7 +1266,7 @@ private fun SettingsIcon(icon: ImageVector) {
 }
 
 @Composable
-private fun SettingsNavigateRow(
+internal fun SettingsNavigateRow(
     icon: ImageVector,
     title: String,
     onClick: () -> Unit,
@@ -1312,7 +1323,7 @@ private fun SettingsSwitchRow(
 }
 
 @Composable
-private fun SettingsActionRow(
+internal fun SettingsActionRow(
     icon: ImageVector,
     title: String,
     enabled: Boolean,
@@ -1345,10 +1356,11 @@ private fun SettingsActionRow(
 }
 
 @Composable
-private fun SettingsFolderRow(
+internal fun SettingsFolderRow(
     displayName: String,
     treeUri: String,
     enabled: Boolean,
+    removeDescription: String,
     onRemove: () -> Unit,
 ) {
     Row(
@@ -1378,10 +1390,7 @@ private fun SettingsFolderRow(
             )
         }
         IconButton(enabled = enabled, onClick = onRemove, modifier = Modifier.size(48.dp)) {
-            Icon(
-                Icons.Outlined.Delete,
-                contentDescription = stringResource(R.string.settings_storage_remove_folder, displayName),
-            )
+            Icon(Icons.Outlined.Delete, contentDescription = removeDescription)
         }
     }
 }
@@ -1566,9 +1575,9 @@ private fun ThemeMode.labelRes(): Int = when (this) {
 }
 
 private fun ReaderFontFamily.labelRes(): Int = when (this) {
-    ReaderFontFamily.SYSTEM -> R.string.reader_font_family_system
-    ReaderFontFamily.SONG -> R.string.reader_font_family_song
     ReaderFontFamily.HEI -> R.string.reader_font_family_hei
+    ReaderFontFamily.SONG -> R.string.reader_font_family_song
+    ReaderFontFamily.CUSTOM -> R.string.reader_font_family_custom
 }
 
 private fun ReaderPageInfo.labelRes(): Int = when (this) {

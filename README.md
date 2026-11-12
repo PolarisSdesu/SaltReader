@@ -23,7 +23,7 @@ Salt Reader lets you:
 - Add library folders through SAF; originals are indexed in place and never copied.
 - Fast by design: archives are indexed from their central directory without being unpacked, pages are decoded only when visible, and the whole viewport scales on the GPU for smooth pinch zoom.
 - Read CBZ/ZIP archives directly from the granted folder, including large files.
-- Read image EPUBs straight from their spine, and reflow text EPUB/MOBI/AZW3 in a native reader with a WeChat-Reading-style toolbar (contents / progress / theme / type panels), a chapter contents sheet, adjustable font size, line spacing, page margins, a serif/sans font picker, switchable page-number or progress indicator, finger-following page swipes and one shared reader settings screen for comics and novels.
+- Read image EPUBs straight from their spine, and reflow text EPUB/MOBI/AZW3 in a native reader with a WeChat-Reading-style toolbar (contents / progress / theme / type panels), a chapter contents sheet, adjustable font size, line spacing, page margins, a serif/sans/custom font picker (system fonts plus your own font folder), switchable page-number or progress indicator, finger-following page swipes and one shared reader settings screen for comics and novels.
 - See real covers for text EPUBs (read from the book's OPF) and a clean solid placeholder when a book genuinely has none.
 - Open PDFs through the system `PdfRenderer` and image folders in natural order.
 - Page through comics horizontally or scroll continuously, with RTL, tap zones, pinch zoom and a page slider.
