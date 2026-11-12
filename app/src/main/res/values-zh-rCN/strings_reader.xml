@@ -128,5 +128,5 @@
     <string name="reader_font_picker_empty">没有找到字体</string>
     <string name="reader_font_value_none">未选择</string>
     <string name="reader_font_picker_no_directory">还没有添加字体目录，请在字体设置里选择。</string>
-    <string name="reader_font_ttc_notice">由于 WebView 的限制，自定义字体暂不支持 .ttc 字体集合。请使用 .ttf、.otf、.woff 或 .woff2 字体文件；如果手上只有 TTC，可以先用字体工具导出为单个字体文件。</string>
+    <string name="reader_font_ttc_notice">由于 WebView 限制，自定义字体暂不支持 .ttc 字体文件。</string>
 </resources>

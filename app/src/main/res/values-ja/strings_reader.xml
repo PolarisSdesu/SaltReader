@@ -128,5 +128,5 @@
     <string name="reader_font_picker_empty">フォントが見つかりません</string>
     <string name="reader_font_value_none">未設定</string>
     <string name="reader_font_picker_no_directory">フォントフォルダーが未設定です。フォント設定で選択してください。</string>
-    <string name="reader_font_ttc_notice">WebView の制限により、カスタムフォントは .ttc フォントコレクションに対応していません。.ttf / .otf / .woff / .woff2 をご利用ください。TTC しかない場合は、フォントツールで単一フォントとして書き出してください。</string>
+    <string name="reader_font_ttc_notice">WebView の制限により、カスタムフォントは .ttc フォントファイルに未対応です。</string>
 </resources>
