@@ -1570,6 +1570,7 @@ internal fun NativeTextReaderContent(
                     fontFamily = FontFamily.Monospace,
                 )
             }
+        }
         // 原生顶栏：复用与 WebView 阅读器一致的淡入 + 轻微垂直滑入动画。
         AnimatedVisibility(
             visible = chromeVisible,
@@ -1796,7 +1797,6 @@ internal fun NativeTextReaderContent(
         }
 
 
-        }
 
         // Debug：一键切换回 WebView 阅读器，方便对比两边锚点。
         if (settings.debugMode) {
@@ -1959,7 +1959,11 @@ private fun buildNativePageSet(
     // 只记录图片所在章节与序号；解码时按需从章节 HTML 取 data URI，避免全书图片字节常驻。
     val imageRefs = ArrayList<ImageRef>()
     val imageAspects = ArrayList<Float>()
-    val dataUri = NATIVE_DATA_URI
+    // 必须连同 src="..." 引号整体替换，否则会生成畸形属性：src="data-salt-img="0""。
+    val dataUri = Regex(
+        "src=\"data:image/([A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=\\r\\n]+)\"",
+        RegexOption.IGNORE_CASE,
+    )
     var perChapterImageBase = 0
     val htmlChapters = ArrayList<String>(chapters.size)
     for ((chapterPosition, chapter) in chapters.withIndex()) {
