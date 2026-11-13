@@ -17,4 +17,5 @@
     <string name="about_debug_enable">打开调试模式</string>
     <string name="about_debug_enabled">调试模式已开启，可在「外观」设置中查看。</string>
     <string name="about_close">关闭</string>
+    <string name="about_debug_disable">关闭调试模式</string>
 </resources>

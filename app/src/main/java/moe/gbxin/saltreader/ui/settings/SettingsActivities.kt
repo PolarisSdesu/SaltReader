@@ -443,8 +443,8 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
                     checked = settings.amoledBlack,
                 ) { app.settings.update { it.copy(amoledBlack = it.amoledBlack.not()) } }
             }
-            // Debug 入口默认隐藏，通过在「关于」页连续点击图标解锁。
-            if (settings.debugMode) {
+            // Debug 入口默认隐藏；在「关于」页连点图标解锁后持久显示。
+            if (settings.debugUnlocked) {
                 SettingsSectionLabel(stringResource(R.string.settings_appearance_section_debug))
                 SettingsCard {
                     SettingsSwitchRow(
@@ -1100,6 +1100,7 @@ private const val REPO_URL = "https://github.com/PolarisSdesu/SaltReader"
 private fun AboutSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current
     val app = context.applicationContext as SaltReaderApplication
+    val settings by app.settings.state.collectAsStateWithLifecycle()
     var showDebug by remember { mutableStateOf(false) }
     var logoPresses by remember { mutableIntStateOf(0) }
 
@@ -1157,6 +1158,8 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                         logoPresses += 1
                         if (logoPresses >= 5) {
                             logoPresses = 0
+                            // 解锁后 Debug 菜单持久显示，即使随后关闭调试模式。
+                            app.settings.update { it.copy(debugUnlocked = true) }
                             showDebug = true
                         }
                     },
@@ -1239,15 +1242,26 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
             confirmButton = {
                 Row {
                     TextButton(onClick = {
-                        app.settings.update { it.copy(debugMode = true) }
+                        val enable = !settings.debugMode
+                        app.settings.update { it.copy(debugMode = enable) }
                         showDebug = false
-                        Toast.makeText(
-                            context,
-                            R.string.about_debug_enabled,
-                            Toast.LENGTH_SHORT,
-                        ).show()
+                        if (enable) {
+                            Toast.makeText(
+                                context,
+                                R.string.about_debug_enabled,
+                                Toast.LENGTH_SHORT,
+                            ).show()
+                        }
                     }) {
-                        Text(stringResource(R.string.about_debug_enable))
+                        Text(
+                            stringResource(
+                                if (settings.debugMode) {
+                                    R.string.about_debug_disable
+                                } else {
+                                    R.string.about_debug_enable
+                                },
+                            ),
+                        )
                     }
                     TextButton(onClick = {
                         copy(debugInfo)

@@ -17,4 +17,5 @@
     <string name="about_debug_enable">Enable debug mode</string>
     <string name="about_debug_enabled">Debug mode enabled. Find it in Display settings.</string>
     <string name="about_close">Close</string>
+    <string name="about_debug_disable">Disable debug mode</string>
 </resources>

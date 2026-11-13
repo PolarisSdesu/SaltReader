@@ -57,6 +57,8 @@ data class AppSettings(
     val keepScreenOn: Boolean = true,
     /** 调试模式：阅读器叠加布局锚点、参数面板与 NATIVE/WEBVIEW 快捷切换。 */
     val debugMode: Boolean = false,
+    /** 一旦通过关于页彩蛋解锁，Debug 菜单就持久显示（关闭调试模式也不会消失）。 */
+    val debugUnlocked: Boolean = false,
     /** 文字书使用 Rust 原生排版渲染（实验性，绕过 WebView）。 */
     val nativeReader: Boolean = false,
     /** Bottom-right corner label while chrome is hidden: hidden / progress / page number. */
@@ -122,6 +124,7 @@ class SettingsRepository(context: Context) {
         customBackgroundColor = prefs.getLong("custom_background_color", 0xFFFDFCFF),
         keepScreenOn = prefs.getBoolean("keep_screen_on", true),
         debugMode = prefs.getBoolean("debug_mode", false),
+        debugUnlocked = prefs.getBoolean("debug_unlocked", false),
         nativeReader = prefs.getBoolean("native_reader_enabled", false),
         readerPageInfo = prefs.enum("reader_page_info", if (prefs.getBoolean("show_page_number", false)) ReaderPageInfo.PROGRESS else ReaderPageInfo.PAGES),
         volumeKeyPaging = prefs.getBoolean("volume_key_paging", true),
@@ -183,6 +186,9 @@ class SettingsRepository(context: Context) {
         }
         if (next.keepScreenOn != old.keepScreenOn) editor.putBoolean("keep_screen_on", next.keepScreenOn)
         if (next.debugMode != old.debugMode) editor.putBoolean("debug_mode", next.debugMode)
+        if (next.debugUnlocked != old.debugUnlocked) {
+            editor.putBoolean("debug_unlocked", next.debugUnlocked)
+        }
         if (next.nativeReader != old.nativeReader) editor.putBoolean("native_reader_enabled", next.nativeReader)
         if (next.readerPageInfo != old.readerPageInfo) editor.putString("reader_page_info", next.readerPageInfo.name)
         if (next.volumeKeyPaging != old.volumeKeyPaging) editor.putBoolean("volume_key_paging", next.volumeKeyPaging)

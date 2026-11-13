@@ -17,4 +17,5 @@
     <string name="about_debug_enable">開啟偵錯模式</string>
     <string name="about_debug_enabled">偵錯模式已開啟，可在「外觀」設定中查看。</string>
     <string name="about_close">關閉</string>
+    <string name="about_debug_disable">關閉偵錯模式</string>
 </resources>
