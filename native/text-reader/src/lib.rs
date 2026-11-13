@@ -1139,6 +1139,18 @@ fn char_width(ch: char, font_size: f32, scale: f32, advances: &WidthTable) -> f3
     }
 }
 
+/// 等宽字体的近似字宽：代码块的排版宽度与绘制用的 monospace 字体一致，
+/// 否则用正文比例字体估算会偏窄，长代码行会被裁切而不是折行。
+fn mono_char_width(ch: char, size_px: f32) -> f32 {
+    if ('\u{0006}'..='\u{0013}').contains(&ch) {
+        return 0.0;
+    }
+    match UnicodeWidthChar::width(ch).unwrap_or(1) {
+        2 => size_px,
+        _ => size_px * 0.6,
+    }
+}
+
 /// 直接写入输出缓冲，避免每行一次 String 分配。
 fn write_style(out: &mut String, style: &Style, line_height_factor: f32, gap_em: f32) {
     let size = (style.size * 10.0).round().clamp(6.0, 40.0) as u32;
@@ -1174,6 +1186,7 @@ fn wrap_simple(
     size_px: f32,
     scale: f32,
     advances: &WidthTable,
+    mono: bool,
 ) -> Vec<String> {
     if text.trim().is_empty() {
         return vec![String::new()];
@@ -1184,7 +1197,13 @@ fn wrap_simple(
     for (_, grapheme) in text.grapheme_indices(true) {
         let w: f32 = grapheme
             .chars()
-            .map(|ch| char_width(ch, size_px, scale, advances))
+            .map(|ch| {
+                if mono {
+                    mono_char_width(ch, size_px)
+                } else {
+                    char_width(ch, size_px, scale, advances)
+                }
+            })
             .sum();
         if !line.is_empty() && line_width + w > width {
             lines.push(std::mem::take(&mut line));
@@ -1311,7 +1330,7 @@ fn layout_blocks(
                 let mut cell_lines: Vec<Vec<String>> = Vec::with_capacity(cols);
                 for column in 0..cols {
                     let text = row.get(column).cloned().unwrap_or_default();
-                    cell_lines.push(wrap_simple(&text, cell_width, size_px, style.size, advances));
+                    cell_lines.push(wrap_simple(&text, cell_width, size_px, style.size, advances, style.mono));
                 }
                 let max_lines = cell_lines
                     .iter()
@@ -1490,7 +1509,13 @@ fn layout_blocks(
             }
             let width = grapheme
                 .chars()
-                .map(|ch| char_width(ch, size_px, style.size, advances))
+                .map(|ch| {
+                    if style.mono {
+                        mono_char_width(ch, size_px)
+                    } else {
+                        char_width(ch, size_px, style.size, advances)
+                    }
+                })
                 .sum::<f32>();
             let indent_px = if first_line { start_indent * size_px } else { 0.0 };
             if has_content && line_width + width > content_width - indent_px {
