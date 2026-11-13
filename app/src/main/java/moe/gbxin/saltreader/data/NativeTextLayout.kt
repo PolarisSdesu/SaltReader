@@ -25,6 +25,8 @@ object NativeTextLayout {
         codePoints: IntArray,
         advances: FloatArray,
         imageAspects: FloatArray,
+        /** 每张图的原始宽度（物理 px，用于 max-width 语义；0 表示不限）。 */
+        imageWidths: FloatArray,
         imageFullWidth: Boolean,
         fullPageWidth: Float,
         imageMaxHeightRatio: Float,

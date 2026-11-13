@@ -1236,6 +1236,7 @@ fn layout_blocks(
     line_height_base: f32,
     advances: &HashMap<u32, f32>,
     image_aspects: &[f32],
+    image_widths: &[f32],
     image_base_width: f32,
     image_max_height_ratio: f32,
 ) -> Vec<Vec<RenderLine>> {
@@ -1267,7 +1268,17 @@ fn layout_blocks(
                 .copied()
                 .unwrap_or(1.0)
                 .max(0.05);
-            let image_height = image_box_height(image_base_width, height, aspect, image_max_height_ratio);
+            // WebView: max-width 不超过图片原始宽度，也不超过版面宽度。
+            let intrinsic = image_widths
+                .get(image_id as usize)
+                .copied()
+                .unwrap_or(0.0);
+            let base_width = if intrinsic > 0.0 {
+                image_base_width.min(intrinsic)
+            } else {
+                image_base_width
+            };
+            let image_height = image_box_height(base_width, height, aspect, image_max_height_ratio);
             let gap = pending_after.max(block.style.space_before * font_size);
             pending_after = 0.0;
             let mut gap_em = 0.0f32;
@@ -1726,6 +1737,7 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
     code_points: JIntArray,
     advances: JFloatArray,
     image_aspects: JFloatArray,
+    image_widths: JFloatArray,
     image_full_width: jboolean,
     full_page_width: f32,
     image_max_height_ratio: f32,
@@ -1756,6 +1768,17 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
             let mut values = vec![0f32; length as usize];
             if env.get_float_array_region(&image_aspects, 0, &mut values).is_ok() {
                 aspect_list = values;
+            }
+        }
+    }
+
+    // 图片原始宽度（物理 px，0 = 不限）：对应 WebView 的 max-width 语义。
+    let mut width_list: Vec<f32> = Vec::new();
+    if let Ok(length) = env.get_array_length(&image_widths) {
+        if length > 0 {
+            let mut values = vec![0f32; length as usize];
+            if env.get_float_array_region(&image_widths, 0, &mut values).is_ok() {
+                width_list = values;
             }
         }
     }
@@ -1816,6 +1839,7 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
         line_height_base,
         &advance_map,
         &aspect_list,
+        &width_list,
         image_base_width,
         image_max_height_ratio,
     );
@@ -1899,7 +1923,7 @@ mod gap_tests {
         let mut after = 0.0;
         let blocks = parse_html_blocks(html, &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, &[], 900.0, 1634.0, 38.0, 1.8, &advances, &[], 1080.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 900.0, 1634.0, 38.0, 1.8, &advances, &[], &[], 1080.0, 1.0);
         for (pi, page) in pages.iter().enumerate() {
             let first = page.first().map(|l| l.text.clone()).unwrap_or_default();
             let last = page.last().map(|l| l.text.clone()).unwrap_or_default();
@@ -1934,7 +1958,7 @@ mod gap_tests {
         assert!(text.contains("  indented"), "text={text:?}");
         assert!(text.contains("\n\n"), "text={text:?}");
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, &[], 600.0, 1634.0, 38.0, 1.8, &advances, &[], 600.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 600.0, 1634.0, 38.0, 1.8, &advances, &[], &[], 600.0, 1.0);
         let lines: Vec<String> = pages.iter().flatten().map(|line| line.text.clone()).collect();
         assert!(lines.iter().any(|line| line.is_empty() || line.trim().is_empty()), "lines={lines:?}");
         assert!(lines.iter().any(|line| line.starts_with("  indented")), "lines={lines:?}");
@@ -1970,7 +1994,7 @@ mod gap_tests {
         let blocks = parse_html_blocks(&html, &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
         let height = 220.0;
-        let pages = layout_blocks(&blocks, &[], 300.0, height, 38.0, 1.8, &advances, &[], 300.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 300.0, height, 38.0, 1.8, &advances, &[], &[], 300.0, 1.0);
         assert!(pages.len() > 1, "pages={}", pages.len());
         let style = blocks[0].style;
         let line_height = 38.0 * style.size * style.line_height.unwrap_or(1.8);
@@ -1989,7 +2013,7 @@ mod gap_tests {
         let mut after = 0.0;
         let blocks = parse_html_blocks("<p>Hello。World</p>", &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, &[], 150.0, 1634.0, 38.0, 1.8, &advances, &[], 150.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 150.0, 1634.0, 38.0, 1.8, &advances, &[], &[], 150.0, 1.0);
         let lines: Vec<String> = pages.iter().flatten().map(|line| line.text.clone()).collect();
         assert!(!lines.iter().any(|line| line.trim_start().starts_with('。')), "lines={lines:?}");
         let joined: String = lines.iter().map(|line| line.trim_start_matches('　').trim()).collect::<Vec<_>>().join("");
@@ -2049,7 +2073,7 @@ mod gap_tests {
         let mut after = 0.0;
         let blocks = parse_html_blocks(&html, &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, &[], 300.0, 220.0, 38.0, 1.8, &advances, &[], 300.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 300.0, 220.0, 38.0, 1.8, &advances, &[], &[], 300.0, 1.0);
         assert!(pages.len() > 2, "pages={}", pages.len());
         for page in pages.iter().skip(1) {
             if let Some(first) = page.first() {
@@ -2085,7 +2109,7 @@ mod gap_tests {
         let mut after = 0.0;
         let blocks = parse_html_blocks(&html, &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, &[], 900.0, 800.0, 38.0, 1.8, &advances, &[], 1080.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 900.0, 800.0, 38.0, 1.8, &advances, &[], &[], 1080.0, 1.0);
         let laid: String = pages
             .iter()
             .flat_map(|page| page.iter())

@@ -174,6 +174,8 @@ private data class NativePageSet(
     val pages: List<List<NativeLine>>,
     val imageRefs: List<ImageRef> = emptyList(),
     val imageAspects: List<Float> = emptyList(),
+    /** 图片原始宽度（物理 px）；0 表示不限（按版面宽度）。 */
+    val imageWidths: List<Float> = emptyList(),
     val contentLeftPx: Float = 0f,
     val contentWidthPx: Float = 1f,
     val topPadPx: Float = 0f,
@@ -344,6 +346,7 @@ internal fun NativeTextReaderContent(
                 // 纵向模式没有分页：全宽图片不被页高封顶（允许 2×版心），保证宽度真正 100%。
                 imageMaxHeightRatio = if (settings.readerMode == ReaderMode.VERTICAL) 10f else 0.92f,
                 imagePlaceholder = context.getString(R.string.reader_image_placeholder),
+                imageDensity = density.density,
             )
             // 纵向：直接使用 Rust 分页结果（保证内容完整），页面按真实内容高度连续堆叠。
             val built = built0
@@ -1227,8 +1230,13 @@ internal fun NativeTextReaderContent(
                                     val imageWidth: Float
                                     val imageHeight: Float
                                     if (verticalFull) {
-                                        // 纵向全宽：画布宽度即图片宽度，边到边，高度按宽高比。
-                                        imageWidth = size.width
+                                        // 纵向全宽：边到边，但不超过图片原始宽度（WebView max-width）。
+                                        val intrinsicWidth = pageSet?.imageWidths?.getOrNull(line.imageId) ?: 0f
+                                        imageWidth = if (intrinsicWidth > 0f) {
+                                            minOf(size.width, intrinsicWidth)
+                                        } else {
+                                            size.width
+                                        }
                                         imageHeight = imageWidth / aspect
                                     } else {
                                         val contentHeight = geometryHeight.coerceAtLeast(1f)
@@ -1237,7 +1245,14 @@ internal fun NativeTextReaderContent(
                                         } else {
                                             contentWidth
                                         }
-                                        val fullHeight = imageBaseWidth / aspect
+                                        // WebView: max-width 语义——不超过图片原始宽度，也不超过版面宽度。
+                                        val intrinsicWidth = pageSet?.imageWidths?.getOrNull(line.imageId) ?: 0f
+                                        val cappedBase = if (intrinsicWidth > 0f) {
+                                            minOf(imageBaseWidth, intrinsicWidth)
+                                        } else {
+                                            imageBaseWidth
+                                        }
+                                        val fullHeight = cappedBase / aspect
                                         val cap = contentHeight * if (settings.readerMode == ReaderMode.VERTICAL) 1f else 0.92f
                                         imageHeight = minOf(fullHeight, cap)
                                         imageWidth = imageHeight * aspect
@@ -1963,6 +1978,7 @@ private fun buildNativePageSet(
     fullPageWidth: Float = 1f,
     imageMaxHeightRatio: Float = 0.92f,
     imagePlaceholder: String = "［图片］",
+    imageDensity: Float = 1f,
 ): NativePageSet? {
     if (!NativeTextLayout.isAvailable) return null
     val token = nativeParserToken.incrementAndGet()
@@ -2014,6 +2030,7 @@ private fun buildNativePageSet(
     // 只记录图片所在章节与序号；解码时按需从章节 HTML 取 data URI，避免全书图片字节常驻。
     val imageRefs = ArrayList<ImageRef>()
     val imageAspects = ArrayList<Float>()
+    val imageWidths = ArrayList<Float>()
     // 必须连同 src="..." 引号整体替换，否则会生成畸形属性：src="data-salt-img="0""。
     val dataUri = Regex(
         "src=\"data:image/([A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=\\r\\n]+)\"",
@@ -2042,7 +2059,10 @@ private fun buildNativePageSet(
                     } else {
                         val id = imageRefs.size
                         imageRefs.add(ImageRef(chapterPosition, id - perChapterImageBase))
-                        imageAspects.add(imageAspect(bytes))
+                        val info = imageInfo(bytes)
+                        imageAspects.add(info.first)
+                        // WebView 的 max-width: 图片原始 CSS 宽度 × density；0 表示不限。
+                        imageWidths.add(info.second * imageDensity)
                         tag.replaceRange(dataMatch.range, "data-salt-img=\"$id\"")
                     }
                 }
@@ -2085,6 +2105,7 @@ android.util.Log.i(
             codePoints.toIntArray(),
             advances,
             imageAspects.toFloatArray(),
+            imageWidths.toFloatArray(),
             imageFullWidth,
             fullPageWidth,
             imageMaxHeightRatio,
@@ -2101,7 +2122,7 @@ android.util.Log.i(
                 "${(System.nanoTime() - startedAt) / 1_000_000}ms (token=$token)",
         )
         NativePageSet(
-            pages, imageRefs.toList(), imageAspects.toList(),
+            pages, imageRefs.toList(), imageAspects.toList(), imageWidths.toList(),
             contentLeftPx, contentWidthPx, topPadPx, bottomPadPx, contentHeightPx,
         )
     }.getOrElse {
@@ -2175,6 +2196,18 @@ private fun drawJustifiedLine(
 }
 
 /** 解析 Rust 返回的样式前缀；兼容无前缀的纯文本行。 */
+private fun imageInfo(bytes: ByteArray): Pair<Float, Float> = runCatching {
+    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+    val width = options.outWidth
+    val height = options.outHeight
+    if (width > 0 && height > 0) {
+        (width.toFloat() / height.toFloat()) to width.toFloat()
+    } else {
+        1.5f to 0f
+    }
+}.getOrElse { 1.5f to 0f }
+
 private fun imageAspect(bytes: ByteArray): Float = runCatching {
     val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
