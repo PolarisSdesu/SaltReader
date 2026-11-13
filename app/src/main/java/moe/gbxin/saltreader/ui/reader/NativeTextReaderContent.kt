@@ -968,13 +968,22 @@ internal fun NativeTextReaderContent(
                         } else {
                             0f
                         }
+                        // 速度继承：把松手速度换算成“页/秒”，越快吸附越短（300ms -> 160ms）。
+                        val towardTarget = (target - dragOffsetPx) * velocity >= 0f
+                        val pagesPerSecond = if (towardTarget) {
+                            abs(velocity) / width.coerceAtLeast(1f)
+                        } else {
+                            0f
+                        }
+                        val speedFactor = (pagesPerSecond / 2f).coerceIn(0f, 1f)
+                        val settleDurationMs = (300f - 140f * speedFactor).roundToInt().coerceAtLeast(160)
                         swipeScope.launch {
-                            // 与 WebView 完全一致的翻页动画：300ms 缓出贝塞尔，松手更顺滑。
+                            // 与 WebView 完全一致的缓出贝塞尔 + 速度继承时长。
                             swipeAnimation.snapTo(dragOffsetPx)
                             swipeAnimation.animateTo(
                                 targetValue = target,
                                 animationSpec = tween(
-                                    durationMillis = 300,
+                                    durationMillis = settleDurationMs,
                                     easing = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f),
                                 ),
                             ) {

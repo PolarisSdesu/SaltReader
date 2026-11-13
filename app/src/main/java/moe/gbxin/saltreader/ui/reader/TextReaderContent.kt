@@ -2552,7 +2552,7 @@ private val HTML_TAIL = """
     if (swipeRaf) cancelAnimationFrame(swipeRaf);
     swipeRaf = 0;
   }
-  function animateSwipeTo(target) {
+  function animateSwipeTo(target, duration) {
     cancelSwipeAnimation();
     var start = scroll.scrollLeft;
     var delta = target - start;
@@ -2561,7 +2561,7 @@ private val HTML_TAIL = """
       report(true);
       return;
     }
-    var duration = 300;
+    var duration = Math.max(160, duration || 300);
     var startedAt = performance.now();
     function step(now) {
       var t = Math.min(1, (now - startedAt) / duration);
@@ -2591,7 +2591,12 @@ private val HTML_TAIL = """
       page = Math.min(pages - 1, Math.max(0, page + (dx < 0 ? 1 : -1)));
     }
     var target = Math.min(max, Math.max(0, page * w));
-    animateSwipeTo(target);
+    // 速度继承：松手速度换算成页/秒，越快吸附越短（与 native 同一公式）。
+    var towardTarget = (target - scroll.scrollLeft) * swipeDrag.velocity >= 0;
+    var pagesPerSecond = towardTarget ? Math.abs(swipeDrag.velocity) / Math.max(1, w) : 0;
+    var speedFactor = Math.min(1, pagesPerSecond / 2);
+    var settleDuration = Math.max(160, Math.round(300 - 140 * speedFactor));
+    animateSwipeTo(target, settleDuration);
   }
   // 分页手势：跟手拖动 + 松手按与 native 相同的阈值/时长/曲线吸附。
   scroll.addEventListener('touchstart', function (e) {
