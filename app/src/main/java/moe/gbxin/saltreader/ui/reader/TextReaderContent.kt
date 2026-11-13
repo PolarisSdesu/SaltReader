@@ -109,6 +109,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
 import java.io.FileInputStream
@@ -448,8 +449,11 @@ internal fun TextReaderContent(
     val inlineImageRequestCount = remember { java.util.concurrent.atomic.AtomicInteger(0) }
     val inlineImageBytes = remember { java.util.concurrent.atomic.AtomicLong(0L) }
     val inlineCacheBytes = remember { java.util.concurrent.atomic.AtomicLong(0L) }
-    val events = remember { MutableSharedFlow<TextReaderEvent>(extraBufferCapacity = 32) }
-    val bridge = remember { TextJavascriptBridge { event -> events.tryEmit(event) } }
+    // UNLIMITED Channel：Trimmed/NeedMore 等窗口记账事件不能被丢弃，否则进度 base 会永久偏移。
+    val events = remember { kotlinx.coroutines.channels.Channel<TextReaderEvent>(
+        kotlinx.coroutines.channels.Channel.UNLIMITED,
+    ) }
+    val bridge = remember { TextJavascriptBridge { event -> events.trySend(event) } }
     val holder = remember { WebViewHolder() }
     var pageFinishedToken by remember { mutableIntStateOf(0) }
     // WebView 渲染进程被系统回收后，这个 WebView 实例就不可用了，必须重建。
@@ -564,6 +568,19 @@ internal fun TextReaderContent(
         val oldSpan = (chapterPrefix.getOrElse(oldEnd) { oldBase } - oldBase).coerceAtLeast(1L)
         val offset = oldBase + (localRatio.value.toDouble() * oldSpan).toLong()
         localRatio.value = ratioWithinWindow(offset, newStart, newEnd)
+    }
+
+    /**
+     * WebView 渲染进程被回收/加载超时后重建时，DOM 只剩初始渲染窗口，
+     * 必须把窗口记账回退到 renderStart..renderEnd，否则进度分母与 restore 比例都会错位。
+     */
+    fun resetWindowToRenderedHtml() {
+        windowStart = renderStart
+        windowEnd = renderEnd
+        docToken += 1
+        val offset = (liveRatio.value.toDouble() * totalChars.toDouble()).toLong()
+            .coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L))
+        localRatio.value = ratioWithinWindow(offset, renderStart, renderEnd)
     }
 
     fun windowForChapter(index: Int, batch: Int = CHAPTER_BATCH): Pair<Int, Int> {
@@ -750,7 +767,7 @@ internal fun TextReaderContent(
 
     // WebView -> Compose events (main thread).
     LaunchedEffect(events) {
-        events.collect { event ->
+        events.receiveAsFlow().collect { event ->
             if (event is TextReaderEvent.State && event.token != docToken) {
                 return@collect
             }
@@ -1123,6 +1140,8 @@ internal fun TextReaderContent(
                             if (holder.webView === view) holder.webView = null
                             firstLayoutRendered = false
                             loadStartedAt = 0L
+                            resetWindowToRenderedHtml()
+                            lastPageWindowStart = -1
                             // 交给 Compose 在 key 变化时销毁旧 View，避免对已崩溃的 WebView 再操作。
                             webViewGeneration += 1
                             return true
@@ -1225,6 +1244,8 @@ internal fun TextReaderContent(
                     renderFailed = true
                 } else {
                     Log.w(TAG_TEXT_READER, "文本阅读器加载超时，重建 WebView（第 $renderFailures 次）")
+                    resetWindowToRenderedHtml()
+                    lastPageWindowStart = -1
                     webViewGeneration += 1
                 }
             }
@@ -2314,6 +2335,10 @@ private val HTML_TAIL = """
     if (Math.abs(target - scroll.scrollLeft) > 0.5) scroll.scrollLeft = target;
   }
   function restore(r) {
+    // 图片解码会改变 scrollHeight：跳转/恢复位置前先等图片就绪，避免落点偏移。
+    whenImagesReady(function () { restoreNow(r); });
+  }
+  function restoreNow(r) {
     restoring = true;
     r = clamp(r);
     refreshMetrics();

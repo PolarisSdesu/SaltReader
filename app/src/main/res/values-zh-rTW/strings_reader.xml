@@ -147,4 +147,8 @@
     <string name="reader_font_remove">移除字型</string>
     <string name="reader_render_failed_title">閱讀器渲染失敗</string>
     <string name="reader_render_failed_hint">WebView 暫時無法顯示內容，請重試。</string>
+    <string name="reader_selection_selected">已選取段落</string>
+    <string name="reader_action_copy">複製</string>
+    <string name="reader_action_cancel">取消</string>
+    <string name="reader_empty_content">無法顯示此書內容。</string>
 </resources>

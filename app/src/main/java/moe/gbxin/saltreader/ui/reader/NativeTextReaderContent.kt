@@ -409,7 +409,7 @@ internal fun NativeTextReaderContent(
     LaunchedEffect(pageSet, safePageIndex, settings.readerMode, settings.readerImageFullWidth) {
         val set = pageSet ?: return@LaunchedEffect
         if (set.pages.isEmpty()) return@LaunchedEffect
-        val window = ((safePageIndex - 5)..(safePageIndex + 5)).filter { it in set.pages.indices }
+        val window = ((safePageIndex - 3)..(safePageIndex + 3)).filter { it in set.pages.indices }
         val idsByPage = window.associateWith { pageImageIds(set, it) }
         val ordered = listOf(safePageIndex) + window.filter { it != safePageIndex }
         val targetWidth = (set.contentWidthPx * 1.2f).roundToInt().coerceAtLeast(240)
@@ -421,6 +421,17 @@ internal fun NativeTextReaderContent(
                     set.images.getOrNull(id)?.let { decodeInlineBitmap(it, targetWidth) }
                 }
                 if (decoded != null) imageCache[id] = decoded
+                // 字节预算：先按当前窗口保留，再淘汰远端图片，避免图片书 OOM。
+                var totalBytes = imageCache.values.sumOf { it.allocationByteCount.toLong() }
+                if (totalBytes > MAX_IMAGE_CACHE_BYTES) {
+                    val needed = window.flatMap { idsByPage[it].orEmpty() }.toSet()
+                    for ((cacheId, cacheBitmap) in imageCache.toList()) {
+                        if (totalBytes <= MAX_IMAGE_CACHE_BYTES) break
+                        if (cacheId in needed) continue
+                        totalBytes -= cacheBitmap.allocationByteCount
+                        imageCache.remove(cacheId)
+                    }
+                }
             }
             if (imageCache.size > MAX_CACHED_IMAGES) {
                 val keep = window.flatMap { idsByPage[it].orEmpty() }.toSet()
@@ -1430,6 +1441,18 @@ internal fun NativeTextReaderContent(
             }
         }
 
+        // 空结果/解析失败：给出明确提示，而不是永远停在空白页面。
+        val emptyPageSet = pageSet
+        if (emptyPageSet != null && emptyPageSet.pages.isEmpty()) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                Text(
+                    stringResource(R.string.reader_empty_content),
+                    color = readerTextColor.copy(alpha = 0.6f),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+
         // Debug 参数面板：样式与 WebView 的 #salt-debug 完全一致（左上角、半透明白底、蓝色等宽小字、单实例）。
         if (settings.debugMode) {
             val debugPageLines = pageSet?.pages?.getOrNull(
@@ -1498,9 +1521,9 @@ internal fun NativeTextReaderContent(
                     Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Text("已选中段落", style = MaterialTheme.typography.labelMedium)
+                    Text(stringResource(R.string.reader_selection_selected), style = MaterialTheme.typography.labelMedium)
                     Text(
-                        "复制",
+                        stringResource(R.string.reader_action_copy),
                         modifier = Modifier
                             .padding(start = 16.dp)
                             .clickable {
@@ -1510,7 +1533,7 @@ internal fun NativeTextReaderContent(
                         color = accent,
                     )
                     Text(
-                        "取消",
+                        stringResource(R.string.reader_action_cancel),
                         modifier = Modifier
                             .padding(start = 12.dp)
                             .clickable { clearSelection() },
@@ -2009,6 +2032,7 @@ private fun imageAspect(base64: String): Float = runCatching {
 }.getOrElse { 1.5f }
 
 private const val MAX_CACHED_IMAGES = 24
+private const val MAX_IMAGE_CACHE_BYTES = 48L * 1024 * 1024
 
 /** 一页里出现的图片 id（块级图片 + 行内 \u0004 token），用于预渲染。 */
 private fun pageImageIds(pageSet: NativePageSet, pageIndex: Int): List<Int> {
