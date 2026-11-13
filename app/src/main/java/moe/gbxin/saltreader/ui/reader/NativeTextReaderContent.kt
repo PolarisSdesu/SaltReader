@@ -908,11 +908,23 @@ internal fun NativeTextReaderContent(
     fun handleReaderTap(offset: Offset, width: Float) {
         if (selectionPage >= 0) {
             val page = pageSet?.pages?.getOrNull(safePageIndex)
-            val hit = if (page != null) hitTestChar(page, offset.x, offset.y) else null
-            if (hit != null) {
-                selectionFocusLine = hit.first
-                selectionFocusChar = hit.second
-                applySelectionLines()
+            if (page != null) {
+                // 点已选中的段落 = 取消选择；点其他段落 = 扩展/切换选区。
+                val tappedRange = paragraphRangeAt(page, offset.y)
+                val startLine = minOf(selectionAnchorLine, selectionFocusLine)
+                val endLine = maxOf(selectionAnchorLine, selectionFocusLine)
+                if (tappedRange != null &&
+                    tappedRange.first >= startLine && tappedRange.second <= endLine
+                ) {
+                    clearSelection()
+                    return
+                }
+                val hit = hitTestChar(page, offset.x, offset.y)
+                if (hit != null) {
+                    selectionFocusLine = hit.first
+                    selectionFocusChar = hit.second
+                    applySelectionLines()
+                }
             }
             return
         }
