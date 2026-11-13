@@ -55,6 +55,10 @@ data class AppSettings(
     val readerBackground: ReaderBackground = ReaderBackground.AUTO,
     val customBackgroundColor: Long = 0xFFFDFCFF,
     val keepScreenOn: Boolean = true,
+    /** 调试模式：阅读器叠加布局锚点、参数面板与 NATIVE/WEBVIEW 快捷切换。 */
+    val debugMode: Boolean = false,
+    /** 文字书使用 Rust 原生排版渲染（实验性，绕过 WebView）。 */
+    val nativeReader: Boolean = false,
     /** Bottom-right corner label while chrome is hidden: hidden / progress / page number. */
     val readerPageInfo: ReaderPageInfo = ReaderPageInfo.PAGES,
     val volumeKeyPaging: Boolean = true,
@@ -66,6 +70,8 @@ data class AppSettings(
     val readerLineHeight: Float = READER_LINE_HEIGHT_DEFAULT,
     /** Horizontal page margin (dp) of the text EPUB reader, within [READER_PAGE_MARGIN_MIN]..[READER_PAGE_MARGIN_MAX]. */
     val readerPageMarginDp: Int = READER_PAGE_MARGIN_DEFAULT,
+    /** 图片是否全宽显示（忽略左右页边距）；false 时跟随页边距收缩。 */
+    val readerImageFullWidth: Boolean = true,
     /** Font size (sp) of the "xx% · xx/xx" label under the resident progress slider. */
     val readerProgressLabelSizeSp: Int = READER_PROGRESS_LABEL_SIZE_DEFAULT_SP,
     /** Font size (sp) of the bottom-end page/progress indicator while the chrome is hidden. */
@@ -115,6 +121,8 @@ class SettingsRepository(context: Context) {
         readerBackground = prefs.enum("reader_background", ReaderBackground.AUTO),
         customBackgroundColor = prefs.getLong("custom_background_color", 0xFFFDFCFF),
         keepScreenOn = prefs.getBoolean("keep_screen_on", true),
+        debugMode = prefs.getBoolean("debug_mode", false),
+        nativeReader = prefs.getBoolean("native_reader_enabled", false),
         readerPageInfo = prefs.enum("reader_page_info", if (prefs.getBoolean("show_page_number", false)) ReaderPageInfo.PROGRESS else ReaderPageInfo.PAGES),
         volumeKeyPaging = prefs.getBoolean("volume_key_paging", true),
         grayscale = prefs.getBoolean("reader_grayscale", false),
@@ -174,6 +182,8 @@ class SettingsRepository(context: Context) {
             editor.putLong("custom_background_color", next.customBackgroundColor)
         }
         if (next.keepScreenOn != old.keepScreenOn) editor.putBoolean("keep_screen_on", next.keepScreenOn)
+        if (next.debugMode != old.debugMode) editor.putBoolean("debug_mode", next.debugMode)
+        if (next.nativeReader != old.nativeReader) editor.putBoolean("native_reader_enabled", next.nativeReader)
         if (next.readerPageInfo != old.readerPageInfo) editor.putString("reader_page_info", next.readerPageInfo.name)
         if (next.volumeKeyPaging != old.volumeKeyPaging) editor.putBoolean("volume_key_paging", next.volumeKeyPaging)
         if (next.grayscale != old.grayscale) editor.putBoolean("reader_grayscale", next.grayscale)
@@ -186,6 +196,9 @@ class SettingsRepository(context: Context) {
         }
         if (next.readerPageMarginDp != old.readerPageMarginDp) {
             editor.putInt("reader_page_margin", next.readerPageMarginDp)
+        }
+        if (next.readerImageFullWidth != old.readerImageFullWidth) {
+            editor.putBoolean("reader_image_full_width", next.readerImageFullWidth)
         }
         if (next.readerFontFamily != old.readerFontFamily) {
             editor.putString("reader_font_family", next.readerFontFamily.name)

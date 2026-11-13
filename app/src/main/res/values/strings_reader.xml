@@ -145,4 +145,6 @@
     <string name="reader_font_chain_add">Add font</string>
     <string name="reader_font_chain_empty">No fonts added yet. Add one to build the font chain.</string>
     <string name="reader_font_remove">Remove font</string>
+    <string name="reader_render_failed_title">Reader failed to render</string>
+    <string name="reader_render_failed_hint">The WebView could not display this page. Please try again.</string>
 </resources>

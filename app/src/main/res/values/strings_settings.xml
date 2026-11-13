@@ -145,4 +145,12 @@
     <string name="settings_reader_battery_indicator_supporting">Show the battery icon and percentage in the lower-left corner while reading</string>
     <string name="settings_fonts">Fonts</string>
     <string name="settings_reader_font_mode">Reader font</string>
+    <string name="settings_reader_native_reader">Native text reader (experimental)</string>
+    <string name="settings_reader_native_reader_desc">Render text books with the bundled Rust layout engine instead of WebView. Paged mode only.</string>
+    <string name="settings_reader_native_reader_unavailable">Native library unavailable on this device.</string>
+    <string name="settings_appearance_section_debug">Debug</string>
+    <string name="settings_appearance_debug_mode">Debug mode</string>
+    <string name="settings_appearance_debug_mode_supporting">Show reader layout anchors, parameters and a native/WebView quick switch.</string>
+    <string name="settings_reader_image_full_width">Full-width images</string>
+    <string name="settings_reader_image_full_width_supporting">Ignore page margins so images span the full page width.</string>
 </resources>

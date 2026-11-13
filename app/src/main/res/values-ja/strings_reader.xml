@@ -145,4 +145,6 @@
     <string name="reader_font_chain_add">フォントを追加</string>
     <string name="reader_font_chain_empty">フォントがまだありません。追加するとフォントチェーンを作れます。</string>
     <string name="reader_font_remove">フォントを削除</string>
+    <string name="reader_render_failed_title">リーダーの表示に失敗しました</string>
+    <string name="reader_render_failed_hint">WebView がページを表示できませんでした。再試行してください。</string>
 </resources>

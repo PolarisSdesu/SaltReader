@@ -47,7 +47,9 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.outlined.AspectRatio
 import androidx.compose.material.icons.outlined.BatteryFull
+import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Contrast
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Delete
@@ -63,6 +65,7 @@ import androidx.compose.material.icons.outlined.LightMode
 import androidx.compose.material.icons.automirrored.outlined.MenuBook
 import androidx.compose.material.icons.outlined.Numbers
 import androidx.compose.material.icons.outlined.Palette
+import androidx.compose.material.icons.outlined.Speed
 import androidx.compose.material.icons.outlined.Storage
 import androidx.compose.material.icons.automirrored.outlined.VolumeUp
 import androidx.compose.ui.res.painterResource
@@ -129,6 +132,7 @@ import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.ImportReport
 import moe.gbxin.saltreader.data.LibraryRoot
+import moe.gbxin.saltreader.data.NativeTextLayout
 import moe.gbxin.saltreader.data.READER_FONT_SIZE_MAX_SP
 import moe.gbxin.saltreader.data.READER_FONT_SIZE_MIN_SP
 import moe.gbxin.saltreader.data.READER_LINE_HEIGHT_MAX
@@ -438,6 +442,15 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
                     checked = settings.amoledBlack,
                 ) { app.settings.update { it.copy(amoledBlack = it.amoledBlack.not()) } }
             }
+            SettingsSectionLabel(stringResource(R.string.settings_appearance_section_debug))
+            SettingsCard {
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.BugReport,
+                    title = stringResource(R.string.settings_appearance_debug_mode),
+                    supporting = stringResource(R.string.settings_appearance_debug_mode_supporting),
+                    checked = settings.debugMode,
+                ) { app.settings.update { it.copy(debugMode = it.debugMode.not()) } }
+            }
         }
     }
 }
@@ -455,6 +468,16 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
         ) {
             SettingsSectionLabel(stringResource(R.string.settings_reader_section_layout))
             SettingsCard {
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.Speed,
+                    title = stringResource(R.string.settings_reader_native_reader),
+                    supporting = if (NativeTextLayout.isAvailable) {
+                        stringResource(R.string.settings_reader_native_reader_desc)
+                    } else {
+                        stringResource(R.string.settings_reader_native_reader_unavailable)
+                    },
+                    checked = settings.nativeReader,
+                ) { app.settings.update { it.copy(nativeReader = it.nativeReader.not()) } }
                 SettingsMenuRow(
                     icon = Icons.AutoMirrored.Outlined.MenuBook,
                     title = stringResource(R.string.settings_reader_reading_mode),
@@ -581,6 +604,12 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                         )
                     }
                 }
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.AspectRatio,
+                    title = stringResource(R.string.settings_reader_image_full_width),
+                    supporting = stringResource(R.string.settings_reader_image_full_width_supporting),
+                    checked = settings.readerImageFullWidth,
+                ) { app.settings.update { it.copy(readerImageFullWidth = it.readerImageFullWidth.not()) } }
                 SettingsSwitchRow(
                     icon = Icons.Outlined.BatteryFull,
                     title = stringResource(R.string.settings_reader_battery_indicator),

@@ -145,4 +145,6 @@
     <string name="reader_font_chain_add">加入字型</string>
     <string name="reader_font_chain_empty">尚未加入字型，加入後即可組成字型鏈。</string>
     <string name="reader_font_remove">移除字型</string>
+    <string name="reader_render_failed_title">閱讀器渲染失敗</string>
+    <string name="reader_render_failed_hint">WebView 暫時無法顯示內容，請重試。</string>
 </resources>

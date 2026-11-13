@@ -52,15 +52,17 @@ internal fun BatteryIndicator(
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
 
-    val icon = if (status.charging) {
-        R.drawable.battery_android_frame_bolt
-    } else {
-        when (((status.percent * 6 + 99) / 100).coerceIn(1, 6)) {
-            1 -> R.drawable.battery_android_frame_1
-            2 -> R.drawable.battery_android_frame_2
-            3 -> R.drawable.battery_android_frame_3
-            4 -> R.drawable.battery_android_frame_4
-            5 -> R.drawable.battery_android_frame_5
+    // Material Symbols: battery_android_frame_1..6 / battery_android_full / battery_android_bolt。
+    // 充电中显示 bolt；满电（100%）显示实心 full；其余按六档显示 1..6。
+    val icon = when {
+        status.charging -> R.drawable.battery_android_frame_bolt
+        status.percent >= 100 -> R.drawable.battery_android_frame_full
+        else -> when (status.percent) {
+            in 0..16 -> R.drawable.battery_android_frame_1
+            in 17..33 -> R.drawable.battery_android_frame_2
+            in 34..50 -> R.drawable.battery_android_frame_3
+            in 51..66 -> R.drawable.battery_android_frame_4
+            in 67..83 -> R.drawable.battery_android_frame_5
             else -> R.drawable.battery_android_frame_6
         }
     }
