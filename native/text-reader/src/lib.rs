@@ -57,6 +57,18 @@ struct Block {
     table: Option<Vec<Vec<String>>>,
     image: Option<u32>,
     preserve: bool,
+    /// 段落内存在连续 <br>（空行）时需要保留空行行盒。
+    keep_blank_lines: bool,
+}
+
+use std::cell::RefCell;
+thread_local! {
+    /// 未解析行内图片时的占位文本（由 Kotlin 侧按语言传入）。
+    static IMAGE_PLACEHOLDER: RefCell<String> = RefCell::new("［图片］".to_string());
+}
+
+fn image_placeholder() -> String {
+    IMAGE_PLACEHOLDER.with(|value| value.borrow().clone())
 }
 
 /// 输出协议使用 \u0000..\u0005 等控制字符做分隔，正文里的控制字符必须清洗掉。
@@ -496,6 +508,8 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
     let mut table_rows: Vec<Vec<String>> = Vec::new();
     let mut table_row: Vec<String> = Vec::new();
     let mut table_cell: Option<String> = None;
+    // <ol> 序号栈；<hr> 直接用分隔行近似 WebView 的水平线。
+    let mut ol_stack: Vec<u32> = Vec::new();
 
     // 统一换行，避免 \r\n 作为单个 grapheme 破坏行协议。
     let normalized_html;
@@ -542,6 +556,10 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                 if tag == *waiting {
                     skip_until = None;
                 }
+                continue;
+            }
+            if !closing && (tag == "rt" || tag == "rp") {
+                skip_until = Some(tag.clone());
                 continue;
             }
             if !closing && (tag == "script" || tag == "head") {
@@ -594,6 +612,24 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                 }
             }
 
+            if !closing && tag == "hr" {
+                flush_block(&mut blocks, &mut text, current_style, preserve, base_after);
+                let mut separator = current_style;
+                separator.align = 1;
+                separator.first_indent = 0.0;
+                separator.space_before = 0.6;
+                separator.space_after = 0.6;
+                blocks.push(Block {
+                    text: "———".to_string(),
+                    style: separator,
+                    table: None,
+                    image: None,
+                    preserve: false,
+                    keep_blank_lines: false,
+                });
+                continue;
+            }
+
             if in_table {
                 match (closing, tag.as_str()) {
                     (false, "tr") => table_row.clear(),
@@ -621,11 +657,21 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                                 table: Some(std::mem::take(&mut table_rows)),
                                 image: None,
                                 preserve: false,
+                                keep_blank_lines: false,
                             });
                         }
                     }
                     _ => {}
                 }
+                continue;
+            }
+
+            if !closing && tag == "ol" {
+                ol_stack.push(0);
+                continue;
+            }
+            if closing && tag == "ol" {
+                ol_stack.pop();
                 continue;
             }
 
@@ -742,10 +788,11 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                                 table: None,
                                 image: id.parse::<u32>().ok(),
                                 preserve: false,
+                                keep_blank_lines: false,
                             });
                         }
                     } else {
-                        text.push_str("［图片］");
+                        text.push_str(&image_placeholder());
                     }
                     continue;
                 }
@@ -754,6 +801,12 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
 
             if is_block_tag(&tag) {
                 flush_block(&mut blocks, &mut text, current_style, preserve, base_after);
+                if tag == "li" {
+                    if let Some(counter) = ol_stack.last_mut() {
+                        *counter += 1;
+                        text.push_str(&format!("{}. ", counter));
+                    }
+                }
                 tag_stack.push(tag.clone());
                 let class_attr = attr_value(attributes, "class");
                 let mut style = default_style_for_tag(&tag).unwrap_or_default();
@@ -844,19 +897,36 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
     blocks
 }
 
+fn rule_specificity(rule: &CssRule) -> u32 {
+    let mut score = 0;
+    if rule.tag.is_some() {
+        score += 1;
+    }
+    if rule.class_name.is_some() {
+        score += 10;
+    }
+    score
+}
+
 fn apply_stack_css(
     style: &mut Style,
     stack: &[String],
     rules: &[CssRule],
     index: &HashMap<&str, Vec<usize>>,
 ) {
-    // 外层标签的规则也要生效：按栈顺序（浅 -> 深）应用。
+    // 外层标签的规则也要生效：按「特异性升序 + 源序」应用，后面的高特异性规则覆盖前者。
+    let mut matched: Vec<usize> = Vec::new();
     for tag in stack {
-        let Some(rule_ids) = index.get(tag.as_str()) else { continue };
-        for rule_index in rule_ids {
-            if let Some(rule) = rules.get(*rule_index) {
-                apply_declarations(style, &rule.declarations);
-            }
+        if let Some(rule_ids) = index.get(tag.as_str()) {
+            matched.extend(rule_ids.iter().copied());
+        }
+    }
+    matched.sort_by_key(|rule_index| {
+        (rules.get(*rule_index).map(rule_specificity).unwrap_or(0), *rule_index)
+    });
+    for rule_index in matched {
+        if let Some(rule) = rules.get(rule_index) {
+            apply_declarations(style, &rule.declarations);
         }
     }
 }
@@ -869,14 +939,23 @@ fn apply_class_css(
     index: &HashMap<&str, Vec<usize>>,
 ) {
     let Some(rule_ids) = index.get(class_name) else { return };
-    for rule_index in rule_ids {
-        let Some(rule) = rules.get(*rule_index) else { continue };
-        if let Some(rule_tag) = &rule.tag {
-            if rule_tag != tag {
-                continue;
+    let mut matched: Vec<usize> = rule_ids
+        .iter()
+        .copied()
+        .filter(|rule_index| {
+            match rules.get(*rule_index).and_then(|rule| rule.tag.as_deref()) {
+                None => true,
+                Some(rule_tag) => rule_tag == tag,
             }
+        })
+        .collect();
+    matched.sort_by_key(|rule_index| {
+        (rules.get(*rule_index).map(rule_specificity).unwrap_or(0), *rule_index)
+    });
+    for rule_index in matched {
+        if let Some(rule) = rules.get(rule_index) {
+            apply_declarations(style, &rule.declarations);
         }
-        apply_declarations(style, &rule.declarations);
     }
 }
 
@@ -969,12 +1048,14 @@ fn flush_block(blocks: &mut Vec<Block>, text: &mut String, style: Style, preserv
     } else {
         normalized.trim().to_string()
     };
+    let keep_blank_lines = !preserve && stored.contains("\n\n");
     blocks.push(Block {
         text: stored,
         style,
         table: None,
         image: None,
         preserve,
+        keep_blank_lines,
     });
     text.clear();
 }
@@ -1359,6 +1440,7 @@ fn layout_blocks(
                         true,
                         if first_line { line_gap_em } else { 0.0 },
                         block.preserve,
+                        block.preserve || block.keep_blank_lines,
                     );
                     first_line = false;
                     start_indent = 0.0;
@@ -1388,6 +1470,7 @@ fn layout_blocks(
                     true,
                     if first_line { line_gap_em } else { 0.0 },
                     block.preserve,
+                    block.preserve || block.keep_blank_lines,
                 );
                 index += 1;
                 first_line = false;
@@ -1454,6 +1537,7 @@ fn layout_blocks(
                     false,
                     if first_line { line_gap_em } else { 0.0 },
                     block.preserve,
+                    block.preserve || block.keep_blank_lines,
                 );
                 let next_start = graphemes
                     .iter()
@@ -1504,6 +1588,7 @@ fn layout_blocks(
                 true,
                 if first_line { line_gap_em } else { 0.0 },
                 block.preserve,
+                block.preserve || block.keep_blank_lines,
             );
         }
         pending_after = style.space_after * font_size;
@@ -1536,8 +1621,9 @@ fn push_line(
     is_last_line: bool,
     gap_em: f32,
     preserve: bool,
+    keep_empty: bool,
 ) {
-    if !preserve && line.trim().is_empty() {
+    if !keep_empty && line.trim().is_empty() {
         return;
     }
     let mut gap_em = gap_em;
@@ -1595,6 +1681,7 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
     image_full_width: jboolean,
     full_page_width: f32,
     image_max_height_ratio: f32,
+    image_placeholder: JString,
 ) -> jstring {
     let mut advance_map: HashMap<u32, f32> = HashMap::new();
     if let (Ok(cp_len), Ok(adv_len)) = (
@@ -1625,6 +1712,10 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
         }
     }
 
+    if let Ok(text) = env.get_string(&image_placeholder) {
+        let placeholder: String = text.into();
+        IMAGE_PLACEHOLDER.with(|value| *value.borrow_mut() = placeholder);
+    }
     let width = width.max(32.0);
     let height = height.max(32.0);
     let font_size = font_size.max(1.0);
