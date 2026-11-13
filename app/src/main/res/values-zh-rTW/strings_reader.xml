@@ -151,4 +151,6 @@
     <string name="reader_action_copy">複製</string>
     <string name="reader_action_cancel">取消</string>
     <string name="reader_empty_content">無法顯示此書內容。</string>
+    <string name="reader_action_retry">重試</string>
+    <string name="reader_action_switch_webview">改用 WebView 閱讀器</string>
 </resources>

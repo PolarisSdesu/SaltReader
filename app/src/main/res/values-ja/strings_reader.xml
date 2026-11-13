@@ -151,4 +151,6 @@
     <string name="reader_action_copy">コピー</string>
     <string name="reader_action_cancel">キャンセル</string>
     <string name="reader_empty_content">この本の内容を表示できません。</string>
+    <string name="reader_action_retry">再試行</string>
+    <string name="reader_action_switch_webview">WebView リーダーを使う</string>
 </resources>

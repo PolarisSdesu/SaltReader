@@ -151,4 +151,6 @@
     <string name="reader_action_copy">Copy</string>
     <string name="reader_action_cancel">Cancel</string>
     <string name="reader_empty_content">No readable content in this book.</string>
+    <string name="reader_action_retry">Retry</string>
+    <string name="reader_action_switch_webview">Use WebView reader</string>
 </resources>

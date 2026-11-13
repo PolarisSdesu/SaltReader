@@ -1036,7 +1036,46 @@ internal fun NativeTextReaderContent(
                                 if (line.text.any { it == '\u0004' || it in '\u0006'..'\u0013' }) {
                                 // 行内 run：样式标记（粗/斜/下划线/删除线/等宽）+ 行内小图。
                                 paint.textAlign = Paint.Align.LEFT
-                                var cursorX = contentLeft + line.leftIndentEm * fontSizePx
+                                val richIndent = line.leftIndentEm * fontSizePx
+                                // 行内样式行的对齐：先量出整行宽度，再按居中/右对齐决定起点（两端对齐暂按左对齐）。
+                                val richWidth = run {
+                                    var widthSum = 0f
+                                    var tokenIndex = 0
+                                    val measurePaint = paintFor(line)
+                                    while (tokenIndex < line.text.length) {
+                                        val tokenChar = line.text[tokenIndex]
+                                        when {
+                                            tokenChar == '\u0004' -> {
+                                                val tokenEnd = line.text.indexOf('\u0005', tokenIndex)
+                                                if (tokenEnd < 0) {
+                                                    tokenIndex = line.text.length
+                                                    continue
+                                                }
+                                                val tokenId = line.text.substring(tokenIndex + 1, tokenEnd)
+                                                    .toIntOrNull() ?: 0
+                                                val tokenAspect = (pageSet?.imageAspects?.getOrNull(tokenId) ?: 1f)
+                                                    .coerceAtLeast(0.05f)
+                                                val em = fontSizePx * line.sizeRatio
+                                                widthSum += em * 1.15f * tokenAspect + em * 0.2f
+                                                tokenIndex = tokenEnd + 1
+                                            }
+
+                                            tokenChar.code in 0x0006..0x0013 -> tokenIndex += 1
+
+                                            else -> {
+                                                widthSum += measurePaint.measureText(tokenChar.toString())
+                                                tokenIndex += 1
+                                            }
+                                        }
+                                    }
+                                    widthSum
+                                }
+                                var cursorX = when (line.align) {
+                                    1 -> contentLeft + (contentWidth - richWidth).coerceAtLeast(0f) / 2f
+                                    2 -> contentLeft + contentWidth - richWidth - richIndent
+                                    else -> contentLeft + richIndent
+                                }
+                                if (line.align == 2) cursorX = cursorX.coerceAtLeast(contentLeft)
                                 var richBold = line.bold
                                 var richItalic = line.italic
                                 var richUnderline = false
@@ -1441,15 +1480,39 @@ internal fun NativeTextReaderContent(
             }
         }
 
-        // 空结果/解析失败：给出明确提示，而不是永远停在空白页面。
+        // 空结果/解析失败：给出明确提示与重试/回退入口，而不是永远停在空白页面。
         val emptyPageSet = pageSet
         if (emptyPageSet != null && emptyPageSet.pages.isEmpty()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text(
-                    stringResource(R.string.reader_empty_content),
-                    color = readerTextColor.copy(alpha = 0.6f),
-                    style = MaterialTheme.typography.bodyMedium,
-                )
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        stringResource(R.string.reader_empty_content),
+                        color = readerTextColor.copy(alpha = 0.6f),
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Row(Modifier.padding(top = 12.dp)) {
+                        Text(
+                            stringResource(R.string.reader_action_retry),
+                            modifier = Modifier
+                                .clickable {
+                                    anchorRatio = -1f
+                                    pageIndex = -1
+                                    initialised = false
+                                }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            color = accent,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                        Text(
+                            stringResource(R.string.reader_action_switch_webview),
+                            modifier = Modifier
+                                .clickable { onSettingsChange { it.copy(nativeReader = false) } }
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
+                            color = accent,
+                            style = MaterialTheme.typography.labelLarge,
+                        )
+                    }
+                }
             }
         }
 
