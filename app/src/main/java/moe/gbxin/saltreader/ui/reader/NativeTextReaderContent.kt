@@ -1044,6 +1044,7 @@ internal fun NativeTextReaderContent(
                                 paint.textAlign = Paint.Align.LEFT
                                 val richIndent = line.leftIndentEm * fontSizePx
                                 // 行内样式行的对齐：先量出整行宽度，再按居中/右对齐决定起点（两端对齐暂按左对齐）。
+                                var richSlots = 0
                                 val richWidth = run {
                                     var widthSum = 0f
                                     var tokenIndex = 0
@@ -1063,6 +1064,7 @@ internal fun NativeTextReaderContent(
                                                     .coerceAtLeast(0.05f)
                                                 val em = fontSizePx * line.sizeRatio
                                                 widthSum += em * 1.15f * tokenAspect + em * 0.2f
+                                                richSlots += 1
                                                 tokenIndex = tokenEnd + 1
                                             }
 
@@ -1070,6 +1072,7 @@ internal fun NativeTextReaderContent(
 
                                             else -> {
                                                 widthSum += measurePaint.measureText(tokenChar.toString())
+                                                richSlots += 1
                                                 tokenIndex += 1
                                             }
                                         }
@@ -1082,6 +1085,12 @@ internal fun NativeTextReaderContent(
                                     else -> contentLeft + richIndent
                                 }
                                 if (line.align == 2) cursorX = cursorX.coerceAtLeast(contentLeft)
+                                // 两端对齐：把剩余宽度均摊到每个字形/行内图片上（最后一行 Rust 已改为左对齐）。
+                                val justifyExtra = if (line.align == 3 && richSlots > 0) {
+                                    ((contentWidth - richIndent - richWidth).coerceAtLeast(0f)) / richSlots
+                                } else {
+                                    0f
+                                }
                                 var richBold = line.bold
                                 var richItalic = line.italic
                                 var richUnderline = false
@@ -1106,8 +1115,16 @@ internal fun NativeTextReaderContent(
                                         richSub -> baseline + lineBox * 0.14f
                                         else -> baseline
                                     }
-                                    canvas.nativeCanvas.drawText(buffer.toString(), cursorX, runBaseline, paint)
-                                    cursorX += paint.measureText(buffer.toString())
+                                    if (justifyExtra > 0f) {
+                                        for (glyphIndex in buffer.indices) {
+                                            val glyph = buffer[glyphIndex].toString()
+                                            canvas.nativeCanvas.drawText(glyph, cursorX, runBaseline, paint)
+                                            cursorX += paint.measureText(glyph) + justifyExtra
+                                        }
+                                    } else {
+                                        canvas.nativeCanvas.drawText(buffer.toString(), cursorX, runBaseline, paint)
+                                        cursorX += paint.measureText(buffer.toString())
+                                    }
                                     buffer.clear()
                                 }
                                 var richIndex = 0
@@ -1158,7 +1175,7 @@ internal fun NativeTextReaderContent(
                                                     cornerRadius = CornerRadius(2.dp.toPx()),
                                                 )
                                             }
-                                            cursorX = imageLeft + imageWidth + sideMargin
+                                            cursorX = imageLeft + imageWidth + sideMargin + justifyExtra
                                             richIndex = tokenEnd + 1
                                         }
                                         else -> { buffer.append(ch); richIndex++ }
