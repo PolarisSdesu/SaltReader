@@ -14,7 +14,6 @@ import android.os.Build
 import android.os.SystemClock
 import android.view.WindowManager
 import android.text.Html
-import android.widget.OverScroller
 import android.util.Base64
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animate
@@ -33,12 +32,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.WindowInsets
@@ -47,6 +48,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -456,6 +458,23 @@ internal fun NativeTextReaderContent(
     }
     // 纵向模式共享的列表状态：进度条/角标需要读取连续滚动位置。
     val verticalListState = rememberLazyListState()
+    // 分页模式用平台 Pager：拖动/fling/吸附与系统滚动同源（与 WebView 的手感一致）。
+    val pagerState = rememberPagerState { totalPages.coerceAtLeast(1) }
+    // pageIndex -> Pager：点击/音量键/进度条跳转。
+    LaunchedEffect(pageIndex, initialised, totalPages) {
+        if (initialised && totalPages > 0) {
+            val target = pageIndex.coerceIn(0, totalPages - 1)
+            if (pagerState.currentPage != target) pagerState.scrollToPage(target)
+        }
+    }
+    // Pager -> pageIndex：用户滑动后同步页码/进度。
+    LaunchedEffect(pagerState, totalPages) {
+        snapshotFlow { pagerState.currentPage }
+            .distinctUntilChanged()
+            .collect { current ->
+                if (totalPages > 0 && current != pageIndex) pageIndex = current
+            }
+    }
 
     // 纵向模式没有“页”的概念：用连续滚动比例显示进度。
     val verticalFraction = if (settings.readerMode == ReaderMode.VERTICAL && totalPages > 0) {
@@ -542,11 +561,9 @@ internal fun NativeTextReaderContent(
 
     val direction = book.direction ?: settings.readingDirection
     val rtl = direction == ReadingDirection.RTL
-    // 横向滑动：跟手位移 + 松手吸附；点击翻页仍是瞬时（与 WebView 阅读器一致）。
-    var dragOffsetPx by remember { mutableFloatStateOf(0f) }
+    // 横向滑动由 Pager 处理（平台 fling + 吸附）。
     val swipeScope = rememberCoroutineScope()
-    // 与 WebView 同源的翻页/归位物理：OverScroller（平台 fling 减速度）。
-    val swipeScroller = remember { OverScroller(context) }
+
     // 文本选择（长按选中所在段落，可复制到系统剪贴板）。
     var selectionPage by remember { mutableIntStateOf(-1) }
     var selectionStartLine by remember { mutableIntStateOf(-1) }
@@ -632,18 +649,16 @@ internal fun NativeTextReaderContent(
                 requestVerticalJump(pageIndex)
                 return@collectLatest
             }
-            val width = pageArea.width.toFloat().coerceAtLeast(1f)
-            val slideSign = if (rtl) delta.toFloat() else -delta.toFloat()
-            animate(
-                initialValue = 0f,
-                targetValue = slideSign * width,
+            // 音量键：与 WebView 的 turnFast 一样，110ms 快速滑动。
+            val target = (pageIndex + delta).coerceIn(0, totalPages - 1)
+            pagerState.animateScrollToPage(
+                target,
                 animationSpec = tween(
                     durationMillis = 110,
                     easing = CubicBezierEasing(0.25f, 0.46f, 0.45f, 0.94f),
                 ),
-            ) { value, _ -> dragOffsetPx = value }
-            pageIndex = (pageIndex + delta).coerceIn(0, totalPages - 1)
-            dragOffsetPx = 0f
+            )
+            pageIndex = pagerState.currentPage
         }
     }
 
@@ -871,6 +886,41 @@ internal fun NativeTextReaderContent(
         return y.coerceAtLeast(fontSizePx)
     }
 
+    fun handleReaderLongPress(offset: Offset) {
+        if (settings.readerMode == ReaderMode.VERTICAL) return
+        val page = pageSet?.pages?.getOrNull(safePageIndex) ?: return
+        val range = paragraphRangeAt(page, offset.y) ?: return
+        selectionPage = safePageIndex
+        val endPlain = page.getOrNull(range.second)?.let { plainLineText(it).length } ?: 0
+        selectionAnchorLine = range.first
+        selectionAnchorChar = 0
+        selectionFocusLine = range.second
+        selectionFocusChar = endPlain
+        applySelectionLines()
+    }
+
+    fun handleReaderTap(offset: Offset, width: Float) {
+        if (selectionPage >= 0) {
+            val page = pageSet?.pages?.getOrNull(safePageIndex)
+            val hit = if (page != null) hitTestChar(page, offset.x, offset.y) else null
+            if (hit != null) {
+                selectionFocusLine = hit.first
+                selectionFocusChar = hit.second
+                applySelectionLines()
+            }
+            return
+        }
+        if (activePanel != ReaderChromePanel.NONE) {
+            activePanel = ReaderChromePanel.NONE
+            return
+        }
+        when {
+            offset.x < width / 3f -> turnPage(if (rtl) 1 else -1)
+            offset.x > width * 2f / 3f -> turnPage(if (rtl) -1 else 1)
+            else -> chromeVisible = !chromeVisible
+        }
+    }
+
     fun jumpToChapter(index: Int) {
         if (totalPages <= 0) return
         val safe = index.coerceIn(0, chapters.size - 1)
@@ -893,105 +943,16 @@ internal fun NativeTextReaderContent(
                         pageArea = size
                     }
                 }
-                .pointerInput(totalPages, activePanel, pageSet) {
-                    detectTapGestures(
-                        onLongPress = { offset ->
-                            if (settings.readerMode == ReaderMode.VERTICAL) return@detectTapGestures
-                            val page = pageSet?.pages?.getOrNull(safePageIndex) ?: return@detectTapGestures
-                            val range = paragraphRangeAt(page, offset.y) ?: return@detectTapGestures
-                            selectionPage = safePageIndex
-                            val endPlain = page.getOrNull(range.second)?.let { plainLineText(it).length } ?: 0
-                            selectionAnchorLine = range.first
-                            selectionAnchorChar = 0
-                            selectionFocusLine = range.second
-                            selectionFocusChar = endPlain
-                            applySelectionLines()
-                        },
-                        onTap = { offset ->
-                            if (selectionPage >= 0) {
-                                // 选择中：点击另一处，按字符扩展/收缩选区。
-                                val page = pageSet?.pages?.getOrNull(safePageIndex)
-                                val hit = if (page != null) hitTestChar(page, offset.x, offset.y) else null
-                                if (hit != null) {
-                                    selectionFocusLine = hit.first
-                                    selectionFocusChar = hit.second
-                                    applySelectionLines()
-                                }
-                                return@detectTapGestures
-                            }
-                            if (activePanel != ReaderChromePanel.NONE) {
-                                activePanel = ReaderChromePanel.NONE
-                                return@detectTapGestures
-                            }
-                            val width = size.width.toFloat()
-                            when {
-                                offset.x < width / 3f -> turnPage(if (rtl) 1 else -1)
-                                offset.x > width * 2f / 3f -> turnPage(if (rtl) -1 else 1)
-                                else -> chromeVisible = !chromeVisible
-                            }
-                        },
-                    )
-                }
-                .draggable(
-                    state = rememberDraggableState { delta ->
-                        val width = pageArea.width.toFloat().coerceAtLeast(1f)
-                        val hasPrev = safePageIndex > 0
-                        val hasNext = safePageIndex < totalPages - 1
-                        var next = dragOffsetPx + delta
-                        // WebView: overscroll-behavior-x: contain，首/末页不回弹。
-                        if (next > 0f && !hasPrev) next = 0f
-                        if (next < 0f && !hasNext) next = 0f
-                        dragOffsetPx = next.coerceIn(-width, width)
-                    },
-                    orientation = Orientation.Horizontal,
-                    enabled = activePanel == ReaderChromePanel.NONE && selectionPage < 0 &&
-                        settings.readerMode != ReaderMode.VERTICAL,
-                    onDragStarted = { dragOffsetPx = 0f },
-                    onDragStopped = { velocity ->
-                        val width = pageArea.width.toFloat().coerceAtLeast(1f)
-                        val hasPrev = safePageIndex > 0
-                        val hasNext = safePageIndex < totalPages - 1
-                        var turn = 0
-                        // 与 WebView 的 fling + scroll-snap 一致：位移超过约 30% 或快速轻扫都翻页。
-                        if (abs(dragOffsetPx) > width * 0.3f || abs(velocity) > 350f) {
-                            val direction = if (velocity != 0f) velocity else dragOffsetPx
-                            turn = if (direction < 0f) {
-                                if (rtl) -1 else 1
-                            } else {
-                                if (rtl) 1 else -1
-                            }
-                            if (turn < 0 && !hasPrev) turn = 0
-                            if (turn > 0 && !hasNext) turn = 0
+                .then(
+                    if (settings.readerMode == ReaderMode.VERTICAL) {
+                        Modifier.pointerInput(totalPages, activePanel, pageSet) {
+                            detectTapGestures(
+                                onLongPress = { offset -> handleReaderLongPress(offset) },
+                                onTap = { offset -> handleReaderTap(offset, size.width.toFloat()) },
+                            )
                         }
-                        val target = if (turn != 0) {
-                            if (dragOffsetPx < 0f) -width else width
-                        } else {
-                            0f
-                        }
-                        swipeScope.launch {
-                            // 所有滑动使用同一套吸附动画（固定 240ms），不再按松手速度走平台 fling：
-                            // 轻扫会拖很久不物理；这里只按位移/速度判断翻页或回弹，动画始终一致。
-                            swipeScroller.forceFinished(true)
-                            val start = dragOffsetPx.roundToInt()
-                            val targetInt = target.roundToInt()
-                            if (start == targetInt) {
-                                if (turn != 0 && totalPages > 0) {
-                                    pageIndex = (pageIndex + turn).coerceIn(0, totalPages - 1)
-                                }
-                                dragOffsetPx = 0f
-                                return@launch
-                            }
-                            swipeScroller.startScroll(start, 0, targetInt - start, 0, 240)
-                            while (swipeScroller.computeScrollOffset()) {
-                                dragOffsetPx = swipeScroller.currX.toFloat()
-                                withFrameNanos { }
-                            }
-                            dragOffsetPx = target
-                            if (turn != 0 && totalPages > 0) {
-                                pageIndex = (pageIndex + turn).coerceIn(0, totalPages - 1)
-                            }
-                            dragOffsetPx = 0f
-                        }
+                    } else {
+                        Modifier
                     },
                 ),
             contentAlignment = Alignment.Center,
@@ -1477,21 +1438,52 @@ internal fun NativeTextReaderContent(
                     }
                 }
             } else {
-                val pageWidthPx = pageArea.width.toFloat().coerceAtLeast(1f)
-                val neighborDelta = when {
-                    dragOffsetPx < 0f -> if (rtl) -1 else 1
-                    dragOffsetPx > 0f -> if (rtl) 1 else -1
-                    else -> 0
-                }
-                val neighborPage = if (neighborDelta != 0) {
-                    pages?.getOrNull(safePageIndex + neighborDelta)
-                } else {
-                    null
-                }
-                drawPage(currentPage, dragOffsetPx, Float.NaN, true, -1)
-                if (neighborPage != null) {
-                    val neighborOffset = dragOffsetPx + if (dragOffsetPx < 0f) pageWidthPx else -pageWidthPx
-                    drawPage(neighborPage, neighborOffset, Float.NaN, false, -1)
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    userScrollEnabled = activePanel == ReaderChromePanel.NONE && selectionPage < 0,
+                    beyondViewportPageCount = 1,
+                ) { pageIndexItem ->
+                    val pageLines = pageSet?.pages?.getOrNull(pageIndexItem) ?: return@HorizontalPager
+                    Box(Modifier.fillMaxSize()) {
+                        drawPage(pageLines, 0f, Float.NaN, true, -1)
+                        // 点击热区：滑动交给 Pager；点击不消费拖动，因此能与翻页共存。
+                        Row(Modifier.fillMaxSize()) {
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) { turnPage(if (rtl) 1 else -1) },
+                            )
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) {
+                                        if (activePanel != ReaderChromePanel.NONE) {
+                                            activePanel = ReaderChromePanel.NONE
+                                        } else {
+                                            chromeVisible = !chromeVisible
+                                        }
+                                    },
+                            )
+                            Box(
+                                Modifier
+                                    .weight(1f)
+                                    .fillMaxHeight()
+                                    .clickable(
+                                        interactionSource = remember { MutableInteractionSource() },
+                                        indication = null,
+                                    ) { turnPage(if (rtl) -1 else 1) },
+                            )
+                        }
+                    }
                 }
             }
         }
