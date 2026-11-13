@@ -159,7 +159,7 @@ private data class NativeLine(
 /** Rust 排版引擎的分页结果：每页是若干带样式的行。 */
 private data class NativePageSet(
     val pages: List<List<NativeLine>>,
-    val images: List<String> = emptyList(),
+    val images: List<ByteArray> = emptyList(),
     val imageAspects: List<Float> = emptyList(),
     val contentLeftPx: Float = 0f,
     val contentWidthPx: Float = 1f,
@@ -1937,7 +1937,8 @@ private fun buildNativePageSet(
     }
 
     // 把章节 HTML 交给 Rust 解析（含书籍自带 CSS 子集）；标题缺失时补一个 h2。
-    val imageData = ArrayList<String>()
+    // 存解码后的字节：比常驻 base64 字符串省约 25% 内存，也避免每次按需解码时重复 Base64 解码。
+    val imageData = ArrayList<ByteArray>()
     val imageAspects = ArrayList<Float>()
     val dataUri = Regex("data:image/([A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=\\r\\n]+)", RegexOption.IGNORE_CASE)
     val htmlChapters = ArrayList<String>(chapters.size)
@@ -1953,11 +1954,16 @@ private fun buildNativePageSet(
                 if (dataMatch == null) {
                     tag
                 } else {
-                    val id = imageData.size
                     val payload = dataMatch.groupValues[2]
-                    imageData.add(payload)
-                    imageAspects.add(imageAspect(payload))
-                    tag.replaceRange(dataMatch.range, "data-salt-img=\"$id\"")
+                    val bytes = runCatching { Base64.decode(payload, Base64.DEFAULT) }.getOrNull()
+                    if (bytes == null) {
+                        tag
+                    } else {
+                        val id = imageData.size
+                        imageData.add(bytes)
+                        imageAspects.add(imageAspect(bytes))
+                        tag.replaceRange(dataMatch.range, "data-salt-img=\"$id\"")
+                    }
                 }
             }
         } else {
@@ -2085,8 +2091,7 @@ private fun drawJustifiedLine(
 }
 
 /** 解析 Rust 返回的样式前缀；兼容无前缀的纯文本行。 */
-private fun imageAspect(base64: String): Float = runCatching {
-    val bytes = Base64.decode(base64, Base64.DEFAULT)
+private fun imageAspect(bytes: ByteArray): Float = runCatching {
     val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
     val width = options.outWidth
@@ -2114,8 +2119,7 @@ private fun pageImageIds(pageSet: NativePageSet, pageIndex: Int): List<Int> {
     return ids.toList()
 }
 
-private fun decodeInlineBitmap(base64: String, targetWidth: Int): Bitmap? = runCatching {
-    val bytes = Base64.decode(base64, Base64.DEFAULT)
+private fun decodeInlineBitmap(bytes: ByteArray, targetWidth: Int): Bitmap? = runCatching {
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     val width = bounds.outWidth
