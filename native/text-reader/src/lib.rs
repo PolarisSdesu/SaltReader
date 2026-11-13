@@ -1210,6 +1210,7 @@ fn image_box_height(width: f32, page_height: f32, aspect: f32, max_height_ratio:
 
 fn layout_blocks(
     blocks: &[Block],
+    chapter_starts: &[usize],
     width: f32,
     height: f32,
     font_size: f32,
@@ -1232,7 +1233,15 @@ fn layout_blocks(
         }
     };
 
-    for block in blocks {
+    for (block_index, block) in blocks.iter().enumerate() {
+        // 与 WebView 阅读器一致：每个章节都从新的一页开始。
+        if chapter_starts.binary_search(&block_index).is_ok() {
+            if !page_lines.is_empty() {
+                pages.push(std::mem::take(&mut page_lines));
+            }
+            y = 0.0;
+            pending_after = 0.0;
+        }
         if let Some(image_id) = block.image {
             let aspect = image_aspects
                 .get(image_id as usize)
@@ -1722,9 +1731,13 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
     let line_height_base = line_height_base.clamp(0.9, 3.5);
 
     let mut blocks: Vec<Block> = Vec::new();
+    let mut chapter_starts: Vec<usize> = Vec::new();
     let mut css_rules: Vec<CssRule> = Vec::new();
     if let Ok(count) = env.get_array_length(&chapters) {
         for i in 0..count {
+            if i > 0 {
+                chapter_starts.push(blocks.len());
+            }
             if let Ok(element) = env.get_object_array_element(&chapters, i) {
                 if element.is_null() {
                     continue;
@@ -1757,6 +1770,7 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
     };
     let pages = layout_blocks(
         &blocks,
+        &chapter_starts,
         width,
         height,
         font_size,
@@ -1846,7 +1860,7 @@ mod gap_tests {
         let mut after = 0.0;
         let blocks = parse_html_blocks(html, &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, 900.0, 1634.0, 38.0, 1.8, &advances, &[], 1080.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 900.0, 1634.0, 38.0, 1.8, &advances, &[], 1080.0, 1.0);
         for (pi, page) in pages.iter().enumerate() {
             let first = page.first().map(|l| l.text.clone()).unwrap_or_default();
             let last = page.last().map(|l| l.text.clone()).unwrap_or_default();
@@ -1881,7 +1895,7 @@ mod gap_tests {
         assert!(text.contains("  indented"), "text={text:?}");
         assert!(text.contains("\n\n"), "text={text:?}");
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, 600.0, 1634.0, 38.0, 1.8, &advances, &[], 600.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 600.0, 1634.0, 38.0, 1.8, &advances, &[], 600.0, 1.0);
         let lines: Vec<String> = pages.iter().flatten().map(|line| line.text.clone()).collect();
         assert!(lines.iter().any(|line| line.is_empty() || line.trim().is_empty()), "lines={lines:?}");
         assert!(lines.iter().any(|line| line.starts_with("  indented")), "lines={lines:?}");
@@ -1917,7 +1931,7 @@ mod gap_tests {
         let blocks = parse_html_blocks(&html, &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
         let height = 220.0;
-        let pages = layout_blocks(&blocks, 300.0, height, 38.0, 1.8, &advances, &[], 300.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 300.0, height, 38.0, 1.8, &advances, &[], 300.0, 1.0);
         assert!(pages.len() > 1, "pages={}", pages.len());
         let style = blocks[0].style;
         let line_height = 38.0 * style.size * style.line_height.unwrap_or(1.8);
@@ -1936,7 +1950,7 @@ mod gap_tests {
         let mut after = 0.0;
         let blocks = parse_html_blocks("<p>Hello。World</p>", &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, 150.0, 1634.0, 38.0, 1.8, &advances, &[], 150.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 150.0, 1634.0, 38.0, 1.8, &advances, &[], 150.0, 1.0);
         let lines: Vec<String> = pages.iter().flatten().map(|line| line.text.clone()).collect();
         assert!(!lines.iter().any(|line| line.trim_start().starts_with('。')), "lines={lines:?}");
         let joined: String = lines.iter().map(|line| line.trim_start_matches('　').trim()).collect::<Vec<_>>().join("");
@@ -1996,7 +2010,7 @@ mod gap_tests {
         let mut after = 0.0;
         let blocks = parse_html_blocks(&html, &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, 300.0, 220.0, 38.0, 1.8, &advances, &[], 300.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 300.0, 220.0, 38.0, 1.8, &advances, &[], 300.0, 1.0);
         assert!(pages.len() > 2, "pages={}", pages.len());
         for page in pages.iter().skip(1) {
             if let Some(first) = page.first() {
@@ -2032,7 +2046,7 @@ mod gap_tests {
         let mut after = 0.0;
         let blocks = parse_html_blocks(&html, &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, 900.0, 800.0, 38.0, 1.8, &advances, &[], 1080.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 900.0, 800.0, 38.0, 1.8, &advances, &[], 1080.0, 1.0);
         let laid: String = pages
             .iter()
             .flat_map(|page| page.iter())
