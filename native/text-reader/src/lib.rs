@@ -1425,6 +1425,7 @@ fn layout_blocks(
         let mut index = 0usize;
         let mut first_line = true;
         let mut line_start_byte = 0usize;
+        let mut inline_mono = false;
 
         while index < graphemes.len() {
             let (byte_start, grapheme) = graphemes[index];
@@ -1507,16 +1508,28 @@ fn layout_blocks(
                 line_start_byte = byte_start + 1;
                 continue;
             }
-            let width = grapheme
+            // 行内代码标记 \u000E / \u000F：与绘制一致按 0.92em 等宽字宽估算。
+            if grapheme == "\u{000E}" {
+                inline_mono = true;
+            } else if grapheme == "\u{000F}" {
+                inline_mono = false;
+            }
+            let mut width = grapheme
                 .chars()
                 .map(|ch| {
                     if style.mono {
                         mono_char_width(ch, size_px)
+                    } else if inline_mono {
+                        mono_char_width(ch, size_px) * 0.92
                     } else {
                         char_width(ch, size_px, style.size, advances)
                     }
                 })
                 .sum::<f32>();
+            // 行内代码的左右 padding（0.15em × 0.92）也要计入行宽，否则胶囊会压出页边距。
+            if grapheme == "\u{000E}" {
+                width += size_px * 0.92 * 0.3;
+            }
             let indent_px = if first_line { start_indent * size_px } else { 0.0 };
             if has_content && line_width + width > content_width - indent_px {
                 let mut break_at: Option<usize> = None;

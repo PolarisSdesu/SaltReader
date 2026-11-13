@@ -702,7 +702,8 @@ internal fun NativeTextReaderContent(
             (if (mono) 1L else 0L)
         return richPaintCache.getOrPut(key) {
             Paint(Paint.ANTI_ALIAS_FLAG).apply {
-                textSize = fontSizePx * line.sizeRatio
+                // WebView: 行内代码 0.92em；块级 pre 保持 1em。
+                textSize = fontSizePx * line.sizeRatio * (if (mono && !line.mono) 0.92f else 1f)
                 typeface = if (mono) Typeface.MONOSPACE else activeTypeface
                 isFakeBoldText = bold || line.bold
                 textSkewX = if (italic || line.italic) -0.25f else 0f
@@ -1092,6 +1093,24 @@ internal fun NativeTextReaderContent(
                                         richSub -> baseline + lineBox * 0.14f
                                         else -> baseline
                                     }
+                                    val runText = buffer.toString()
+                                    val runAdvance = paint.measureText(runText) +
+                                        if (justifyExtra > 0f) justifyExtra * runText.length else 0f
+                                    if (richMono && !line.mono) {
+                                        // WebView: 行内代码浅灰底胶囊（padding 0.15em、圆角 3dp）。
+                                        val em = fontSizePx * line.sizeRatio * 0.92f
+                                        val pad = em * 0.15f
+                                        val metrics = paint.fontMetrics
+                                        drawRoundRect(
+                                            color = Color(0x1A808080),
+                                            topLeft = Offset(cursorX - pad, baseline + metrics.ascent - 2.dp.toPx()),
+                                            size = Size(
+                                                runAdvance + pad * 2f,
+                                                (metrics.descent - metrics.ascent) + 4.dp.toPx(),
+                                            ),
+                                            cornerRadius = CornerRadius(3.dp.toPx()),
+                                        )
+                                    }
                                     if (justifyExtra > 0f) {
                                         for (glyphIndex in buffer.indices) {
                                             val glyph = buffer[glyphIndex].toString()
@@ -1099,8 +1118,8 @@ internal fun NativeTextReaderContent(
                                             cursorX += paint.measureText(glyph) + justifyExtra
                                         }
                                     } else {
-                                        canvas.nativeCanvas.drawText(buffer.toString(), cursorX, runBaseline, paint)
-                                        cursorX += paint.measureText(buffer.toString())
+                                        canvas.nativeCanvas.drawText(runText, cursorX, runBaseline, paint)
+                                        cursorX += paint.measureText(runText)
                                     }
                                     buffer.clear()
                                 }
