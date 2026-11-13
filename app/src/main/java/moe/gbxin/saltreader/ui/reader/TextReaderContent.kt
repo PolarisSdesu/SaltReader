@@ -413,6 +413,10 @@ internal fun TextReaderContent(
     // main thread so opening / jumping never blocks the UI.
     // 内联图片改为本地 URL 后，WebView 通过 shouldInterceptRequest 按 token 取回字节。
     val inlineImageStore = remember { ConcurrentHashMap<String, InlineImageResource>() }
+    // 每章 -> 该章内联图片 token，trim 章节时同步释放字节，避免图片书内存只增不减。
+    val imageTokensByChapter = remember {
+        ConcurrentHashMap<Int, MutableSet<String>>()
+    }
     val inlineImageTokens = remember { AtomicInteger(0) }
     val html by produceState(
         initialValue = "",
@@ -425,18 +429,37 @@ internal fun TextReaderContent(
         value = withContext(Dispatchers.Default) {
             // 整窗重建后旧文档的图片 token 不会再被请求，先释放字节，避免多次跳转后一直累积。
             inlineImageStore.clear()
+            imageTokensByChapter.clear()
             inlineImageTokens.set(0)
             val buildStartedAt = System.nanoTime()
-            val rawHtml = buildBookHtml(
-                chapters = chapters.subList(renderStart, renderEnd),
-                bookTitle = book.title,
-                startIndex = renderStart,
-                singleChapter = chapters.size == 1,
-            )
-            val rendered = externalizeInlineImages(
-                rawHtml, inlineImageStore, inlineImageTokens, inlineImageMaxWidthPx,
-            )
-            val finalHtml = if (settings.readerMode == ReaderMode.VERTICAL) lazyImages(rendered) else rendered
+            // 逐章外部化内联图片：记录每章 token，trim 时才能释放对应字节。
+            val bodyBuilder = StringBuilder(HTML_HEAD)
+            for (chapterIndex in renderStart until renderEnd) {
+                if (bodyBuilder.length >= MAX_TOTAL_HTML_CHARS) break
+                val tokensForChapter = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+                val chapterMarkup = externalizeInlineImages(
+                    chapterHtml(
+                        chapters[chapterIndex],
+                        chapterIndex,
+                        book.title,
+                        chapters.size == 1,
+                    ),
+                    inlineImageStore,
+                    inlineImageTokens,
+                    inlineImageMaxWidthPx,
+                ) { token -> tokensForChapter.add(token) }
+                if (tokensForChapter.isNotEmpty()) {
+                    imageTokensByChapter[chapterIndex] = tokensForChapter
+                }
+                val chunk = if (settings.readerMode == ReaderMode.VERTICAL) {
+                    lazyImages(chapterMarkup)
+                } else {
+                    chapterMarkup
+                }
+                bodyBuilder.append(chunk)
+            }
+            bodyBuilder.append(HTML_TAIL)
+            val finalHtml = bodyBuilder.toString()
             Log.i(
                 TAG_TEXT_PERF,
                 "build window chapters=${renderEnd - renderStart} chars=${finalHtml.length} " +
@@ -719,26 +742,29 @@ internal fun TextReaderContent(
         }
         lastChapterLoadAt = now
         val script = withContext(Dispatchers.Default) {
-            val rawPayload = buildString {
-                if (append) {
-                    for (i in endBefore until nextEnd) {
-                        append(chapterHtml(chapters[i], i, book.title, chapters.size == 1))
-                    }
-                } else {
-                    for (i in nextStart until startBefore) {
-                        append(chapterHtml(chapters[i], i, book.title, chapters.size == 1))
-                    }
-                }
-            }
             val appendStartedAt = System.nanoTime()
-            val payload = if (rawPayload.isEmpty()) {
-                ""
-            } else {
+            // 逐章外部化并记录 token（trim 时按章释放字节）。
+            val payloadBuilder = StringBuilder()
+            val range = if (append) endBefore until nextEnd else nextStart until startBefore
+            for (chapterIndex in range) {
+                val tokensForChapter = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
                 val externalized = externalizeInlineImages(
-                    rawPayload, inlineImageStore, inlineImageTokens, inlineImageMaxWidthPx,
-                )
-                if (settings.readerMode == ReaderMode.VERTICAL) lazyImages(externalized) else externalized
+                    chapterHtml(chapters[chapterIndex], chapterIndex, book.title, chapters.size == 1),
+                    inlineImageStore,
+                    inlineImageTokens,
+                    inlineImageMaxWidthPx,
+                ) { token -> tokensForChapter.add(token) }
+                if (tokensForChapter.isNotEmpty()) {
+                    imageTokensByChapter[chapterIndex] = tokensForChapter
+                }
+                val chunk = if (settings.readerMode == ReaderMode.VERTICAL) {
+                    lazyImages(externalized)
+                } else {
+                    externalized
+                }
+                payloadBuilder.append(chunk)
             }
+            val payload = payloadBuilder.toString()
             val runtime = Runtime.getRuntime()
             Log.i(
                 TAG_TEXT_PERF,
@@ -834,7 +860,14 @@ internal fun TextReaderContent(
                     }
                 }
                 is TextReaderEvent.Trimmed -> {
-                    windowStart = (windowStart + event.count).coerceAtMost(windowEnd)
+                    val removedStart = windowStart
+                    val removedEnd = (removedStart + event.count).coerceAtMost(windowEnd)
+                    for (chapterIndex in removedStart until removedEnd) {
+                        imageTokensByChapter.remove(chapterIndex)?.forEach { token ->
+                            inlineImageStore.remove(token)
+                        }
+                    }
+                    windowStart = removedEnd
                     lastPageWindowStart = -1
                     Log.i(TAG_TEXT_PERF, "trimmed=${event.count} window=${windowStart}..${windowEnd}")
                 }
@@ -1748,6 +1781,7 @@ private fun externalizeInlineImages(
     store: ConcurrentHashMap<String, InlineImageResource>,
     tokenCounter: AtomicInteger,
     maxImageWidthPx: Int = 0,
+    tokenSink: ((String) -> Unit)? = null,
 ): String {
     if (!html.contains("data:image")) return html
     return INLINE_DATA_URI.replace(html) { match ->
@@ -1760,6 +1794,7 @@ private fun externalizeInlineImages(
         val finalMime = optimized.second
         val token = "img" + tokenCounter.incrementAndGet()
         store[token] = InlineImageResource(bytes, finalMime)
+        tokenSink?.invoke(token)
         val bounds = runCatching {
             android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 .also { android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, it) }
