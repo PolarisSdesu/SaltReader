@@ -1233,6 +1233,73 @@ fn wrap_simple(
     lines
 }
 
+/// 行内样式标记状态：折行可以把一个 run 切成两行，但标记字符只出现在 run 开头。
+/// 切片后必须在下一行行首重新写入仍然生效的开启标记，否则后半段会掉回普通字体。
+#[derive(Clone, Copy, Default)]
+struct MarkerState {
+    bold: bool,
+    italic: bool,
+    underline: bool,
+    strike: bool,
+    mono: bool,
+    sup: bool,
+    sub: bool,
+}
+
+impl MarkerState {
+    fn observe(&mut self, ch: char) {
+        match ch {
+            '\u{0006}' => self.bold = true,
+            '\u{0007}' => self.bold = false,
+            '\u{0008}' => self.italic = true,
+            '\u{0009}' => self.italic = false,
+            '\u{000A}' => self.underline = true,
+            '\u{000B}' => self.underline = false,
+            '\u{000C}' => self.strike = true,
+            '\u{000D}' => self.strike = false,
+            '\u{000E}' => self.mono = true,
+            '\u{000F}' => self.mono = false,
+            '\u{0010}' => {
+                self.sup = true;
+                self.sub = false;
+            }
+            '\u{0011}' => self.sup = false,
+            '\u{0012}' => {
+                self.sub = true;
+                self.sup = false;
+            }
+            '\u{0013}' => self.sub = false,
+            _ => {}
+        }
+    }
+
+    /// 重新开启仍然生效的行内样式；顺序与嵌套无关（绘制端只关心布尔状态）。
+    fn reopen(&self) -> String {
+        let mut out = String::new();
+        if self.bold {
+            out.push('\u{0006}');
+        }
+        if self.italic {
+            out.push('\u{0008}');
+        }
+        if self.underline {
+            out.push('\u{000A}');
+        }
+        if self.strike {
+            out.push('\u{000C}');
+        }
+        if self.mono {
+            out.push('\u{000E}');
+        }
+        if self.sup {
+            out.push('\u{0010}');
+        } else if self.sub {
+            out.push('\u{0012}');
+        }
+        out
+    }
+}
+
 fn image_box_height(width: f32, page_height: f32, aspect: f32, max_height_ratio: f32) -> f32 {
     let aspect = aspect.clamp(0.05, 20.0);
     let ratio = max_height_ratio.clamp(0.5, 20.0);
@@ -1472,7 +1539,9 @@ fn layout_blocks(
         let mut index = 0usize;
         let mut first_line = true;
         let mut line_start_byte = 0usize;
-        let mut inline_mono = false;
+        // 当前行行首仍然生效的行内样式；换行后据此重新写开启标记。
+        let mut line_markers = MarkerState::default();
+        let mut markers = MarkerState::default();
 
         while index < graphemes.len() {
             let (byte_start, grapheme) = graphemes[index];
@@ -1554,20 +1623,22 @@ fn layout_blocks(
                 start_indent = 0.0;
                 has_content = false;
                 line_start_byte = byte_start + 1;
+                line_markers = markers;
+                line.push_str(&line_markers.reopen());
                 continue;
             }
-            // 行内代码标记 \u000E / \u000F：与绘制一致按 0.92em 等宽字宽估算。
-            if grapheme == "\u{000E}" {
-                inline_mono = true;
-            } else if grapheme == "\u{000F}" {
-                inline_mono = false;
+            // 记录行内样式标记，供折行后重新开启；\u000E 之后的字符按 0.92em 等宽估算。
+            if let Some(ch) = grapheme.chars().next() {
+                if grapheme.len() == ch.len_utf8() && ('\u{0006}'..='\u{0013}').contains(&ch) {
+                    markers.observe(ch);
+                }
             }
             let mut width = grapheme
                 .chars()
                 .map(|ch| {
                     if style.mono {
                         mono_char_width(ch, size_px, mono_adv_em)
-                    } else if inline_mono {
+                    } else if markers.mono {
                         mono_char_width(ch, size_px, mono_adv_em) * 0.92
                     } else {
                         char_width(ch, size_px, style.size, advances)
@@ -1614,7 +1685,14 @@ fn layout_blocks(
                     }
                 }
                 let take = &block.text[line_start_byte..break_byte];
+                // 本行行首仍然生效的行内样式（例如折行落在 <code> 中间）。
+                let reopen = line_markers.reopen();
+                let mut next_markers = line_markers;
+                for ch in take.chars() {
+                    next_markers.observe(ch);
+                }
                 line.clear();
+                line.push_str(&reopen);
                 line.push_str(take.trim_end());
                 line_width = 0.0;
                 push_line(
@@ -1655,6 +1733,9 @@ fn layout_blocks(
                     .get(index)
                     .map(|(position, _)| *position)
                     .unwrap_or(block.text.len());
+                // 下一行从切点继续：把切点处仍然生效的样式重新写进新行。
+                line_markers = next_markers;
+                line.push_str(&line_markers.reopen());
                 first_line = false;
                 start_indent = 0.0;
                 has_content = false;
@@ -2264,7 +2345,25 @@ mod inline_code_break_tests {
         assert!(lines.len() >= 2, "lines={lines:?}");
         assert!(lines[0].contains("abcdefghij"), "first line should keep the code prefix: {lines:?}");
         assert!(!lines[0].contains("klmn"), "first line should break at the internal space: {lines:?}");
-        assert!(lines[1].trim_start().starts_with("klmn"), "second line should resume after the space: {lines:?}");
+        // 折行落在 <code> 中间时，新行必须重新开启等宽标记，否则后半段会掉回正文字体。
+        assert!(lines[1].starts_with('\u{000E}'), "second line must re-open inline code: {lines:?}");
+        assert!(
+            lines[1].trim_start_matches('\u{000E}').starts_with("klmn"),
+            "second line should resume after the space: {lines:?}",
+        );
+    }
+
+    /// 粗体跨行时同样要在新行重新开启粗体标记。
+    #[test]
+    fn split_bold_run_reopens_marker() {
+        let bold = "中".repeat(80);
+        let html = format!("<p>开头<b>{bold}</b>结尾。</p>");
+        let pages = layout(&html, 600.0, 36.0);
+        let lines: Vec<String> = pages.iter().flat_map(|page| page.iter()).map(|l| l.text.clone()).collect();
+        assert!(lines.len() >= 3, "lines={}", lines.len());
+        for line in &lines[1..lines.len() - 1] {
+            assert!(line.starts_with('\u{0006}'), "bold line must re-open its marker: {line:?}");
+        }
     }
 
     /// 没有空格的超长 token 不能在行内被留成一段空白：必须继续断行，保证全文可读。
