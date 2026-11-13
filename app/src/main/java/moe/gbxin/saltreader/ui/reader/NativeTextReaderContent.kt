@@ -969,26 +969,19 @@ internal fun NativeTextReaderContent(
                             0f
                         }
                         swipeScope.launch {
-                            // 与 WebView 同源的平台 fling：松手速度决定惯性，边界钳制到目标页。
+                            // 所有滑动使用同一套吸附动画（固定 240ms），不再按松手速度走平台 fling：
+                            // 轻扫会拖很久不物理；这里只按位移/速度判断翻页或回弹，动画始终一致。
                             swipeScroller.forceFinished(true)
                             val start = dragOffsetPx.roundToInt()
                             val targetInt = target.roundToInt()
-                            val velocityInt = velocity.roundToInt()
-                            val towardTarget = (target - dragOffsetPx) * velocity >= 0f && abs(velocity) > 120f
-                            if (towardTarget) {
-                                swipeScroller.fling(
-                                    start,
-                                    0,
-                                    velocityInt,
-                                    0,
-                                    targetInt,
-                                    targetInt,
-                                    0,
-                                    0,
-                                )
-                            } else {
-                                swipeScroller.startScroll(start, 0, targetInt - start, 0, 220)
+                            if (start == targetInt) {
+                                if (turn != 0 && totalPages > 0) {
+                                    pageIndex = (pageIndex + turn).coerceIn(0, totalPages - 1)
+                                }
+                                dragOffsetPx = 0f
+                                return@launch
                             }
+                            swipeScroller.startScroll(start, 0, targetInt - start, 0, 240)
                             while (swipeScroller.computeScrollOffset()) {
                                 dragOffsetPx = swipeScroller.currX.toFloat()
                                 withFrameNanos { }
