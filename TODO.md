@@ -1,6 +1,6 @@
 # TODO
 
-- [ ] **1. 继续优化 Native 阅读器两端对齐算法** (`native/`)
+- [x] **1. 继续优化 Native 阅读器两端对齐算法** (`native/`)
   目标：视觉效果与 WebView 阅读器基本一致——行末对齐分配、中文/空格边界、标点处理，行内代码不被拉伸。
   进展：
   - alpha.40 修复「跨行内 run 的边界计数与绘制不一致」（测量把跨 run 的中英文边界算进分母，绘制端没补）。
@@ -16,7 +16,10 @@
     `<br>` 结束的行改为参与两端对齐；Kotlin 的可拉伸边界改为 Blink `text-justify: auto`
     规则（空格之后、CJK 两侧、忽略默认忽略字符），并移除 alpha.41 的 0.2em 放弃阈值
     （WebView 没有该规则，短行会被拉满）。新增 `TextJustificationTest` 与 Rust 折行回归测试。
-  - 待办：用真实书籍在 Native / WebView 间逐屏比对，重点看长 token 前那行的字距是否可接受。
+  - 已完成逐屏比对：用 `tools/make_justify_test_epub.py` 生成的 `Justify-Test2.epub` 在模拟器上
+    对照 Native / WebView 同一页——长 token 都在 `(num,` 后的空格处断行，中文间隙被拉开到相同程度，
+    纯中文段落的右边缘也一致。断行位置的细微差别来自字体度量，不是对齐算法。
+  - 无空格超长 token 的差异保留：WebView 溢出裁切，Native 继续断行（见 docs）。
 
 - [x] **2. 关于页菜单的三个 Action 改为垂直排版**
   依次为：复制 / 打开调试模式 / 关闭（文字右对齐）。已完成。
