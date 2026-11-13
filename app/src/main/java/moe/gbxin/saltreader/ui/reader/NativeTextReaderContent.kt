@@ -838,14 +838,27 @@ internal fun NativeTextReaderContent(
         val first = if (a.first < b.first || (a.first == b.first && a.second <= b.second)) a else b
         val second = if (first === a) b else a
         val builder = StringBuilder()
+        var lastLine: NativeLine? = null
         for (index in first.first..second.first) {
             val line = page.getOrNull(index) ?: continue
             val plain = plainLineText(line)
             val from = if (index == first.first) first.second.coerceIn(0, plain.length) else 0
             val to = if (index == second.first) second.second.coerceIn(0, plain.length) else plain.length
             if (to > from) {
-                if (builder.isNotEmpty()) builder.append('\n')
-                builder.append(plain.substring(from, to))
+                val previous = lastLine
+                // 同一段落内的折行直接拼接；只有新段落才换行（段前距/首行缩进/块级行）。
+                val startsParagraph = previous == null ||
+                    line.gapEm > 0f || plain.startsWith("　") ||
+                    line.sizeRatio > 1.02f || line.imageId >= 0 || line.tableCols > 0
+                if (builder.isNotEmpty() && startsParagraph) builder.append('\n')
+                var segment = plain.substring(from, to)
+                // 段落首行的排版缩进（全角空格/普通空格）不应进入剪贴板。
+                if (startsParagraph) {
+                    segment = segment.trimStart { it == '　' || it.isWhitespace() }
+                }
+                if (index == second.first) segment = segment.trimEnd()
+                builder.append(segment)
+                lastLine = line
             }
         }
         if (builder.isEmpty()) return
