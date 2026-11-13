@@ -280,10 +280,21 @@ fn default_style_for_tag(tag: &str) -> Option<Style> {
             style.space_before = 0.9;
             style.space_after = 0.85;
         }
-        "h3" | "h4" | "h5" | "h6" => {
-            style.size = 1.2;
+        // 与 WebView #book h3 / h4-h6 一致：1.25em / 1.1em，居中加粗。
+        "h3" => {
+            style.size = 1.25;
             style.line_height = Some(1.3);
             style.bold = true;
+            style.align = 1;
+            style.first_indent = 0.0;
+            style.space_before = 0.9;
+            style.space_after = 0.85;
+        }
+        "h4" | "h5" | "h6" => {
+            style.size = 1.1;
+            style.line_height = Some(1.3);
+            style.bold = true;
+            style.align = 1;
             style.first_indent = 0.0;
             style.space_before = 0.9;
             style.space_after = 0.85;
