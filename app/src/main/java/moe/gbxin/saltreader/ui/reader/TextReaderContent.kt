@@ -2545,8 +2545,8 @@ private val HTML_TAIL = """
   var dragDistance = 0;
   var swipeRaf = 0;
   function swipeEase(t) {
-    // cubic-bezier(0.25, 0.46, 0.45, 0.94)
-    return cubicBezier(0.25, 0.46, 0.45, 0.94)(t);
+    // cubic-bezier(0.22, 0.61, 0.36, 1)：缓出、末段更柔和，与 native 一致。
+    return cubicBezier(0.22, 0.61, 0.36, 1)(t);
   }
   function cancelSwipeAnimation() {
     if (swipeRaf) cancelAnimationFrame(swipeRaf);
@@ -2561,7 +2561,7 @@ private val HTML_TAIL = """
       report(true);
       return;
     }
-    var duration = 220;
+    var duration = 300;
     var startedAt = performance.now();
     function step(now) {
       var t = Math.min(1, (now - startedAt) / duration);

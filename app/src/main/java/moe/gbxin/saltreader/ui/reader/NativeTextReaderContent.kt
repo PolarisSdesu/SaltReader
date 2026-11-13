@@ -969,13 +969,13 @@ internal fun NativeTextReaderContent(
                             0f
                         }
                         swipeScope.launch {
-                            // 与 WebView 完全一致的翻页动画：220ms cubic-bezier(.25,.46,.45,.94)。
+                            // 与 WebView 完全一致的翻页动画：300ms 缓出贝塞尔，松手更顺滑。
                             swipeAnimation.snapTo(dragOffsetPx)
                             swipeAnimation.animateTo(
                                 targetValue = target,
                                 animationSpec = tween(
-                                    durationMillis = 220,
-                                    easing = CubicBezierEasing(0.25f, 0.46f, 0.45f, 0.94f),
+                                    durationMillis = 300,
+                                    easing = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f),
                                 ),
                             ) {
                                 dragOffsetPx = value
