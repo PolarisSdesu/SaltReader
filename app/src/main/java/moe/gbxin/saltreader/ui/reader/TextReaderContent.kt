@@ -7,14 +7,18 @@ import android.content.Intent
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.util.Log
 import android.view.View
 import android.view.PixelCopy
 import android.view.WindowManager
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
+import android.webkit.RenderProcessGoneDetail
+import android.webkit.WebChromeClient
 import android.webkit.WebViewClient
 import androidx.annotation.Keep
 import androidx.compose.animation.AnimatedContent
@@ -30,6 +34,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -38,12 +43,16 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Surface
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
@@ -86,6 +95,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -136,11 +146,17 @@ private data class TextPageInfo(val page: Int, val pages: Int, val ratio: Float)
 
 /** Events posted from the WebView's JavaScript bridge back to the Compose side. */
 internal sealed interface TextReaderEvent {
-    data class State(val page: Int, val pages: Int, val ratio: Float) : TextReaderEvent
+    data class State(val page: Int, val pages: Int, val ratio: Float, val token: Int) : TextReaderEvent
     data object MiddleZone : TextReaderEvent
 
     /** A tap at [ratio] (0..1 across the viewport); the native side maps it to page turns/chrome. */
     data class Tap(val ratio: Float) : TextReaderEvent
+
+    /** 纵向模式内容不足一屏：需要再追加章节，否则滚动容器永远不会产生滚动事件。 */
+    data object NeedMore : TextReaderEvent
+
+    /** 纵向模式 DOM 裁掉了前面 [count] 个章节（释放图片内存），需要同步窗口起点。 */
+    data class Trimmed(val count: Int) : TextReaderEvent
 }
 
 /**
@@ -151,8 +167,8 @@ internal sealed interface TextReaderEvent {
 internal class TextJavascriptBridge(private val emit: (TextReaderEvent) -> Unit) {
     @Keep
     @JavascriptInterface
-    fun onState(page: Int, pages: Int, ratio: Double) {
-        emit(TextReaderEvent.State(page, pages, ratio.toFloat().coerceIn(0f, 1f)))
+    fun onState(page: Int, pages: Int, ratio: Double, token: Int) {
+        emit(TextReaderEvent.State(page, pages, ratio.toFloat().coerceIn(0f, 1f), token))
     }
 
     @Keep
@@ -165,6 +181,18 @@ internal class TextJavascriptBridge(private val emit: (TextReaderEvent) -> Unit)
     @JavascriptInterface
     fun onTap(ratio: Double) {
         emit(TextReaderEvent.Tap(ratio.toFloat().coerceIn(0f, 1f)))
+    }
+
+    @Keep
+    @JavascriptInterface
+    fun onNeedMore() {
+        emit(TextReaderEvent.NeedMore)
+    }
+
+    @Keep
+    @JavascriptInterface
+    fun onTrimmed(count: Int) {
+        if (count > 0) emit(TextReaderEvent.Trimmed(count))
     }
 }
 
@@ -204,6 +232,8 @@ internal fun TextReaderContent(
     volumePageEvents: Flow<Int>?,
     modifier: Modifier = Modifier,
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
+    initialRatioOverride: Float? = null,
+    onDebugSwitch: ((Float) -> Unit)? = null,
 ) {
     val readerBackground = pageBackgroundColor(
         settings.readerBackground,
@@ -219,6 +249,12 @@ internal fun TextReaderContent(
     } else {
         readerForegroundColor(readerBackground)
     }
+    val density = LocalDensity.current
+    // 内联图片注入前的最大宽度（按屏幕宽度降采样，减少 WebView 解码/纹理内存）。
+    val inlineImageMaxWidthPx = with(density) {
+        LocalConfiguration.current.screenWidthDp.dp.toPx()
+    }.roundToInt()
+
     val direction = book.direction ?: settings.readingDirection
     val isLightThemeBackground = MaterialTheme.colorScheme.background.luminance() > 0.5f
 
@@ -287,14 +323,25 @@ internal fun TextReaderContent(
     val totalChars = remember(chapterPrefix) {
         (chapterPrefix.lastOrNull() ?: 0L).coerceAtLeast(1L)
     }
-    val progressOffset = remember(book.id) {
-        book.progressOffset.coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L))
+    val progressOffset = remember(book.id, initialRatioOverride) {
+        if (initialRatioOverride != null) {
+            (initialRatioOverride.coerceIn(0f, 1f) * totalChars.toFloat()).toLong()
+                .coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L))
+        } else {
+            maxOf(book.progressOffset, vm.latestProgressOffset())
+                .coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L))
+        }
     }
 
     val initialChunk = remember(book.id, chapters) {
         val index = chapterIndexForOffset(progressOffset, chapterPrefix)
         val start = (index - CHAPTER_START_LEAD).coerceAtLeast(0)
-        start to renderWindowEnd(start, INITIAL_CHAPTER_BATCH, INITIAL_RENDER_CHAR_BUDGET, index)
+        // 纵向模式首屏更小：图片型章节的 base64 负载很大，一次注入太多会明显卡顿。
+        if (settings.readerMode == ReaderMode.VERTICAL) {
+            start to renderWindowEnd(start, VERTICAL_INITIAL_CHAPTER_BATCH, VERTICAL_INITIAL_RENDER_CHAR_BUDGET, index)
+        } else {
+            start to renderWindowEnd(start, INITIAL_CHAPTER_BATCH, INITIAL_RENDER_CHAR_BUDGET, index)
+        }
     }
 
     fun ratioWithinWindow(offset: Long, start: Int, end: Int): Float {
@@ -375,22 +422,44 @@ internal fun TextReaderContent(
         book.title,
     ) {
         value = withContext(Dispatchers.Default) {
-            externalizeInlineImages(
-                buildBookHtml(
-                    chapters = chapters.subList(renderStart, renderEnd),
-                    bookTitle = book.title,
-                    startIndex = renderStart,
-                    singleChapter = chapters.size == 1,
-                ),
-                inlineImageStore,
-                inlineImageTokens,
+            // 整窗重建后旧文档的图片 token 不会再被请求，先释放字节，避免多次跳转后一直累积。
+            inlineImageStore.clear()
+            inlineImageTokens.set(0)
+            val buildStartedAt = System.nanoTime()
+            val rawHtml = buildBookHtml(
+                chapters = chapters.subList(renderStart, renderEnd),
+                bookTitle = book.title,
+                startIndex = renderStart,
+                singleChapter = chapters.size == 1,
             )
+            val rendered = externalizeInlineImages(
+                rawHtml, inlineImageStore, inlineImageTokens, inlineImageMaxWidthPx,
+            )
+            val finalHtml = if (settings.readerMode == ReaderMode.VERTICAL) lazyImages(rendered) else rendered
+            Log.i(
+                TAG_TEXT_PERF,
+                "build window chapters=${renderEnd - renderStart} chars=${finalHtml.length} " +
+                    "mode=${settings.readerMode} elapsed=${(System.nanoTime() - buildStartedAt) / 1_000_000}ms",
+            )
+            finalHtml
         }
     }
+    // 性能锚点：内联图片请求计数/字节数 + 缓存总字节。
+    val inlineImageRequestCount = remember { java.util.concurrent.atomic.AtomicInteger(0) }
+    val inlineImageBytes = remember { java.util.concurrent.atomic.AtomicLong(0L) }
+    val inlineCacheBytes = remember { java.util.concurrent.atomic.AtomicLong(0L) }
     val events = remember { MutableSharedFlow<TextReaderEvent>(extraBufferCapacity = 32) }
     val bridge = remember { TextJavascriptBridge { event -> events.tryEmit(event) } }
     val holder = remember { WebViewHolder() }
     var pageFinishedToken by remember { mutableIntStateOf(0) }
+    // WebView 渲染进程被系统回收后，这个 WebView 实例就不可用了，必须重建。
+    // webViewGeneration 作为 AndroidView 的 key 控制重建；loadStartedAt / lastPageEventAt
+    // 用于加载看门狗：长时间收不到页面事件就判定加载卡死并恢复。
+    var webViewGeneration by remember(book.id) { mutableIntStateOf(0) }
+    // 非 0 表示"正在等待这次加载的第一份页面状态"；收到状态即清零。
+    var loadStartedAt by remember(book.id) { mutableLongStateOf(0L) }
+    var renderFailures by remember(book.id) { mutableIntStateOf(0) }
+    var renderFailed by remember(book.id) { mutableStateOf(false) }
     var firstLayoutRendered by remember(book.id) { mutableStateOf(false) }
     val firstRenderAlpha = animateFloatAsState(
         targetValue = if (firstLayoutRendered) 1f else 0f,
@@ -401,8 +470,9 @@ internal fun TextReaderContent(
 
     var lastSentOffset by remember { mutableLongStateOf(-1L) }
     var lastSentAt by remember { mutableLongStateOf(0L) }
-    // 跳转重建 WebView 期间旧文档可能还有排队的 onState；短暂忽略它们，避免把旧位置写回进度。
-    var staleEventGuardUntil by remember { mutableLongStateOf(0L) }
+    // 每装载一份新文档就换一个 token；旧文档排队的事件按 token 丢弃，
+    // 不再用时间窗，否则新文档自己的 page state 也可能被误丢（快速拖动时尤其明显）。
+    var docToken by remember(book.id) { mutableIntStateOf(0) }
     val liveRatio = remember(book.id, totalChars) {
         ScalarHolder((progressOffset.toDouble() / totalChars.toDouble()).toFloat().coerceIn(0f, 1f))
     }
@@ -506,7 +576,6 @@ internal fun TextReaderContent(
     // Configuration.screen*Dp, which changes when the chrome hides/shows the bars and would make
     // the total page count jump around.
     val windowInfo = LocalWindowInfo.current
-    val density = LocalDensity.current
     val estimatedCharsPerPage = remember(
         settings.readerFontSizeSp,
         settings.readerLineHeight,
@@ -530,8 +599,11 @@ internal fun TextReaderContent(
         ceil(totalChars.toDouble() / estimatedCharsPerPage.toDouble()).toInt().coerceAtLeast(1)
     }
     val liveEstimatedTotalPages = rememberUpdatedState(estimatedTotalPages)
-    val initialEstimatedPage = (pageInfo.ratio * estimatedTotalPages.toFloat())
-        .roundToInt().coerceIn(1, estimatedTotalPages)
+    // 初始页码只按“打开时的保存进度”算一次：不要在组合期读 pageInfo（每次 onState 都会全量重组）。
+    val initialEstimatedPage = remember(book.id, estimatedTotalPages) {
+        val ratio = (vm.latestProgressOffset().toFloat() / totalChars.toFloat()).coerceIn(0f, 1f)
+        (ratio * estimatedTotalPages.toFloat()).roundToInt().coerceIn(1, estimatedTotalPages)
+    }
     var pageBase by remember(book.id) { mutableIntStateOf(initialEstimatedPage - 1) }
     var pendingJumpPage by remember { mutableStateOf<Int?>(null) }
     var lastPageWindowStart by remember(book.id) { mutableIntStateOf(-1) }
@@ -557,7 +629,6 @@ internal fun TextReaderContent(
         )
         lastSentOffset = target
         lastSentAt = SystemClock.elapsedRealtime()
-        staleEventGuardUntil = SystemClock.elapsedRealtime() + STALE_EVENT_GUARD_MS
         vm.updateTextProgress(target)
         val targetPage = (
             (target.toDouble() / totalChars.toDouble()) * liveEstimatedTotalPages.value.toDouble()
@@ -581,6 +652,7 @@ internal fun TextReaderContent(
             renderEnd = jumpEnd
             localRatio.value = ratioWithinWindow(target, jumpStart, jumpEnd)
             jumpVeil = true
+            docToken += 1
             renderToken += 1
         }
     }
@@ -590,8 +662,15 @@ internal fun TextReaderContent(
         jumpToOffset(target)
     }
 
+    // 拖动进度条时可能连续触发跳转；防抖到最后一帧，避免同时排队多次整窗重建。
+    val jumpScope = rememberCoroutineScope()
+    var pendingJumpJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     fun jumpToFraction(fraction: Float) {
-        jumpToOffset((fraction.toDouble() * totalChars.toDouble()).toLong())
+        pendingJumpJob?.cancel()
+        pendingJumpJob = jumpScope.launch {
+            kotlinx.coroutines.delay(120)
+            jumpToOffset((fraction.toDouble() * totalChars.toDouble()).toLong())
+        }
     }
 
     /**
@@ -634,11 +713,24 @@ internal fun TextReaderContent(
                     }
                 }
             }
+            val appendStartedAt = System.nanoTime()
             val payload = if (rawPayload.isEmpty()) {
                 ""
             } else {
-                externalizeInlineImages(rawPayload, inlineImageStore, inlineImageTokens)
+                val externalized = externalizeInlineImages(
+                    rawPayload, inlineImageStore, inlineImageTokens, inlineImageMaxWidthPx,
+                )
+                if (settings.readerMode == ReaderMode.VERTICAL) lazyImages(externalized) else externalized
             }
+            val runtime = Runtime.getRuntime()
+            Log.i(
+                TAG_TEXT_PERF,
+                "append=$append payloadChars=${payload.length} " +
+                    "elapsed=${(System.nanoTime() - appendStartedAt) / 1_000_000}ms mode=${settings.readerMode} " +
+                    "storeTokens=${inlineImageStore.size} storeBytes=${inlineCacheBytes.get()} " +
+                    "heapUsedMB=${(runtime.totalMemory() - runtime.freeMemory()) / 1024 / 1024} " +
+                    "heapMaxMB=${runtime.maxMemory() / 1024 / 1024}",
+            )
             if (payload.isEmpty()) {
                 ""
             } else if (append) {
@@ -659,13 +751,15 @@ internal fun TextReaderContent(
     // WebView -> Compose events (main thread).
     LaunchedEffect(events) {
         events.collect { event ->
-            if (event is TextReaderEvent.State &&
-                SystemClock.elapsedRealtime() < staleEventGuardUntil
-            ) {
+            if (event is TextReaderEvent.State && event.token != docToken) {
                 return@collect
             }
             when (event) {
                 is TextReaderEvent.State -> {
+                    // 本次加载已经出结果，看门狗不再计时。
+                    loadStartedAt = 0L
+                    renderFailures = 0
+                    renderFailed = false
                     firstLayoutRendered = true
                     jumpVeil = false
                     localRatio.value = event.ratio
@@ -722,6 +816,19 @@ internal fun TextReaderContent(
                         }
                     }
                 }
+                is TextReaderEvent.Trimmed -> {
+                    windowStart = (windowStart + event.count).coerceAtMost(windowEnd)
+                    lastPageWindowStart = -1
+                    Log.i(TAG_TEXT_PERF, "trimmed=${event.count} window=${windowStart}..${windowEnd}")
+                }
+
+                TextReaderEvent.NeedMore -> {
+                    if (liveMode.value == ReaderMode.VERTICAL && windowEnd < chapters.size) {
+                        prefetchJob?.cancel()
+                        prefetchJob = prefetchScope.launch { maybeLoadMoreChapters(1f) }
+                    }
+                }
+
                 TextReaderEvent.MiddleZone -> chromeVisible = !chromeVisible
                 is TextReaderEvent.Tap -> {
                     // While a panel is open, tapping the page only dismisses it: no page turn from
@@ -773,6 +880,7 @@ internal fun TextReaderContent(
     }
 
     val optionsJson = remember(
+        docToken,
         settings.readerMode,
         settings.readerFontSizeSp,
         settings.readerLineHeight,
@@ -787,10 +895,12 @@ internal fun TextReaderContent(
         safeRightDp,
     ) {
         JSONObject().apply {
+            put("docToken", docToken)
             put("mode", if (settings.readerMode == ReaderMode.PAGED) "paged" else "vertical")
             put("fontSize", settings.readerFontSizeSp)
             put("lineHeight", settings.readerLineHeight.toDouble())
             put("pageMargin", settings.readerPageMarginDp)
+            put("imageFullWidth", settings.readerImageFullWidth)
             put("fontFamily", fontSetup.familyFor(settings.readerFontFamily))
             put("fontFaces", fontSetup.fontFacesCss)
             put("monoFamily", fontSetup.familyMono)
@@ -829,25 +939,11 @@ internal fun TextReaderContent(
     val insetsController = remember(view) {
         activityWindow?.let { WindowCompat.getInsetsController(it, view) }
     }
-    // Reader chrome follows the paper colour (like WeChat Reading): a beige/white page gets a light
-    // bar with dark icons, a black page a dark bar with warm text.
-    val darkPaper = readerBackground.luminance() < 0.5f
-    // 莫奈（AUTO）跟随 Material 动态色，上下栏直接使用主题色；固定纸张色则沿用纸张混色，
-    // 保证纯黑/米色等自定义背景下的栏体与页面仍是一体。
-    val monetChrome = settings.readerBackground == moe.gbxin.saltreader.data.ReaderBackground.AUTO
-    val chromeBarColor = when {
-        monetChrome -> MaterialTheme.colorScheme.surfaceContainer
-        darkPaper -> blendOver(readerBackground, Color.Black.copy(alpha = 0.62f))
-        else -> blendOver(readerBackground, Color.White.copy(alpha = 0.72f))
-    }
-    val chromeContentColor = when {
-        monetChrome -> MaterialTheme.colorScheme.onSurface
-        darkPaper && readerBackground == Color.Black -> Color.White
-        darkPaper -> Color(0xFFEDE6DD)
-        else -> Color(0xFF2A2622)
-    }
-    // Both quiet corner read-outs (page label, battery) share one paper-tinted colour.
-    val pageIndicatorColor = readerTextColor.copy(alpha = 0.6f)
+    // 与原生阅读器共用同一份 chrome 配色逻辑。
+    val chromeColors = rememberReaderChromeColors(settings, readerBackground, readerTextColor)
+    val chromeBarColor = chromeColors.bar
+    val chromeContentColor = chromeColors.content
+    val pageIndicatorColor = chromeColors.indicator
     val statusBarBackground = if (chromeVisible) chromeBarColor else readerBackground
     val navigationBarBackground = if (chromeVisible) chromeBarColor else readerBackground
     DisposableEffect(insetsController) {
@@ -924,6 +1020,7 @@ internal fun TextReaderContent(
     ) {
         // One WebView instance for the whole reading session: jumps call loadDataWithBaseURL on it
         // instead of destroying/recreating the view, which is the main cost of the old jump path.
+        key(webViewGeneration) {
         AndroidView(
             factory = { context ->
                 WebView(context).apply {
@@ -949,6 +1046,21 @@ internal fun TextReaderContent(
                     isHorizontalScrollBarEnabled = false
                     overScrollMode = View.OVER_SCROLL_NEVER
                     addJavascriptInterface(bridge, BRIDGE_NAME)
+                    webChromeClient = object : WebChromeClient() {
+                        override fun onConsoleMessage(message: ConsoleMessage): Boolean {
+                            // 只记录错误/警告，正常页面脚本不刷日志。
+                            if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR ||
+                                message.message().startsWith("JSERR") ||
+                                message.message().startsWith("JSPERF")
+                            ) {
+                                Log.w(
+                                    TAG_TEXT_READER,
+                                    "console: ${message.message()} (${message.sourceId()}:${message.lineNumber()})",
+                                )
+                            }
+                            return true
+                        }
+                    }
                     webViewClient = object : WebViewClient() {
                         override fun shouldInterceptRequest(
                             view: WebView,
@@ -976,6 +1088,14 @@ internal fun TextReaderContent(
                                 }
                                 val resource = token?.let { inlineImageStore[it] }
                                 if (resource != null) {
+                                    val count = inlineImageRequestCount.incrementAndGet()
+                                    val total = inlineImageBytes.addAndGet(resource.bytes.size.toLong())
+                                    if (count % 10 == 0) {
+                                        Log.i(
+                                            TAG_TEXT_PERF,
+                                            "inline images requested=$count totalBytes=$total",
+                                        )
+                                    }
                                     return WebResourceResponse(
                                         resource.mime,
                                         null,
@@ -987,7 +1107,25 @@ internal fun TextReaderContent(
                         }
 
                         override fun onPageFinished(view: WebView?, url: String?) {
+                            val started = loadStartedAt
+                            val elapsed = if (started != 0L) SystemClock.elapsedRealtime() - started else -1L
+                            Log.i(TAG_TEXT_PERF, "onPageFinished elapsed=${elapsed}ms mode=${settings.readerMode}")
                             pageFinishedToken += 1
+                        }
+
+                        override fun onRenderProcessGone(
+                            view: WebView?,
+                            detail: RenderProcessGoneDetail?,
+                        ): Boolean {
+                            // 渲染进程被系统回收（低内存等）后这个 WebView 已经报废：
+                            // 立即销毁并重建，否则正文会一直空白、加载指示器永远转圈。
+                            Log.i(TAG_TEXT_READER, "WebView 渲染进程已退出，重建阅读视图")
+                            if (holder.webView === view) holder.webView = null
+                            firstLayoutRendered = false
+                            loadStartedAt = 0L
+                            // 交给 Compose 在 key 变化时销毁旧 View，避免对已崩溃的 WebView 再操作。
+                            webViewGeneration += 1
+                            return true
                         }
                     }
                     holder.webView = this
@@ -1004,12 +1142,59 @@ internal fun TextReaderContent(
                 runCatching { webView.destroy() }
             },
         )
-        LaunchedEffect(html) {
+        }
+        LaunchedEffect(html, webViewGeneration) {
             val webView = holder.webView ?: return@LaunchedEffect
             if (html.isNotEmpty()) {
+                loadStartedAt = SystemClock.elapsedRealtime()
                 val bootstrap = """{"options":$optionsJson,"ratio":${localRatio.value}}"""
                 lastAppliedOptionsJson = optionsJson
-                val initialHtml = html.replace(TEXT_READER_BOOTSTRAP_PLACEHOLDER, bootstrap)
+                var initialHtml = html.replace(TEXT_READER_BOOTSTRAP_PLACEHOLDER, bootstrap)
+                if (settings.debugMode) {
+                    // Debug 布局锚点：蓝色 = WebView 的 #book 内容框，橙色虚线 = 滚动视口。
+                    initialHtml = initialHtml.replace(
+                        "</head>",
+                        "<style>body.paged #book{outline:2px solid #1E88E5 !important;}" +
+                            "body.paged #scroll{outline:1px dashed #FF9800 !important;}</style>" +
+                            "<script>(function(){" +
+                            "function show(){" +
+                            "var b=document.getElementById('book');if(!b)return;" +
+                            "var s=document.getElementById('scroll');" +
+                            "var cs=getComputedStyle(b),r=b.getBoundingClientRect(),dpr=window.devicePixelRatio||1;" +
+                            "var pm=getComputedStyle(document.documentElement).getPropertyValue('--reader-page-margin-x');" +
+                            "var lines=['WEBVIEW dpr='+dpr.toFixed(2)," +
+                            "'inner='+window.innerWidth+'x'+window.innerHeight+' CSS'," +
+                            "'book CSS: L'+r.left.toFixed(0)+' T'+r.top.toFixed(0)+' R'+r.right.toFixed(0)+' B'+r.bottom.toFixed(0)," +
+                            "'book px: L'+(r.left*dpr).toFixed(0)+' T'+(r.top*dpr).toFixed(0)+' R'+(r.right*dpr).toFixed(0)+' B'+(r.bottom*dpr).toFixed(0)," +
+                            "'pageMargin='+pm.trim()+' lineHeight='+cs.lineHeight+' fontSize='+cs.fontSize," +
+                            "'scroll='+s.clientWidth+'x'+s.clientHeight];" +
+                            "var el=document.getElementById('salt-debug');" +
+                            "if(!el){el=document.createElement('div');el.id='salt-debug';" +
+                            "el.style.cssText='position:fixed;left:0;top:0;z-index:99999;background:#ffffffe6;" +
+                            "color:#1565c0;font:10px/1.45 monospace;padding:4px;pointer-events:none;white-space:pre';" +
+                            "document.body.appendChild(el);}" +
+                            "el.textContent=lines.join('\\n');" +
+                            "var kids=[].slice.call(b.children||[]);" +
+                            "var rows=kids.slice(0,24).map(function(el,i){" +
+                            "el.style.outline='1px dashed rgba(0,150,136,.45)';" +
+                            "var c=getComputedStyle(el);" +
+                            "return i+':'+el.tagName.toLowerCase()+' lh='+c.lineHeight+' mt='+c.marginTop+' mb='+c.marginBottom;});" +
+                            "var bel=document.getElementById('salt-debug-blocks');" +
+                            "if(!bel){bel=document.createElement('div');bel.id='salt-debug-blocks';" +
+                            "bel.style.cssText='position:fixed;left:0;top:96px;z-index:99999;background:#ffffffe6;" +
+                            "color:#00897b;font:9px/1.35 monospace;padding:4px;pointer-events:none;white-space:pre;max-height:55%;overflow:hidden';" +
+                            "document.body.appendChild(bel);}" +
+                            "bel.textContent=rows.join('\\n');}" +
+                            "window.addEventListener('load',function(){setTimeout(show,300);setTimeout(show,900);});" +
+                            "window.addEventListener('resize',show);" +
+                            "})();</script></head>",
+                    )
+                }
+                Log.i(
+                    TAG_TEXT_PERF,
+                    "loadData chars=${initialHtml.length} mode=${settings.readerMode} " +
+                        "render=${renderStart}..${renderEnd}",
+                )
                 webView.loadDataWithBaseURL(
                     INLINE_IMAGE_SCHEME + "://" + INLINE_IMAGE_HOST + "/",
                     initialHtml,
@@ -1020,10 +1205,69 @@ internal fun TextReaderContent(
             }
         }
 
+        // 加载看门狗：渲染进程死亡或加载卡死时 WebView 不会再发页面事件。
+        // 超过 10 秒没有新的页面状态就销毁并重建 WebView，避免一直黑屏/转圈。
+        LaunchedEffect(book.id) {
+            while (true) {
+                kotlinx.coroutines.delay(1500)
+                val started = loadStartedAt
+                if (started == 0L) continue
+                if (SystemClock.elapsedRealtime() - started < 10_000L) continue
+                // 加载后 10 秒仍没有任何页面状态：多半是渲染进程死了，重建 WebView 再试一次。
+                // 注意不能把"页面静止"当成超时——加载成功时收到状态就会清零。
+                loadStartedAt = 0L
+                renderFailures += 1
+                firstLayoutRendered = false
+                if (renderFailures > 2) {
+                    // 连续多次重建仍然渲染不出来：给用户明确的失败提示和重试入口，
+                    // 而不是永远转圈（WebView 渲染进程被系统卡死时会出现这种情况）。
+                    Log.w(TAG_TEXT_READER, "文本阅读器多次重建仍失败，显示重试提示")
+                    renderFailed = true
+                } else {
+                    Log.w(TAG_TEXT_READER, "文本阅读器加载超时，重建 WebView（第 $renderFailures 次）")
+                    webViewGeneration += 1
+                }
+            }
+        }
+
+        if (renderFailed) {
+            Box(
+                Modifier.fillMaxSize().background(readerBackground),
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        stringResource(R.string.reader_render_failed_title),
+                        style = MaterialTheme.typography.titleMedium,
+                        color = readerTextColor,
+                    )
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        stringResource(R.string.reader_render_failed_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = readerTextColor.copy(alpha = 0.7f),
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                    FilledTonalButton(
+                        onClick = {
+                            renderFailed = false
+                            renderFailures = 0
+                            loadStartedAt = 0L
+                            firstLayoutRendered = false
+                            webViewGeneration += 1
+                        },
+                    ) {
+                        Text(stringResource(R.string.reader_retry))
+                    }
+                }
+            }
+        }
+
         // 首次排版 / 拖动进度条后重建 WebView 时显示的加载指示器：统一用 Material 3 的
         // SaltLoading（Expressive LoadingIndicator），尺寸比原来大一号。
         AnimatedVisibility(
-            visible = !firstLayoutRendered,
+            visible = !firstLayoutRendered && !renderFailed,
             enter = fadeIn(tween(durationMillis = 90)),
             exit = fadeOut(tween(durationMillis = 150)),
             modifier = Modifier.align(Alignment.Center),
@@ -1049,18 +1293,6 @@ internal fun TextReaderContent(
             ) {
                 SaltLoading(sizeDp = 40, color = readerAccent)
             }
-        }
-
-        AnimatedVisibility(
-            visible = chromeVisible && activePanel != ReaderChromePanel.NONE,
-            enter = fadeIn(),
-            exit = fadeOut(),
-        ) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(readerBackground.copy(alpha = 0.5f)),
-            )
         }
 
         AnimatedVisibility(
@@ -1095,20 +1327,25 @@ internal fun TextReaderContent(
                         .padding(bottom = 4.dp)
                         .animateContentSize(),
                 ) {
+                val pagesInfo = estimatedTextPage(
+                    pageInfo = pageInfo,
+                    mode = settings.readerMode,
+                    totalChars = totalChars,
+                    charsPerPage = estimatedCharsPerPage,
+                    pageBase = pageBase,
+                )
+                // 分页模式下进度条按"页"走：每页一个位置，百分比也由页码换算，
+                // 避免出现 2/2 页却停在 75% 这种页码与进度不一致的情况。
+                val pageProgress = pagesInfo?.let { (current, total) ->
+                    if (total > 1) (current - 1).toFloat() / (total - 1) else 1f
+                }
                 ReaderBottomBar(
-                    progress = { pageInfo.ratio },
+                    progress = { pageProgress ?: pageInfo.ratio },
                     label = {
-                        val pagesInfo = estimatedTextPage(
-                            pageInfo = pageInfo,
-                            mode = settings.readerMode,
-                            totalChars = totalChars,
-                            charsPerPage = estimatedCharsPerPage,
-                            pageBase = pageBase,
-                        )
                         if (pagesInfo != null) {
                             stringResource(
                                 R.string.reader_progress_combo,
-                                percentOf(pageInfo.ratio),
+                                percentOf(pageProgress ?: pageInfo.ratio),
                                 pagesInfo.first,
                                 pagesInfo.second,
                             )
@@ -1116,7 +1353,19 @@ internal fun TextReaderContent(
                             stringResource(R.string.reader_percent, percentOf(pageInfo.ratio))
                         }
                     },
-                    onJump = { fraction -> jumpToFraction(fraction) },
+                    snapPages = pagesInfo?.second?.takeIf { settings.readerMode == ReaderMode.PAGED } ?: 0,
+                    onJump = { fraction ->
+                        val target = pagesInfo
+                        if (settings.readerMode == ReaderMode.PAGED && target != null && target.second > 1) {
+                            val page = (fraction * (target.second - 1)).roundToInt()
+                                .coerceIn(0, target.second - 1)
+                            val offset = ((page + 0.5) * estimatedCharsPerPage).toLong()
+                                .coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L))
+                            jumpToOffset(offset)
+                        } else {
+                            jumpToFraction(fraction)
+                        }
+                    },
                     progressLabelSizeSp = settings.readerProgressLabelSizeSp,
                     accentColor = readerAccent,
                     activePanel = activePanel,
@@ -1231,10 +1480,13 @@ internal fun TextReaderContent(
                 charsPerPage = estimatedCharsPerPage,
                 pageBase = pageBase,
             )
+            val pagePercent = estimatedPages?.let { (current, total) ->
+                if (total > 1) (current - 1).toFloat() / (total - 1) else 1f
+            }
             val label = if (settings.readerPageInfo == ReaderPageInfo.PAGES && estimatedPages != null) {
                 stringResource(R.string.reader_page_indicator, estimatedPages.first, estimatedPages.second)
             } else {
-                stringResource(R.string.reader_percent, percentOf(pageInfo.ratio))
+                stringResource(R.string.reader_percent, percentOf(pagePercent ?: pageInfo.ratio))
             }
             Text(
                 label,
@@ -1260,6 +1512,35 @@ internal fun TextReaderContent(
                 textSizeSp = settings.readerPageIndicatorSizeSp,
                 color = pageIndicatorColor,
             )
+        }
+
+        // Debug：一键切换回原生阅读器，方便对比两边锚点。
+        if (settings.debugMode) {
+            Surface(
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 96.dp, end = 8.dp),
+                color = Color(0xE6FFFFFF),
+                shape = RoundedCornerShape(8.dp),
+                shadowElevation = 2.dp,
+            ) {
+                Text(
+                    "WEBVIEW → NATIVE",
+                    modifier = Modifier
+                        .clickable {
+                            if (onDebugSwitch != null) {
+                                onDebugSwitch(pageInfo.ratio)
+                            } else {
+                                onSettingsChange { it.copy(nativeReader = true) }
+                            }
+                        }
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    style = MaterialTheme.typography.labelSmall.copy(
+                        fontFamily = FontFamily.Monospace,
+                    ),
+                    color = Color(0xFF1565C0),
+                )
+            }
         }
     }
 
@@ -1383,6 +1664,10 @@ private fun escapeHtml(text: String): String = text
  * [EbookChapter.showHeading] 为 false 时正文已经自带标题元素（例如 `<p class="pius1">`），
  * 此时不再注入 h2，否则同一章会出现两个标题；纯图片页（cover/illustration）始终不注入标题。
  */
+/** 纵向模式给图片加懒加载/异步解码，避免首屏一次性解码所有 base64 图片。 */
+private fun lazyImages(html: String): String =
+    html.replace("<img ", "<img loading=\"lazy\" decoding=\"async\" ")
+
 private fun chapterHtml(
     chapter: EbookChapter,
     index: Int,
@@ -1441,15 +1726,19 @@ private fun externalizeInlineImages(
     html: String,
     store: ConcurrentHashMap<String, InlineImageResource>,
     tokenCounter: AtomicInteger,
+    maxImageWidthPx: Int = 0,
 ): String {
     if (!html.contains("data:image")) return html
     return INLINE_DATA_URI.replace(html) { match ->
         val mime = match.groupValues[2]
         val payload = match.groupValues[3]
-        val bytes = runCatching { java.util.Base64.getDecoder().decode(payload) }.getOrNull()
+        val rawBytes = runCatching { java.util.Base64.getDecoder().decode(payload) }.getOrNull()
             ?: return@replace match.value
+        val optimized = downscaleInlineImage(rawBytes, mime, maxImageWidthPx)
+        val bytes = optimized.first
+        val finalMime = optimized.second
         val token = "img" + tokenCounter.incrementAndGet()
-        store[token] = InlineImageResource(bytes, mime)
+        store[token] = InlineImageResource(bytes, finalMime)
         val bounds = runCatching {
             android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                 .also { android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, it) }
@@ -1461,6 +1750,47 @@ private fun externalizeInlineImages(
         }
         "src=\"" + INLINE_IMAGE_SCHEME + "://" + INLINE_IMAGE_HOST + "/inline/" + token + "\"" + dims
     }
+}
+
+/**
+ * 按屏宽降采样大图：WebView 滚动时一张整页插画（2000px+）的解码/上传会卡主线程。
+ * 超过 [maxWidthPx] 的图片按比例缩到屏宽并重编码（有透明通道用 PNG，否则 JPEG 82），
+ * 大幅降低解码量和纹理内存；小图原样保留。
+ */
+private fun downscaleInlineImage(bytes: ByteArray, mime: String, maxWidthPx: Int): Pair<ByteArray, String> {
+    if (maxWidthPx <= 0) return bytes to mime
+    val bounds = runCatching {
+        android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            .also { android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, it) }
+    }.getOrNull() ?: return bytes to mime
+    val width = bounds.outWidth
+    val height = bounds.outHeight
+    if (width <= 0 || height <= 0 || width <= maxWidthPx * 1.15f) return bytes to mime
+    return runCatching {
+        var sample = 1
+        while (width / (sample * 2) >= maxWidthPx) sample *= 2
+        val decoded = android.graphics.BitmapFactory.decodeByteArray(
+            bytes,
+            0,
+            bytes.size,
+            android.graphics.BitmapFactory.Options().apply { inSampleSize = sample },
+        ) ?: return@runCatching bytes to mime
+        val targetHeight = (decoded.height.toFloat() * maxWidthPx / decoded.width).roundToInt().coerceAtLeast(1)
+        val scaled = android.graphics.Bitmap.createScaledBitmap(decoded, maxWidthPx, targetHeight, true)
+        if (scaled !== decoded) decoded.recycle()
+        val hasAlpha = scaled.hasAlpha()
+        val out = java.io.ByteArrayOutputStream(scaled.byteCount.coerceAtMost(4 * 1024 * 1024))
+        val format = if (hasAlpha) {
+            android.graphics.Bitmap.CompressFormat.PNG
+        } else {
+            android.graphics.Bitmap.CompressFormat.JPEG
+        }
+        scaled.compress(format, 82, out)
+        scaled.recycle()
+        val encoded = out.toByteArray()
+        val finalMime = if (hasAlpha) "image/png" else "image/jpeg"
+        if (encoded.size < bytes.size) encoded to finalMime else bytes to mime
+    }.getOrElse { bytes to mime }
 }
 
 /**
@@ -1490,6 +1820,10 @@ private const val JUMP_BATCH = 3
 
 /** 单次注入的字符预算：图片型文字书按章限流，避免首帧/追加时 WebView 排版过重。 */
 private const val INITIAL_RENDER_CHAR_BUDGET = 360_000L
+// 纵向模式首屏至少要两章：单章可能只是封面图，内容不足一屏时滚动容器不会产生滚动事件，
+// 后续章节也就不会被追加（表现为“划不动”）。
+private const val VERTICAL_INITIAL_CHAPTER_BATCH = 2
+private const val VERTICAL_INITIAL_RENDER_CHAR_BUDGET = 160_000L
 private const val WINDOW_RENDER_CHAR_BUDGET = 600_000L
 
 /** 跳转时目标章节前保留的章节数，给"上一页"留一点缓冲。 */
@@ -1501,9 +1835,8 @@ private const val PREFETCH_RATIO = 0.8f
 /** 追加/前插的最小间隔，避免一次滚动连续注入多批。 */
 private const val CHAPTER_LOAD_THROTTLE_MS = 300L
 
-/** 跳转后忽略旧 WebView 排队事件的时长。 */
-private const val STALE_EVENT_GUARD_MS = 600L
-
+private const val TAG_TEXT_READER = "SaltReaderText"
+private const val TAG_TEXT_PERF = "SaltReaderPerf"
 private const val BRIDGE_NAME = "SaltReader"
 private const val TEXT_READER_BOOTSTRAP_PLACEHOLDER = "__SALT_READER_BOOTSTRAP__"
 
@@ -1517,7 +1850,12 @@ private val HTML_HEAD = """
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<script>window.__saltReaderBootstrap = __SALT_READER_BOOTSTRAP__;</script>
+<script>
+window.onerror = function (msg, src, line, col) {
+  console.log('JSERR ' + msg + ' @' + src + ':' + line);
+};
+window.__saltReaderBootstrap = __SALT_READER_BOOTSTRAP__;
+</script>
 <style>
 /* --app-vh is maintained from JS: some WebView builds resolve `vh` to 0.
    The reading area follows WeChat Reading: ~30dp side margins, 1.8 line height and a small
@@ -1570,8 +1908,8 @@ body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; line-height: var(
 #book a { color: inherit !important; text-decoration: none !important; }
 
 /* Illustrations: block images are centered and never overflow the page. */
-#book img { display: block; max-width: 100%; height: auto; margin: 0.8em auto; }
-#book .illus img, #book .images img, #book .cover img { margin-left: auto; margin-right: auto; }
+#book img { display: block; max-width: var(--reader-image-max-w, 100%); height: auto; margin: 0.8em auto; }
+#book .illus img, #book .images img, #book .cover img { margin-left: auto; margin-right: auto; max-width: var(--reader-image-max-w, 100%); }
 /* Full-page illustrations / colour pages must fit one screen, in both reading modes. */
 #book section.chapter.image-only { text-align: center; }
 #book section.chapter.image-only img { display: block; width: auto; max-width: 100%; max-height: var(--reader-image-max-h, calc(var(--app-vh, 100%) - 112px)); margin: 8px auto; }
@@ -1597,11 +1935,29 @@ body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; line-height: var(
 }
 #book pre code { font-size: 1em; background: transparent; padding: 0; }
 #book code { font-size: 0.92em; padding: 0 0.15em; border-radius: 3px; background: rgba(127, 127, 127, 0.10); }
-#book table { border-collapse: collapse; width: 100%; table-layout: fixed;
-  margin: 0.8em var(--reader-page-margin-x, 30px); font-size: 0.86em; }
-#book th, #book td { border: 1px solid rgba(127, 127, 127, 0.35); padding: 0.3em 0.4em;
-  vertical-align: top; text-indent: 0; text-align: left; overflow-wrap: anywhere; word-break: break-word; }
-#book th { font-weight: 700; background: rgba(127, 127, 127, 0.08); }
+/* WebView 156（Android 17）对个别书的原生表格排版会异常占用数 GB 内存并拖垮渲染进程，
+   因此阅读器里不使用原生 table 布局，改成"每行一块、单元格行内排列"的等价排版。
+   这是规避 Chromium 表格布局缺陷的降级方案，样式上仍保持可读。 */
+#book table, #book thead, #book tbody, #book tfoot, #book caption, #book colgroup, #book col { display: block; }
+#book table { display: inline-block;
+  width: calc(100% - 2 * var(--reader-page-margin-x, 30px));
+  max-width: 100%; box-sizing: border-box; margin: 0.8em var(--reader-page-margin-x, 30px);
+  font-size: 0.86em; vertical-align: top;
+  border: 1px solid rgba(127, 127, 127, 0.35); }
+#book tr { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; align-items: stretch;
+  box-sizing: border-box; margin: 0; border: 0; border-top: 1px solid rgba(127, 127, 127, 0.35); }
+#book tr:first-child { border-top: 0; }
+#book thead tr, #book tr:first-child { background: rgba(127, 127, 127, 0.08); }
+#book td, #book th { display: block; min-width: 0; box-sizing: border-box;
+  border: 0; border-left: 1px solid rgba(127, 127, 127, 0.25);
+  padding: 0.35em 0.5em; vertical-align: top; text-indent: 0; text-align: left;
+  overflow-wrap: anywhere; word-break: break-word; }
+#book td:first-child, #book th:first-child { border-left: 0; }
+#book td:first-child, #book th:first-child { border-left: 0; }
+#book th { font-weight: 700; }
+/* 单元格内的段落不能沿用正文的左右 30px 边距/齐两端：窄列里会造成负的可用宽度。 */
+#book td p, #book th p { margin: 0; text-indent: 0; text-align: left; line-height: 1.5 !important; }
+#book td pre, #book th pre, #book td code, #book th code { margin: 0.2em 0; }
 #book blockquote { margin: 0.7em var(--reader-page-margin-x, 30px); padding-left: 0.9em;
   border-left: 3px solid rgba(127, 127, 127, 0.35); }
 #book blockquote p { margin-left: 0; margin-right: 0; }
@@ -1623,6 +1979,7 @@ body.paged #book { height: calc(var(--app-vh, 100%) - 56px); margin: 28px 0; col
 body.vertical { height: auto; }
 body.vertical #scroll { width: 100vw; height: var(--app-vh, 100%); overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: var(--reader-vertical-pad-top, 20px) 0 var(--reader-vertical-pad-bottom, 96px); box-sizing: border-box; }
 body.vertical #book { height: auto; column-width: auto; }
+body.vertical #book img { content-visibility: auto; }
 </style>
 </head>
 <body class="paged">
@@ -1668,6 +2025,7 @@ private val HTML_TAIL = """
   updateViewportHeight();
   window.addEventListener('resize', updateViewportHeight);
   var mode = 'paged';
+  var DOC_TOKEN = 0;
   var restoring = false;
   var scrollTimer = null;
   // CSS scroll snap needs one snap target per page. The pages are CSS columns (not elements), so
@@ -1681,6 +2039,16 @@ private val HTML_TAIL = """
   // Page width the markers were last positioned with; appending chapters only adds markers at the
   // end, so a refresh then only touches the new ones instead of rewriting every marker's style.
   var snapWidth = -1;
+  // WebView 在某些系统（如 Android 17）上会在尺寸确定前就跑到脚本里：此时 clientWidth /
+  // innerHeight 为 0，按 1px 分栏会生成海量分栏和 snap 标记，内存会瞬间涨到数 GB 并拖垮
+  // 渲染进程。所有分页相关计算都必须先确认视口有效。
+  function viewportReady() {
+    var w = window.innerWidth || scroll.clientWidth || 0;
+    var h = window.innerHeight || scroll.clientHeight || 0;
+    return w >= 64 && h >= 64;
+  }
+  // 分页数量的合理上限：正常书籍一窗口最多几百页，超过说明布局异常（视口为 0 等）。
+  var MAX_SANE_PAGES = 2000;
   function refreshSnapPoints() {
     refreshMetrics();
     if (mode !== 'paged') {
@@ -1690,6 +2058,12 @@ private val HTML_TAIL = """
     }
     var w = cachedWidth;
     var pages = cachedPages;
+    if (!viewportReady() || !isFinite(pages) || pages < 1 || pages > MAX_SANE_PAGES) {
+      // 布局尚未就绪或明显异常：先清掉标记，等下一次正常的 refresh 再建。
+      snapLayer.innerHTML = '';
+      snapWidth = -1;
+      return;
+    }
     while (snapLayer.childElementCount > pages) snapLayer.removeChild(snapLayer.lastChild);
     while (snapLayer.childElementCount < pages) {
       var marker = document.createElement('div');
@@ -1733,7 +2107,9 @@ private val HTML_TAIL = """
     cachedHeight = Math.max(1, scroll.clientHeight || window.innerHeight || 0);
     cachedScrollWidth = scroll.scrollWidth;
     cachedScrollHeight = scroll.scrollHeight;
-    cachedPages = Math.max(1, Math.round(cachedScrollWidth / cachedWidth));
+    var pages = Math.round(cachedScrollWidth / cachedWidth);
+    if (!isFinite(pages) || pages < 1) pages = 1;
+    cachedPages = Math.min(pages, MAX_SANE_PAGES);
   }
   function viewportWidth() {
     if (!cachedWidth) refreshMetrics();
@@ -1752,6 +2128,43 @@ private val HTML_TAIL = """
   // Every onState call crosses the JS bridge and recomposes the reading chrome, so identical
   // reports are dropped: the progress label is integer percent, the page numbers are integers.
   var lastReportPage = -1, lastReportPages = -1, lastReportRatio = -2;
+  var lastTrimAt = 0;
+  function trimEarlierSections() {
+    if (mode !== 'vertical') return;
+    var now = Date.now();
+    if (now - lastTrimAt < 1200) return;
+    var secs = book.querySelectorAll('section.chapter');
+    if (secs.length <= 8) return;
+    var st = scroll.scrollTop;
+    var firstVisible = 0;
+    for (var i = 0; i < secs.length; i++) {
+      if (secs[i].offsetTop + secs[i].offsetHeight > st) { firstVisible = i; break; }
+    }
+    var keepFrom = Math.max(0, firstVisible - 2);
+    if (keepFrom <= 0) return;
+    lastTrimAt = now;
+    var removedHeight = 0;
+    for (var j = 0; j < keepFrom; j++) {
+      removedHeight += secs[j].offsetHeight;
+      secs[j].parentNode.removeChild(secs[j]);
+    }
+    scroll.scrollTop = Math.max(0, st - removedHeight);
+    console.log('JSPERF trim removed=' + keepFrom + ' sh=' + scroll.scrollHeight + ' st=' + scroll.scrollTop);
+    if (window['$BRIDGE_NAME'] && window['$BRIDGE_NAME'].onTrimmed) {
+      window['$BRIDGE_NAME'].onTrimmed(keepFrom);
+    }
+  }
+  var lastNeedMoreAt = 0;
+  function maybeRequestMoreForVertical() {
+    if (mode !== 'vertical') return;
+    if (scroll.scrollHeight > scroll.clientHeight + 8) return;
+    var now = Date.now();
+    if (now - lastNeedMoreAt < 500) return;
+    lastNeedMoreAt = now;
+    if (window['$BRIDGE_NAME'] && window['$BRIDGE_NAME'].onNeedMore) {
+      window['$BRIDGE_NAME'].onNeedMore();
+    }
+  }
   function report(force) {
     // Scrolling does not change the document dimensions. Re-reading scrollWidth/scrollHeight on
     // every throttled scroll event forces a synchronous layout; refresh them only at known layout
@@ -1772,9 +2185,11 @@ private val HTML_TAIL = """
     lastReportRatio = r;
     try {
       if (window['$BRIDGE_NAME'] && window['$BRIDGE_NAME'].onState) {
-        window['$BRIDGE_NAME'].onState(p, n, r);
+        window['$BRIDGE_NAME'].onState(p, n, r, DOC_TOKEN);
       }
     } catch (e) {}
+    maybeRequestMoreForVertical();
+    trimEarlierSections();
   }
   // Inline data-URI illustrations decode asynchronously. Layout measured before they are ready
   // gives a wrong page count / scroll height, which is exactly what full-page colour pages need,
@@ -1829,6 +2244,7 @@ private val HTML_TAIL = """
     document.documentElement.style.background = color;
   }
   function setOptions(opts) {
+    DOC_TOKEN = Number(opts.docToken) || 0;
     mode = opts.mode === 'vertical' ? 'vertical' : 'paged';
     document.body.className = mode;
     paint(opts.background);
@@ -1847,6 +2263,10 @@ private val HTML_TAIL = """
     var safeSide = applySafeMetrics();
     pageMargin = Math.max(pageMargin, safeSide + 8);
     document.documentElement.style.setProperty('--reader-page-margin-x', pageMargin + 'px');
+    document.documentElement.style.setProperty(
+      '--reader-image-max-w',
+      opts.imageFullWidth ? '100%' : 'calc(100% - 2 * ' + pageMargin + 'px)'
+    );
     var fontFamily = typeof opts.fontFamily === 'string' ? opts.fontFamily : '';
     if (fontFamily) {
       document.documentElement.style.setProperty('--reader-font-family', fontFamily);
@@ -1913,12 +2333,31 @@ private val HTML_TAIL = """
       var rectDiff = book.getBoundingClientRect().left - scroll.getBoundingClientRect().left;
     }, 120);
   }
+  var applyRetries = 0;
   function apply(opts, r) {
+    // 初始视口还没测量出来时先不布局（见 viewportReady 注释）；最多等约 2 秒。
+    if (!viewportReady()) {
+      applyRetries++;
+      if (applyRetries < 600) {
+        requestAnimationFrame(function () { apply(opts, r); });
+        return;
+      }
+      // 视口始终无效：绝不按 1px 建分栏（会瞬间吃掉数百 MB 内存）。
+      console.log('JSPERF apply-abort invalid-viewport');
+      return;
+    }
+    applyRetries = 0;
     updateViewportHeight();
     setOptions(opts);
     // 字体加载会改变分页宽度：先等字体就绪再恢复位置，避免跳到半页/旧页。
     whenFontsReady(function () {
-      whenImagesReady(function () { restore(r); });
+      whenImagesReady(function () {
+        restore(r);
+        console.log('JSPERF applied mode=' + mode + ' body=' + document.body.className +
+          ' sh=' + scroll.scrollHeight + ' ch=' + scroll.clientHeight +
+          ' sw=' + scroll.scrollWidth + ' cw=' + scroll.clientWidth);
+        maybeRequestMoreForVertical();
+      });
     });
   }
   function turn(delta) {
@@ -2083,7 +2522,13 @@ private val HTML_TAIL = """
     report(true);
     // Inline illustrations decode asynchronously and add columns: the snap markers must follow,
     // otherwise a later fling has no snap target for the new pages and can run past them.
-    whenImagesReady(function () { refreshSnapPoints(); report(true); });
+    whenImagesReady(function () {
+      refreshSnapPoints();
+      report(true);
+      console.log('JSPERF append nodes=' + book.querySelectorAll('*').length +
+        ' imgs=' + book.querySelectorAll('img').length +
+        ' sh=' + scroll.scrollHeight + ' st=' + scroll.scrollTop);
+    });
   }
   function prependChapters(html) {
     if (!html) return;

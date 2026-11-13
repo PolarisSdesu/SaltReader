@@ -373,6 +373,15 @@ class ReaderViewModel(
      * Persists the text reading position as a character offset. The repository maps it back to the
      * estimated shelf page, handles debounced persistence and marks the book finished near the end.
      */
+    /**
+     * 仓库里的最新阅读进度。`indexedBook` 为了减少重组刻意忽略 progressOffset，
+     * 因此阅读器初始化时需要单独取一次最新值，否则重开书会回到打开时的旧进度。
+     */
+    fun latestProgressOffset(): Long {
+        val latest = repo.books.value.firstOrNull { it.id == bookId }
+        return latest?.progressOffset ?: 0L
+    }
+
     fun updateTextProgress(offset: Long) {
         repo.updateTextProgress(bookId, offset)
     }
