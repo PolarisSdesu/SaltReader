@@ -31,5 +31,7 @@ object NativeTextLayout {
         fullPageWidth: Float,
         imageMaxHeightRatio: Float,
         imagePlaceholder: String,
+        /** 实测等宽字宽（em，相对正文字号）：断行按绘制字体的真实字宽计算。 */
+        monoAdvanceEm: Float,
     ): String
 }

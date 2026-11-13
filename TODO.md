@@ -11,6 +11,9 @@
 - [x] **3. 更新 AGENTS.md 和 README**
   同步最近的 Native 阅读器、调试模式与设置相关改动。
 
+- [ ] **6. rust 书章节标题样式 native 与 WebView 不一致**
+  （用户反馈 2026-11-14）native 的章节标题字号/间距/对齐与 WebView 的 `h2.chapter-heading`/`.pius*` 不一致。
+
 - [ ] **4. WebView 阅读器：tunnel 前几页图片页面抽搐**
   阅读 tunnel 开头几张图片页时画面抖动/抽动，疑似图片加载完成或高度回写（`--app-vh` / JS 高度同步）引起的重排抖动。
 

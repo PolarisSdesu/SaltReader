@@ -1141,13 +1141,13 @@ fn char_width(ch: char, font_size: f32, scale: f32, advances: &WidthTable) -> f3
 
 /// 等宽字体的近似字宽：代码块的排版宽度与绘制用的 monospace 字体一致，
 /// 否则用正文比例字体估算会偏窄，长代码行会被裁切而不是折行。
-fn mono_char_width(ch: char, size_px: f32) -> f32 {
+fn mono_char_width(ch: char, size_px: f32, mono_adv_em: f32) -> f32 {
     if ('\u{0006}'..='\u{0013}').contains(&ch) {
         return 0.0;
     }
     match UnicodeWidthChar::width(ch).unwrap_or(1) {
         2 => size_px,
-        _ => size_px * 0.6,
+        _ => size_px * mono_adv_em,
     }
 }
 
@@ -1187,6 +1187,7 @@ fn wrap_simple(
     scale: f32,
     advances: &WidthTable,
     mono: bool,
+    mono_adv_em: f32,
 ) -> Vec<String> {
     if text.trim().is_empty() {
         return vec![String::new()];
@@ -1199,7 +1200,7 @@ fn wrap_simple(
             .chars()
             .map(|ch| {
                 if mono {
-                    mono_char_width(ch, size_px)
+                    mono_char_width(ch, size_px, mono_adv_em)
                 } else {
                     char_width(ch, size_px, scale, advances)
                 }
@@ -1239,6 +1240,7 @@ fn layout_blocks(
     image_widths: &[f32],
     image_base_width: f32,
     image_max_height_ratio: f32,
+    mono_adv_em: f32,
 ) -> Vec<Vec<RenderLine>> {
     let widths = WidthTable::from_map(advances);
     let advances = &widths;
@@ -1346,7 +1348,15 @@ fn layout_blocks(
                 let mut cell_lines: Vec<Vec<String>> = Vec::with_capacity(cols);
                 for column in 0..cols {
                     let text = row.get(column).cloned().unwrap_or_default();
-                    cell_lines.push(wrap_simple(&text, cell_width, size_px, style.size, advances, style.mono));
+                    cell_lines.push(wrap_simple(
+                        &text,
+                        cell_width,
+                        size_px,
+                        style.size,
+                        advances,
+                        style.mono,
+                        mono_adv_em,
+                    ));
                 }
                 let max_lines = cell_lines
                     .iter()
@@ -1539,9 +1549,9 @@ fn layout_blocks(
                 .chars()
                 .map(|ch| {
                     if style.mono {
-                        mono_char_width(ch, size_px)
+                        mono_char_width(ch, size_px, mono_adv_em)
                     } else if inline_mono {
-                        mono_char_width(ch, size_px) * 0.92
+                        mono_char_width(ch, size_px, mono_adv_em) * 0.92
                     } else {
                         char_width(ch, size_px, style.size, advances)
                     }
@@ -1747,6 +1757,7 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
     full_page_width: f32,
     image_max_height_ratio: f32,
     image_placeholder: JString,
+    mono_advance_em: f32,
 ) -> jstring {
     let mut advance_map: HashMap<u32, f32> = HashMap::new();
     if let (Ok(cp_len), Ok(adv_len)) = (
@@ -1796,6 +1807,8 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
     let height = height.max(32.0);
     let font_size = font_size.max(1.0);
     let line_height_base = line_height_base.clamp(0.9, 3.5);
+    // 实测等宽字宽（em）：行内代码/代码块的断行宽度必须与绘制字体一致，否则会提前折行。
+    let mono_adv_em = mono_advance_em.clamp(0.3, 1.5);
 
     let mut blocks: Vec<Block> = Vec::new();
     let mut chapter_starts: Vec<usize> = Vec::new();
@@ -1847,6 +1860,7 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
         &width_list,
         image_base_width,
         image_max_height_ratio,
+        mono_adv_em,
     );
 
     let estimated = pages
@@ -1928,7 +1942,7 @@ mod gap_tests {
         let mut after = 0.0;
         let blocks = parse_html_blocks(html, &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, &[], 900.0, 1634.0, 38.0, 1.8, &advances, &[], &[], 1080.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 900.0, 1634.0, 38.0, 1.8, &advances, &[], &[], 1080.0, 1.0, 0.6);
         for (pi, page) in pages.iter().enumerate() {
             let first = page.first().map(|l| l.text.clone()).unwrap_or_default();
             let last = page.last().map(|l| l.text.clone()).unwrap_or_default();
@@ -1963,7 +1977,7 @@ mod gap_tests {
         assert!(text.contains("  indented"), "text={text:?}");
         assert!(text.contains("\n\n"), "text={text:?}");
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, &[], 600.0, 1634.0, 38.0, 1.8, &advances, &[], &[], 600.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 600.0, 1634.0, 38.0, 1.8, &advances, &[], &[], 600.0, 1.0, 0.6);
         let lines: Vec<String> = pages.iter().flatten().map(|line| line.text.clone()).collect();
         assert!(lines.iter().any(|line| line.is_empty() || line.trim().is_empty()), "lines={lines:?}");
         assert!(lines.iter().any(|line| line.starts_with("  indented")), "lines={lines:?}");
@@ -1999,7 +2013,7 @@ mod gap_tests {
         let blocks = parse_html_blocks(&html, &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
         let height = 220.0;
-        let pages = layout_blocks(&blocks, &[], 300.0, height, 38.0, 1.8, &advances, &[], &[], 300.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 300.0, height, 38.0, 1.8, &advances, &[], &[], 300.0, 1.0, 0.6);
         assert!(pages.len() > 1, "pages={}", pages.len());
         let style = blocks[0].style;
         let line_height = 38.0 * style.size * style.line_height.unwrap_or(1.8);
@@ -2018,7 +2032,7 @@ mod gap_tests {
         let mut after = 0.0;
         let blocks = parse_html_blocks("<p>Hello。World</p>", &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, &[], 150.0, 1634.0, 38.0, 1.8, &advances, &[], &[], 150.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 150.0, 1634.0, 38.0, 1.8, &advances, &[], &[], 150.0, 1.0, 0.6);
         let lines: Vec<String> = pages.iter().flatten().map(|line| line.text.clone()).collect();
         assert!(!lines.iter().any(|line| line.trim_start().starts_with('。')), "lines={lines:?}");
         let joined: String = lines.iter().map(|line| line.trim_start_matches('　').trim()).collect::<Vec<_>>().join("");
@@ -2078,7 +2092,7 @@ mod gap_tests {
         let mut after = 0.0;
         let blocks = parse_html_blocks(&html, &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, &[], 300.0, 220.0, 38.0, 1.8, &advances, &[], &[], 300.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 300.0, 220.0, 38.0, 1.8, &advances, &[], &[], 300.0, 1.0, 0.6);
         assert!(pages.len() > 2, "pages={}", pages.len());
         for page in pages.iter().skip(1) {
             if let Some(first) = page.first() {
@@ -2114,7 +2128,7 @@ mod gap_tests {
         let mut after = 0.0;
         let blocks = parse_html_blocks(&html, &[], &mut after);
         let advances: HashMap<u32, f32> = HashMap::new();
-        let pages = layout_blocks(&blocks, &[], 900.0, 800.0, 38.0, 1.8, &advances, &[], &[], 1080.0, 1.0);
+        let pages = layout_blocks(&blocks, &[], 900.0, 800.0, 38.0, 1.8, &advances, &[], &[], 1080.0, 1.0, 0.6);
         let laid: String = pages
             .iter()
             .flat_map(|page| page.iter())
@@ -2170,6 +2184,7 @@ mod chapter_break_tests {
             &[1080.0],
             1080.0,
             0.92,
+            0.6,
         );
         assert_eq!(pages.len(), 1, "插图与正文应同页");
         assert!(pages[0][0].image.is_some());
@@ -2198,6 +2213,7 @@ mod chapter_break_tests {
             &[],
             1080.0,
             0.92,
+            0.6,
         );
         assert_eq!(pages.len(), 2, "章节之间应换页");
         assert!(pages[0].iter().any(|line| line.text.contains("第一段")));

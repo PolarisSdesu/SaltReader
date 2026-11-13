@@ -1106,8 +1106,12 @@ internal fun NativeTextReaderContent(
                                 }
                                 if (line.align == 2) cursorX = cursorX.coerceAtLeast(contentLeft)
                                 // 两端对齐：只在中文边界/空格处拉开间距（行内代码整体不拉伸）。
+                                // 需要每个边界补 >0.2em 才拉满时，说明这行是被长英文/代码 token
+                                // 提前折短的：退化为左对齐（右参差），不要拉出夸张空隙。
                                 val justifyExtra = if (line.align == 3 && richBoundaries > 0) {
-                                    ((contentWidth - richIndent - richWidth).coerceAtLeast(0f)) / richBoundaries
+                                    val needed = ((contentWidth - richIndent - richWidth).coerceAtLeast(0f)) /
+                                        richBoundaries
+                                    if (needed <= fontSizePx * 0.2f) needed else 0f
                                 } else {
                                     0f
                                 }
@@ -1982,6 +1986,7 @@ private fun buildNativePageSet(
     imageMaxHeightRatio: Float = 0.92f,
     imagePlaceholder: String = "［图片］",
     imageDensity: Float = 1f,
+    monoAdvanceEm: Float = 0.6f,
 ): NativePageSet? {
     if (!NativeTextLayout.isAvailable) return null
     val token = nativeParserToken.incrementAndGet()
@@ -2003,6 +2008,15 @@ private fun buildNativePageSet(
     val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         textSize = fontSizePx
         this.typeface = typeface
+    }
+    // 等宽字宽：行内代码/代码块用 Typeface.MONOSPACE 绘制，断行必须用同一字宽，
+    // 否则 Rust 会按偏宽的估值提前折行，Kotlin 再把短行两端对齐 → 出现夸张空隙。
+    val measuredMonoEm = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        textSize = fontSizePx
+        this.typeface = Typeface.MONOSPACE
+    }.let { monoPaint ->
+        (monoPaint.measureText("0000") / 4f / fontSizePx).takeIf { it.isFinite() && it > 0.2f }
+            ?: 0.6f
     }
     // 字宽表：整本书去重后的码点各测一次，Rust 用它做精确断行。
     val codePoints = ArrayList<Int>(1024)
@@ -2113,6 +2127,7 @@ android.util.Log.i(
             fullPageWidth,
             imageMaxHeightRatio,
             imagePlaceholder,
+            measuredMonoEm,
         )
         val pages = if (raw.isNullOrEmpty()) {
             emptyList()
@@ -2189,7 +2204,13 @@ private fun drawJustifiedLine(
         canvas.drawText(text, x, baseline, paint)
         return
     }
-    val extra = (targetWidth - measured) / gaps
+    // 需要每个边界补 >0.2em 才拉满时说明该行被提前折短：退化为左对齐。
+    val needed = (targetWidth - measured) / gaps
+    val extra = if (needed <= paint.textSize * 0.2f) needed else 0f
+    if (extra == 0f) {
+        canvas.drawText(text, x, baseline, paint)
+        return
+    }
     var cursor = x
     clusters.forEachIndexed { position, cluster ->
         canvas.drawText(cluster, cursor, baseline, paint)
