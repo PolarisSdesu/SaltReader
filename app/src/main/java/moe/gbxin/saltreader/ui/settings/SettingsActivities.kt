@@ -1245,6 +1245,11 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                             app.settings.update {
                                 it.copy(debugUnlocked = false, debugMode = false)
                             }
+                            Toast.makeText(
+                                context,
+                                R.string.about_debug_disabled,
+                                Toast.LENGTH_SHORT,
+                            ).show()
                         } else {
                             // 只显示 Debug 项目，调试开关保持默认关闭。
                             app.settings.update { it.copy(debugUnlocked = true) }

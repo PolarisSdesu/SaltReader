@@ -18,4 +18,5 @@
     <string name="about_debug_enabled">「外観」設定にデバッグモード項目を表示しました（スイッチはオフ）。</string>
     <string name="about_close">閉じる</string>
     <string name="about_debug_disable">デバッグモードを無効にする</string>
+    <string name="about_debug_disabled">デバッグモードを無効にしました。</string>
 </resources>

@@ -18,4 +18,5 @@
     <string name="about_debug_enabled">Debug option shown in Display settings (switch is off).</string>
     <string name="about_close">Close</string>
     <string name="about_debug_disable">Disable debug mode</string>
+    <string name="about_debug_disabled">Debug mode turned off.</string>
 </resources>
