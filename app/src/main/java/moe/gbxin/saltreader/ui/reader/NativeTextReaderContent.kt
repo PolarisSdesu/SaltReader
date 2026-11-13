@@ -1061,6 +1061,10 @@ internal fun NativeTextReaderContent(
                                                     .coerceAtLeast(0.05f)
                                                 val em = fontSizePx * line.sizeRatio
                                                 widthSum += em * 1.15f * tokenAspect + em * 0.2f
+                                                // 与绘制端一致：图片前若紧跟空格/CJK，会补一个间距。
+                                                if (TextJustification.isExpansionAfter(previousChar?.code)) {
+                                                    richBoundaries++
+                                                }
                                                 previousChar = null
                                                 tokenIndex = tokenEnd + 1
                                             }
@@ -1087,11 +1091,16 @@ internal fun NativeTextReaderContent(
                                                 )
                                                 val scale = if (measureSup || measureSub) 0.72f else 1f
                                                 widthSum += measurePaint.measureText(tokenChar.toString()) * scale
-                                                if (!measureMono) {
-                                                    if (justifyBoundary(previousChar, tokenChar)) richBoundaries++
+                                                // 与 Blink 一致：空格/CJK 两侧都可拉伸，行内代码
+                                                // 本身不拉伸，但它与中文之间的边界要计入。
+                                                if (TextJustification.isExpansionBoundary(
+                                                        previousChar?.code, tokenChar.code,
+                                                    )
+                                                ) {
+                                                    richBoundaries++
+                                                }
+                                                if (!TextJustification.isDefaultIgnorable(tokenChar.code)) {
                                                     previousChar = tokenChar
-                                                } else {
-                                                    previousChar = null
                                                 }
                                                 tokenIndex += 1
                                             }
@@ -1105,13 +1114,13 @@ internal fun NativeTextReaderContent(
                                     else -> contentLeft + richIndent
                                 }
                                 if (line.align == 2) cursorX = cursorX.coerceAtLeast(contentLeft)
-                                // 两端对齐：只在中文边界/空格处拉开间距（行内代码整体不拉伸）。
-                                // 需要每个边界补 >0.2em 才拉满时，说明这行是被长英文/代码 token
-                                // 提前折短的：退化为左对齐（右参差），不要拉出夸张空隙。
+                                // 两端对齐：按 Blink 的可拉伸边界（空格之后、CJK 两侧）分配间距，
+                                // 行内代码内部不产生边界。WebView 只要行内还有可拉伸点就会拉满，
+                                // 没有“补间过大就退化为左对齐”的规则；此前的 0.2em 阈值只是
+                                // 掩盖了错误的折行，已移除。
                                 val justifyExtra = if (line.align == 3 && richBoundaries > 0) {
-                                    val needed = ((contentWidth - richIndent - richWidth).coerceAtLeast(0f)) /
+                                    ((contentWidth - richIndent - richWidth).coerceAtLeast(0f)) /
                                         richBoundaries
-                                    if (needed <= fontSizePx * 0.2f) needed else 0f
                                 } else {
                                     0f
                                 }
@@ -1143,25 +1152,33 @@ internal fun NativeTextReaderContent(
                                         else -> baseline
                                     }
                                     val runText = buffer.toString()
-                                    // 行内代码整体绘制、不参与字距拉伸；普通文本仅在中文边界/空格处
-                                    // 补 justifyExtra，和 WebView 的 justify 一致。
-                                    if (justifyExtra > 0f && !richMono) {
+                                    // 逐字绘制并在可拉伸边界补 justifyExtra，和 WebView 的
+                                    // justify 一致；行内代码内部没有 CJK，因此不会被拉开。
+                                    if (justifyExtra > 0f) {
+                                        // 逐字绘制并在可拉伸边界补间距；行内代码内部没有 CJK
+                                        // 字符，因此不会被拉开，但它与中文的边界仍然参与对齐。
                                         for (glyphIndex in buffer.indices) {
                                             val glyphChar = buffer[glyphIndex]
-                                            if (justifyBoundary(lastRenderedChar, glyphChar)) {
+                                            if (TextJustification.isExpansionBoundary(
+                                                    lastRenderedChar?.code, glyphChar.code,
+                                                )
+                                            ) {
                                                 cursorX += justifyExtra
                                             }
                                             canvas.nativeCanvas.drawText(
                                                 glyphChar.toString(), cursorX, runBaseline, paint,
                                             )
                                             cursorX += paint.measureText(glyphChar.toString())
-                                            lastRenderedChar = glyphChar
+                                            if (!TextJustification.isDefaultIgnorable(glyphChar.code)) {
+                                                lastRenderedChar = glyphChar
+                                            }
                                         }
                                     } else {
                                         canvas.nativeCanvas.drawText(runText, cursorX, runBaseline, paint)
                                         cursorX += paint.measureText(runText)
-                                        // 行内代码是一个整体 slot：前后都不参与中文边界拉伸。
-                                        lastRenderedChar = if (richMono) null else runText.lastOrNull()
+                                        lastRenderedChar = runText.lastOrNull { ch ->
+                                            !TextJustification.isDefaultIgnorable(ch.code)
+                                        }
                                     }
                                     buffer.clear()
                                 }
@@ -1197,7 +1214,17 @@ internal fun NativeTextReaderContent(
                                             val imageWidth = imageHeight * aspect
                                             val sideMargin = em * 0.1f
                                             val imageTop = baseline - imageHeight * 0.85f
-                                            val imageLeft = cursorX + sideMargin
+                                            // 原子内联元素：与前面的空格/CJK 之间保留一个拉伸点，
+                                            // 之后由下一个 CJK 字符自行触发，避免重复补间。
+                                            val imageGap = if (
+                                                justifyExtra > 0f &&
+                                                TextJustification.isExpansionAfter(lastRenderedChar?.code)
+                                            ) {
+                                                justifyExtra
+                                            } else {
+                                                0f
+                                            }
+                                            val imageLeft = cursorX + imageGap + sideMargin
                                             val bitmap = imageCache[imageId]
                                             if (bitmap != null) {
                                                 drawImage(
@@ -1213,7 +1240,7 @@ internal fun NativeTextReaderContent(
                                                     cornerRadius = CornerRadius(2.dp.toPx()),
                                                 )
                                             }
-                                            cursorX = imageLeft + imageWidth + sideMargin + justifyExtra
+                                            cursorX = imageLeft + imageWidth + sideMargin
                                             lastRenderedChar = null
                                             richIndex = tokenEnd + 1
                                         }
@@ -2093,7 +2120,8 @@ private fun buildNativePageSet(
         val addHeading = !chapter.imageOnly && title.isNotEmpty() && chapter.showHeading &&
             !body.contains(title, ignoreCase = true)
         htmlChapters += if (addHeading) {
-            "<h2>${title.escapeHtml()}</h2>$body"
+            // 与 WebView 自动章节标题一致：使用 #book h2.chapter-heading 的紧凑间距。
+            "<h2 class=\"chapter-heading\">${title.escapeHtml()}</h2>$body"
         } else {
             body
         }
@@ -2150,24 +2178,7 @@ android.util.Log.i(
 }
 
 /**
- * 解析原生渲染用的 Typeface：自定义字体（字体目录文件或系统字体）+ 回退字体链。
- * API 29+ 用 [Typeface.CustomFallbackBuilder] 把回退字体串成真正的 fallback chain；
- * 更低版本退回主字体（Android 仍会做系统兜底）。
- */
-private fun isCjkChar(ch: Char): Boolean {
-    val code = ch.code
-    return code in 0x2E80..0x9FFF || code in 0xF900..0xFAFF ||
-        code in 0xFF00..0xFF60 || code in 0x3000..0x303F
-}
-
-/** 两端对齐的间距边界：中日文之间、或空格处（与 WebView justify 行为一致）。 */
-private fun justifyBoundary(current: Char?, next: Char?): Boolean {
-    if (current == null || next == null) return false
-    return isCjkChar(current) || isCjkChar(next) || current == ' '
-}
-
-/**
- * 两端对齐：仅在中日文边界/空格处拉开间距（和 WebView 的 justify 行为接近），
+ * 两端对齐：按 Blink 的可拉伸边界（空格之后、CJK 两侧）拉开间距，
  * 最后一行由 Rust 标记为左对齐，不参与拉伸。
  */
 private fun drawJustifiedLine(
@@ -2196,7 +2207,12 @@ private fun drawJustifiedLine(
     }
     fun gapBoundary(position: Int): Boolean {
         if (position >= clusters.size - 1) return false
-        return justifyBoundary(clusters[position].lastOrNull(), clusters[position + 1].firstOrNull())
+        val previous = clusters[position]
+        val next = clusters[position + 1]
+        return TextJustification.isExpansionBoundary(
+            previous.codePointBefore(previous.length),
+            next.codePointAt(0),
+        )
     }
     var gaps = 0
     for (position in 0 until clusters.size - 1) if (gapBoundary(position)) gaps++
@@ -2204,13 +2220,7 @@ private fun drawJustifiedLine(
         canvas.drawText(text, x, baseline, paint)
         return
     }
-    // 需要每个边界补 >0.2em 才拉满时说明该行被提前折短：退化为左对齐。
-    val needed = (targetWidth - measured) / gaps
-    val extra = if (needed <= paint.textSize * 0.2f) needed else 0f
-    if (extra == 0f) {
-        canvas.drawText(text, x, baseline, paint)
-        return
-    }
+    val extra = (targetWidth - measured) / gaps
     var cursor = x
     clusters.forEachIndexed { position, cluster ->
         canvas.drawText(cluster, cursor, baseline, paint)
@@ -2344,6 +2354,11 @@ private fun String.escapeHtml(): String = this
     .replace(">", "&gt;")
     .replace("\"", "&quot;")
 
+/**
+ * 解析原生渲染用的 Typeface：自定义字体（字体目录文件或系统字体）+ 回退字体链。
+ * API 29+ 用 [Typeface.CustomFallbackBuilder] 把回退字体串成真正的 fallback chain；
+ * 更低版本退回主字体（Android 仍会做系统兜底）。
+ */
 private fun nativeTypeface(context: Context, settings: AppSettings): Typeface {
     val customRef = settings.readerCustomFont
     val customFile = if (settings.readerFontFamily == ReaderFontFamily.CUSTOM) {

@@ -412,6 +412,14 @@ fn apply_known_class(style: &mut Style, class_name: &str) {
             style.space_before = 0.2;
             style.space_after = 0.2;
         }
+        // 阅读器自动注入的章节标题：WebView 用 #book h2.chapter-heading 的紧凑上边距。
+        "chapter-heading" => {
+            style.align = 1;
+            style.bold = true;
+            style.first_indent = 0.0;
+            style.space_before = 0.35;
+            style.space_after = 1.15;
+        }
         _ => {}
     }
 }
@@ -845,9 +853,6 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                     }
                 }
                 preserve = tag == "pre";
-                if tag == "p" && current_style.first_indent == 2.0 {
-                    // 章节标题段落（class .chapter-heading 等）交给 CSS 覆盖。
-                }
             } else if is_inline_tag(&tag) {
                 if let Some(marker) = inline_marker(&tag, false) {
                     text.push(marker);
@@ -1538,7 +1543,8 @@ fn layout_blocks(
                     bullet_prefix,
                     first_line,
                     height,
-                    true,
+                    // 硬换行（<br>）结束的行在 CSS 里仍然两端对齐，只有段落最后一行不拉伸。
+                    false,
                     if first_line { line_gap_em } else { 0.0 },
                     block.preserve,
                     block.preserve || block.keep_blank_lines,
@@ -1570,8 +1576,14 @@ fn layout_blocks(
                 .sum::<f32>();
             let indent_px = if first_line { start_indent * size_px } else { 0.0 };
             if has_content && line_width + width > content_width - indent_px {
+                // 回溯本行内最近的断行机会。之前的 64 grapheme 上限会让长行
+                // （例如超长行内代码 token 之后）错过更早的可断点，退化成把整个 token
+                // 挪到下一行、上一行只剩一半宽度。512 仍能兜住病态输入的开销。
                 let mut break_at: Option<usize> = None;
-                for (position, _) in graphemes[..index].iter().rev().take(64) {
+                for (position, _) in graphemes[..index].iter().rev().take(512) {
+                    if *position <= line_start_byte {
+                        break;
+                    }
                     if *position <= byte_start.saturating_sub(1) && break_positions.contains(position) {
                         break_at = Some(*position);
                         break;
@@ -2232,3 +2244,64 @@ mod chapter_break_tests {
     }
 }
 
+#[cfg(test)]
+mod inline_code_break_tests {
+    use super::*;
+
+    fn layout(html: &str, width: f32, font: f32) -> Vec<Vec<RenderLine>> {
+        let mut after = 0.0;
+        let blocks = parse_html_blocks(html, &[], &mut after);
+        let advances: HashMap<u32, f32> = HashMap::new();
+        layout_blocks(&blocks, &[], width, 4000.0, font, 1.8, &advances, &[], &[], width, 1.0, 0.6)
+    }
+
+    /// 行内代码内部有空格时，应像 WebView 一样在空格处断开，而不是把整串挪到下一行。
+    #[test]
+    fn inline_code_breaks_at_internal_space() {
+        let html = "<p>前文<code>abcdefghij klmnopqrstuvwxyz0123456789ABCDEFGHIJklmnopqrstuvwxyz</code>收尾。</p>";
+        let pages = layout(html, 1000.0, 36.0);
+        let lines: Vec<String> = pages.iter().flat_map(|page| page.iter()).map(|l| l.text.clone()).collect();
+        assert!(lines.len() >= 2, "lines={lines:?}");
+        assert!(lines[0].contains("abcdefghij"), "first line should keep the code prefix: {lines:?}");
+        assert!(!lines[0].contains("klmn"), "first line should break at the internal space: {lines:?}");
+        assert!(lines[1].trim_start().starts_with("klmn"), "second line should resume after the space: {lines:?}");
+    }
+
+    /// 没有空格的超长 token 不能在行内被留成一段空白：必须继续断行，保证全文可读。
+    #[test]
+    fn overlong_token_is_broken_instead_of_left_short() {
+        let token = "x".repeat(200);
+        let html = format!("<p>开头{token}结尾。</p>");
+        let pages = layout(&html, 1000.0, 36.0);
+        let lines: Vec<String> = pages.iter().flat_map(|page| page.iter()).map(|l| l.text.clone()).collect();
+        assert!(lines.len() >= 3, "lines={}", lines.len());
+        // 首行在 token 前的换行机会处结束（与 WebView 一致，会被两端对齐拉满）；
+        // token 本身必须逐行填满版心，不能整串反复挪行。
+        for line in &lines[1..lines.len() - 1] {
+            assert!(line.chars().count() >= 20, "unexpected short line: {line:?}");
+        }
+        let joined: String = lines.join("");
+        assert!(joined.contains(&token), "token must not be dropped");
+    }
+}
+
+#[cfg(test)]
+mod heading_style_tests {
+    use super::*;
+
+    #[test]
+    fn generated_chapter_heading_uses_web_view_margins() {
+        let mut after = 0.0;
+        let blocks = parse_html_blocks(
+            "<h2 class=\"chapter-heading\">第一章</h2><p>正文</p>",
+            &[],
+            &mut after,
+        );
+        let heading = blocks.iter().find(|b| b.text.contains("第一章")).expect("heading block");
+        assert_eq!(heading.style.align, 1, "heading must be centered");
+        assert!(heading.style.bold);
+        assert!((heading.style.space_before - 0.35).abs() < 0.001, "space_before={}", heading.style.space_before);
+        assert!((heading.style.space_after - 1.15).abs() < 0.001, "space_after={}", heading.style.space_after);
+        assert!((heading.style.size - 1.4).abs() < 0.001, "size={}", heading.style.size);
+    }
+}

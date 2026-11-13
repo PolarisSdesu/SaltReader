@@ -2079,8 +2079,15 @@ private val HTML_TAIL = """
     book.style.width = pageWidth + 'px';
     return pageWidth;
   }
+  // 上一次成功应用的视口尺寸。resize 事件可能在图片解码/系统栏动画时连发多次，尺寸没变时
+  // 重排 CSS 分栏 + 重新吸附页码会让页面“抽动”，因此这里做去重。
+  var lastViewportHeight = -1, lastViewportWidth = -1;
   function updateViewportHeight() {
     var viewportHeight = Math.max(1, window.innerHeight || 0);
+    var viewportWidth = Math.max(1, window.innerWidth || 0);
+    if (viewportHeight === lastViewportHeight && viewportWidth === lastViewportWidth) return;
+    lastViewportHeight = viewportHeight;
+    lastViewportWidth = viewportWidth;
     document.documentElement.style.setProperty('--app-vh', viewportHeight + 'px');
     // Paged mode sizes the column box in px as well; keep it in sync on rotation / multi-window.
     // Re-flowing the columns invalidates scrollLeft, so re-align to the nearest page afterwards
@@ -2660,12 +2667,16 @@ private val HTML_TAIL = """
     var anchor = paged ? scroll.scrollLeft : scroll.scrollTop;
     book.insertAdjacentHTML('afterbegin', html);
     // 保持当前阅读位置：前插的内容（尤其内联插图）会同步/异步地增加文档尺寸，按增量补偿滚动偏移。
+    // 注意要用上一次已经补偿过的尺寸做基线：立即补偿一次、图片就绪后再补偿一次，若两次都用
+    // oldSize 计算增量，同一段位移会被加两次，翻到图片页时就会看到位置跳动。
+    var compensatedSize = oldSize;
     function compensate() {
       var size = paged ? scroll.scrollWidth : scroll.scrollHeight;
-      var added = size - oldSize;
+      var added = size - compensatedSize;
       if (added > 0) {
-        if (paged) scroll.scrollLeft = anchor + added;
-        else scroll.scrollTop = anchor + added;
+        compensatedSize = size;
+        if (paged) scroll.scrollLeft = anchor + (size - oldSize);
+        else scroll.scrollTop = anchor + (size - oldSize);
       }
       // Late image loads change the page count: keep the snap targets in sync with the new DOM.
       refreshSnapPoints();
