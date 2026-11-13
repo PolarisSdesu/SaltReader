@@ -1254,13 +1254,18 @@ fn layout_blocks(
     };
 
     for (block_index, block) in blocks.iter().enumerate() {
-        // 与 WebView 阅读器一致：每个章节都从新的一页开始。
+        // 与 WebView 阅读器一致：每个章节都从新的一页开始。唯一的例外是上一页只有插图——
+        // WebView 里插图章的图片会与后一章的标题/正文排在同一页，若在这里强制换页，
+        // 头图会独占一页、正文从下一页才开始，页尾留下大片空白。
         if chapter_starts.binary_search(&block_index).is_ok() {
-            if !page_lines.is_empty() {
+            let previous_has_text = page_lines
+                .iter()
+                .any(|line| line.image.is_none() && !line.text.trim().is_empty());
+            if previous_has_text && !page_lines.is_empty() {
                 pages.push(std::mem::take(&mut page_lines));
+                y = 0.0;
+                pending_after = 0.0;
             }
-            y = 0.0;
-            pending_after = 0.0;
         }
         if let Some(image_id) = block.image {
             let aspect = image_aspects
@@ -2138,5 +2143,64 @@ mod gap_tests {
             println!("space_after={} first_indent={} align={}", block.style.space_after, block.style.first_indent, block.style.align);
         }
         assert!((blocks[0].style.space_after - 0.55).abs() < 0.001);
+    }
+}
+
+#[cfg(test)]
+mod chapter_break_tests {
+    use super::*;
+
+    /// 上一页只有插图时，下一章的标题/正文应接在同一页（与 WebView 插图章一致）。
+    #[test]
+    fn text_follows_image_on_same_page() {
+        let html = "<img data-salt-img=\"0\"><p>我讨厌夏天。酷热的天气，实在不像刚进入夏天的早晨。</p>";
+        let mut after = 0.0;
+        let blocks = parse_html_blocks(html, &[], &mut after);
+        assert!(blocks[0].image.is_some(), "blocks: {}", blocks.len());
+        let advances: HashMap<u32, f32> = HashMap::new();
+        let pages = layout_blocks(
+            &blocks,
+            &[1],
+            940.0,
+            1784.0,
+            36.0,
+            1.8,
+            &advances,
+            &[1.25],
+            &[1080.0],
+            1080.0,
+            0.92,
+        );
+        assert_eq!(pages.len(), 1, "插图与正文应同页");
+        assert!(pages[0][0].image.is_some());
+        assert!(
+            pages[0].iter().skip(1).any(|line| !line.text.trim().is_empty()),
+            "正文应排在插图之后"
+        );
+    }
+
+    /// 正常正文之间仍然每个章节另起一页。
+    #[test]
+    fn text_chapter_still_starts_new_page() {
+        let html = "<p>第一段。</p><p>第二段。</p>";
+        let mut after = 0.0;
+        let blocks = parse_html_blocks(html, &[], &mut after);
+        let advances: HashMap<u32, f32> = HashMap::new();
+        let pages = layout_blocks(
+            &blocks,
+            &[1],
+            940.0,
+            600.0,
+            36.0,
+            1.8,
+            &advances,
+            &[],
+            &[],
+            1080.0,
+            0.92,
+        );
+        assert_eq!(pages.len(), 2, "章节之间应换页");
+        assert!(pages[0].iter().any(|line| line.text.contains("第一段")));
+        assert!(pages[1].iter().any(|line| line.text.contains("第二段")));
     }
 }

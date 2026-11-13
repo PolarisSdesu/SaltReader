@@ -1238,29 +1238,43 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                 )
             },
             confirmButton = {
-                Row {
-                    TextButton(onClick = {
-                        if (settings.debugUnlocked) {
-                            // 关闭入口：强制关闭调试模式并隐藏 Debug 项目。
-                            app.settings.update {
-                                it.copy(debugUnlocked = false, debugMode = false)
+                // 三个动作纵向排列、自适应宽度并靠右：复制 / 打开（关闭）调试模式 / 关闭。
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalAlignment = Alignment.End,
+                ) {
+                    TextButton(
+                        onClick = {
+                            copy(debugInfo)
+                            showDebug = false
+                        },
+                    ) {
+                        Text(stringResource(R.string.about_copy))
+                    }
+                    TextButton(
+                        onClick = {
+                            if (settings.debugUnlocked) {
+                                // 关闭入口：强制关闭调试模式并隐藏 Debug 项目。
+                                app.settings.update {
+                                    it.copy(debugUnlocked = false, debugMode = false)
+                                }
+                                Toast.makeText(
+                                    context,
+                                    R.string.about_debug_disabled,
+                                    Toast.LENGTH_SHORT,
+                                ).show()
+                            } else {
+                                // 只显示 Debug 项目，调试开关保持默认关闭。
+                                app.settings.update { it.copy(debugUnlocked = true) }
+                                Toast.makeText(
+                                    context,
+                                    R.string.about_debug_enabled,
+                                    Toast.LENGTH_SHORT,
+                                ).show()
                             }
-                            Toast.makeText(
-                                context,
-                                R.string.about_debug_disabled,
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        } else {
-                            // 只显示 Debug 项目，调试开关保持默认关闭。
-                            app.settings.update { it.copy(debugUnlocked = true) }
-                            Toast.makeText(
-                                context,
-                                R.string.about_debug_enabled,
-                                Toast.LENGTH_SHORT,
-                            ).show()
-                        }
-                        showDebug = false
-                    }) {
+                            showDebug = false
+                        },
+                    ) {
                         Text(
                             stringResource(
                                 if (settings.debugUnlocked) {
@@ -1271,19 +1285,12 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                             ),
                         )
                     }
-                    TextButton(onClick = {
-                        copy(debugInfo)
-                        showDebug = false
-                    }) {
-                        Text(stringResource(R.string.about_copy))
+                    TextButton(onClick = { showDebug = false }) {
+                        Text(stringResource(R.string.about_close))
                     }
                 }
             },
-            dismissButton = {
-                TextButton(onClick = { showDebug = false }) {
-                    Text(stringResource(R.string.about_close))
-                }
-            },
+            dismissButton = {},
         )
     }
 }

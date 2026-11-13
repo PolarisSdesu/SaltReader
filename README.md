@@ -16,6 +16,8 @@ Most comic readers either copy your library into app-private storage or ask for 
 
 The reader is written with Jetpack Compose and Material 3 Expressive. Images are decoded on demand; text books are reflowed by the platform WebView, so font size, line spacing, page margins, paged/scroll layout, chapter navigation and progress work without converting anything to another format.
 
+An experimental native reader (a small Rust layout engine, `libtext_reader.so`) can be enabled in the reading settings; it draws pages with Compose Canvas and is tuned to match the WebView rendering.
+
 ## Features
 
 Salt Reader lets you:
@@ -29,6 +31,7 @@ Salt Reader lets you:
 - Page through comics horizontally or scroll continuously, with RTL, tap zones, pinch zoom and a page slider.
 - Search the library, filter by all / reading / unread and customise the layout and book-card labels.
 - Follow the system light/dark theme, Material You dynamic colours and an optional AMOLED black mode, and pick a reading paper tone (auto / white / beige / green / black / custom).
+- Choose between the default WebView text renderer and the experimental native renderer (Rust layout + Compose Canvas), and render illustrations full-width or inside the page margins.
 - Use the interface in English, Simplified Chinese, Traditional Chinese or Japanese.
 - Run without storage or network permissions: the app can only see folders you explicitly granted.
 
@@ -51,6 +54,7 @@ Salt Reader is a small open-source project; contributions are welcome:
 - [Report bugs or suggest features](https://github.com/PolarisSdesu/SaltReader/issues).
 - Improve translations (English, Simplified Chinese, Traditional Chinese and Japanese strings live in `app/src/main/res/values*/`).
 - Send code. Please keep the existing style and make sure `./gradlew :app:testDebugUnitTest` passes.
+- The debug menu is hidden by default; unlock it by tapping the app logo five times on the About screen.
 
 ## Build
 

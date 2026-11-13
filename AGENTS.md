@@ -23,10 +23,10 @@ data-layer contracts.
 app/src/main/java/moe/gbxin/saltreader/
   data/          indexing, SAF, ZIP/EPUB parsing, persistence, page sources
   ui/library/    shelf, sorting/filtering, covers
-  ui/reader/     pager/vertical reader, text (WebView) reader, settings sheet
+  ui/reader/     pager/vertical reader, text (WebView) reader, native (Rust) text reader, chrome
   ui/search/     search screen
-  ui/settings/   settings activities, about, licenses
-  ui/components/ shared composables (covers, labels, color picker)
+  ui/settings/   settings activities, about (debug easter egg), licenses
+  ui/components/ shared composables (covers, labels, color picker, TooltipIconButton)
   ui/theme/      Material 3 color/type
 app/src/main/java/org/rr/mobi4java/   vendored MOBI parser (Java, do not rewrite lightly)
 app/src/main/jniLibs/                 prebuilt libtext_reader.so (Rust native reader, arm64/x86_64)
@@ -109,6 +109,36 @@ new build is actually published.
 10. **No broad R8 keeps.** Icons are stripped by R8 in release; do not add
     `-keep class androidx.compose.material.icons.**`. Vendored `org.rr.mobi4java` is kept as a whole
     today; narrowing that keep is welcome but must be verified against real MOBI/AZW3 files.
+
+## Reader UI conventions
+
+- **Tooltips**: use the official Material 3 `TooltipBox` + `PlainTooltip` (animated, no custom
+  overlay), wrapped by `TooltipIconButton` for icon buttons. Long-pressing shows the tooltip and
+  fires `HapticFeedbackConstants.LONG_PRESS` without consuming the tap. Toolbars near the top of
+  the screen anchor tooltips below (`anchorBelow = true`) so the status bar cannot clip them.
+- **Debug menu**: hidden by default behind `AppSettings.debugUnlocked`. Unlock from the About screen
+  (tap the app logo five times to open the dialog). The dialog only toggles the *visibility* of the
+  Debug section in Appearance settings; turning it off also forces `debugMode = false`. The unlocked
+  state persists in preferences.
+- **Selection/copy**: the native reader selects whole paragraphs and drops the per-line breaks plus
+  the full-width `　` indent when copying, so a paragraph pastes as a single line.
+
+## Native text reader parity
+
+`NativeTextReaderContent` + `native/text-reader` reproduce the WebView reader, and the **WebView is
+the reference implementation** (`TextReaderContent.kt` CSS/JS). Compare against it before changing
+pagination; the behaviour is documented in `docs/native-text-reader.md`.
+
+- Rebuild `libtext_reader.so` with `native/text-reader/build-android.sh` and commit both ABIs
+  whenever the crate changes — the app loads the prebuilt `.so`; Gradle never compiles Rust.
+- `layout_blocks` starts every chapter on a new page, except when the previous page contains only
+  images: WebView renders an illustration chapter together with the next chapter's heading and
+  body, and a forced break there leaves a half-empty image page.
+- Image sizing mirrors WebView `max-width` semantics: `min(page width, intrinsic width × density)`,
+  capped at 0.92 × page height; a page holding a single image is full-bleed.
+- Code: block code 0.86em at 1.5 line height, inline code 0.92em, both without a background; the
+  column width is measured with real monospace advances so long code lines wrap instead of clipping.
+- Justification only distributes space at CJK/space boundaries and never stretches inline code.
 
 ## Conventions
 

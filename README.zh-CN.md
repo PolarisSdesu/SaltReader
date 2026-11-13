@@ -16,6 +16,8 @@ Salt Reader 是一个自由、本地优先的 Android 漫画与电子书阅读�
 
 阅读器使用 Jetpack Compose 与 Material 3 Expressive 编写。图片按需解码；文字书交给系统 WebView 重排，因此字号、行距、页边距、分页/滚动、目录跳转和进度都不需要转换格式即可工作。
 
+阅读设置里还可以打开实验性的原生阅读器（Rust 排版引擎 `libtext_reader.so`），它用 Compose Canvas 逐页绘制，排版尽量与 WebView 渲染保持一致。
+
 ## 功能
 
 Salt Reader 可以：
@@ -29,6 +31,7 @@ Salt Reader 可以：
 - 横向翻页或纵向连续滚动，支持 RTL、点击分区翻页、双指缩放和页码滑杆。
 - 搜索书库，按全部 / 在读 / 未读筛选，自定义布局与书卡标签。
 - 跟随系统深浅色、Material You 动态取色，可选 AMOLED 纯黑模式，并可选择阅读纸张配色（自动 / 白 / 米色 / 浅绿 / 黑 / 自定义）。
+- 文字阅读器可选默认的 WebView 渲染或实验性原生渲染（Rust 排版 + Compose Canvas）；图片可选满宽显示或按页边距内收。
 - 使用 English、简体中文、繁體中文或日本語界面。
 - 不申请存储或网络权限：只能访问你明确授权的目录。
 
@@ -51,6 +54,7 @@ Salt Reader 是一个小型开源项目，欢迎参与：
 - [反馈问题或提出建议](https://github.com/PolarisSdesu/SaltReader/issues)。
 - 改进翻译（English、简体中文、繁體中文、日本語 文案位于 `app/src/main/res/values*/`）。
 - 提交代码。请保持现有风格，并确保 `./gradlew :app:testDebugUnitTest` 通过。
+- 调试菜单默认隐藏，在「关于」页连点应用图标 5 次即可解锁。
 
 ## 构建
 
