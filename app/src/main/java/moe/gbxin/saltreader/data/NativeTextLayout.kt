@@ -28,5 +28,6 @@ object NativeTextLayout {
         imageFullWidth: Boolean,
         fullPageWidth: Float,
         imageMaxHeightRatio: Float,
+        imagePlaceholder: String,
     ): String
 }

@@ -138,7 +138,7 @@ import moe.gbxin.saltreader.ui.theme.readerAccentColor
 import moe.gbxin.saltreader.ui.theme.readerForegroundColor
 
 /** Rust 排版后的单行：文本 + 行内样式（字号/行高倍率、粗斜、对齐、左缩进）。 */
-private data class NativeLine(
+internal data class NativeLine(
     val text: String,
     val sizeRatio: Float = 1f,
     val lineHeightRatio: Float = 1.8f,
@@ -156,10 +156,15 @@ private data class NativeLine(
     val gapEm: Float = 0f,
 )
 
-/** Rust 排版引擎的分页结果：每页是若干带样式的行。 */
+/** 内联图片引用：按需从章节 HTML 里重新取出 data URI 解码，避免全书图片字节常驻。 */
+private data class ImageRef(val chapterIndex: Int, val dataUriIndex: Int)
+
+private val NATIVE_DATA_URI =
+    Regex("data:image/([A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=\\r\\n]+)", RegexOption.IGNORE_CASE)
+
 private data class NativePageSet(
     val pages: List<List<NativeLine>>,
-    val images: List<ByteArray> = emptyList(),
+    val imageRefs: List<ImageRef> = emptyList(),
     val imageAspects: List<Float> = emptyList(),
     val contentLeftPx: Float = 0f,
     val contentWidthPx: Float = 1f,
@@ -330,6 +335,7 @@ internal fun NativeTextReaderContent(
                 fullPageWidth = (leftPadPx + width + rightPadPx),
                 // 纵向模式没有分页：全宽图片不被页高封顶（允许 2×版心），保证宽度真正 100%。
                 imageMaxHeightRatio = if (settings.readerMode == ReaderMode.VERTICAL) 10f else 0.92f,
+                imagePlaceholder = context.getString(R.string.reader_image_placeholder),
             )
             // 纵向：直接使用 Rust 分页结果（保证内容完整），页面按真实内容高度连续堆叠。
             val built = built0
@@ -418,7 +424,7 @@ internal fun NativeTextReaderContent(
             for (id in idsByPage[page].orEmpty()) {
                 if (imageCache.containsKey(id)) continue
                 val decoded = withContext(Dispatchers.IO) {
-                    set.images.getOrNull(id)?.let { decodeInlineBitmap(it, targetWidth) }
+                    set.imageRefs.getOrNull(id)?.let { ref -> decodeInlineBitmap(ref, chapters, targetWidth) }
                 }
                 if (decoded != null) imageCache[id] = decoded
                 // 字节预算：先按当前窗口保留，再淘汰远端图片，避免图片书 OOM。
@@ -1791,7 +1797,7 @@ internal fun NativeTextReaderContent(
                 shadowElevation = 2.dp,
             ) {
                 Text(
-                    "NATIVE → WEBVIEW",
+                    stringResource(R.string.reader_debug_switch_to_webview),
                     modifier = Modifier
                         .clickable {
                             val ratio = if (totalPages > 1) safePageIndex.toFloat() / (totalPages - 1) else 0f
@@ -1889,11 +1895,12 @@ private fun buildNativePageSet(
     imageFullWidth: Boolean = false,
     fullPageWidth: Float = 1f,
     imageMaxHeightRatio: Float = 0.92f,
+    imagePlaceholder: String = "［图片］",
 ): NativePageSet? {
     if (!NativeTextLayout.isAvailable) return null
     val token = nativeParserToken.incrementAndGet()
     val text = buildString {
-        for (chapter in chapters) {
+        for ((chapterPosition, chapter) in chapters.withIndex()) {
             val body = chapterPlainText(chapter).trim()
             if (body.isBlank()) continue
             val title = chapter.title?.trim().orEmpty()
@@ -1937,12 +1944,15 @@ private fun buildNativePageSet(
     }
 
     // 把章节 HTML 交给 Rust 解析（含书籍自带 CSS 子集）；标题缺失时补一个 h2。
-    // 存解码后的字节：比常驻 base64 字符串省约 25% 内存，也避免每次按需解码时重复 Base64 解码。
-    val imageData = ArrayList<ByteArray>()
+    // 只记录图片所在章节与序号；解码时按需从章节 HTML 取 data URI，避免全书图片字节常驻。
+    val imageRefs = ArrayList<ImageRef>()
     val imageAspects = ArrayList<Float>()
-    val dataUri = Regex("data:image/([A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=\\r\\n]+)", RegexOption.IGNORE_CASE)
+    val dataUri = NATIVE_DATA_URI
+    var perChapterImageBase = 0
     val htmlChapters = ArrayList<String>(chapters.size)
-    for (chapter in chapters) {
+    for ((chapterPosition, chapter) in chapters.withIndex()) {
+        val imagesBeforeChapter = imageRefs.size
+        perChapterImageBase = imagesBeforeChapter
         // image-only（彩页）章节也要参与：它们的正文就是插图，跳过会丢掉整章插画。
         val withImages = if (chapter.html.contains("data:image", ignoreCase = true)) {
             // 保留原 <img> 的 class/style（脚注/封面/插图类名决定内联还是块级），
@@ -1959,8 +1969,8 @@ private fun buildNativePageSet(
                     if (bytes == null) {
                         tag
                     } else {
-                        val id = imageData.size
-                        imageData.add(bytes)
+                        val id = imageRefs.size
+                        imageRefs.add(ImageRef(chapterPosition, id - perChapterImageBase))
                         imageAspects.add(imageAspect(bytes))
                         tag.replaceRange(dataMatch.range, "data-salt-img=\"$id\"")
                     }
@@ -1985,7 +1995,7 @@ private fun buildNativePageSet(
     }
 android.util.Log.i(
         "SaltReaderNative",
-        "images extracted=${imageData.size}; " +
+        "images extracted=${imageRefs.size}; " +
             "sample=${
                 htmlChapters.firstOrNull()?.let { html ->
                     Regex("(?is)<img[^>]{0,160}>").find(html)?.value ?: "(no img)"
@@ -2007,6 +2017,7 @@ android.util.Log.i(
             imageFullWidth,
             fullPageWidth,
             imageMaxHeightRatio,
+            imagePlaceholder,
         )
         val pages = if (raw.isNullOrEmpty()) {
             emptyList()
@@ -2019,7 +2030,7 @@ android.util.Log.i(
                 "${(System.nanoTime() - startedAt) / 1_000_000}ms (token=$token)",
         )
         NativePageSet(
-            pages, imageData.toList(), imageAspects.toList(),
+            pages, imageRefs.toList(), imageAspects.toList(),
             contentLeftPx, contentWidthPx, topPadPx, bottomPadPx, contentHeightPx,
         )
     }.getOrElse {
@@ -2119,7 +2130,18 @@ private fun pageImageIds(pageSet: NativePageSet, pageIndex: Int): List<Int> {
     return ids.toList()
 }
 
-private fun decodeInlineBitmap(bytes: ByteArray, targetWidth: Int): Bitmap? = runCatching {
+private fun resolveImageBytes(ref: ImageRef, chapters: List<EbookChapter>): ByteArray? {
+    val html = chapters.getOrNull(ref.chapterIndex)?.html ?: return null
+    val match = NATIVE_DATA_URI.findAll(html).elementAtOrNull(ref.dataUriIndex) ?: return null
+    return runCatching { Base64.decode(match.groupValues[2], Base64.DEFAULT) }.getOrNull()
+}
+
+private fun decodeInlineBitmap(
+    ref: ImageRef,
+    chapters: List<EbookChapter>,
+    targetWidth: Int,
+): Bitmap? = runCatching {
+    val bytes = resolveImageBytes(ref, chapters) ?: return@runCatching null
     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
     val width = bounds.outWidth
@@ -2130,7 +2152,7 @@ private fun decodeInlineBitmap(bytes: ByteArray, targetWidth: Int): Bitmap? = ru
     BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
 }.getOrNull()
 
-private fun decodeNativeLine(raw: String): NativeLine {
+internal fun decodeNativeLine(raw: String): NativeLine {
     if (raw.length >= 8 && raw[0] == '\u0003') {
         return NativeLine(
             text = "",

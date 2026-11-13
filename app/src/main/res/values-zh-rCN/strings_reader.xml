@@ -153,4 +153,7 @@
     <string name="reader_empty_content">无法显示此书内容。</string>
     <string name="reader_action_retry">重试</string>
     <string name="reader_action_switch_webview">改用 WebView 阅读器</string>
+    <string name="reader_image_placeholder">［图片］</string>
+    <string name="reader_debug_switch_to_webview">NATIVE → WEBVIEW（调试）</string>
+    <string name="reader_debug_switch_to_native">WEBVIEW → NATIVE（调试）</string>
 </resources>
