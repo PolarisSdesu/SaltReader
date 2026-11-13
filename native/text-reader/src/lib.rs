@@ -1389,7 +1389,12 @@ fn layout_blocks(
             pending_after = style.space_after * font_size;
             continue;
         }
-        let style = block.style;
+        let mut style = block.style;
+        if style.mono {
+            // WebView #book pre：0.86em、行高 1.5。
+            style.size *= 0.86;
+            style.line_height = Some(1.5);
+        }
         let size_px = font_size * style.size;
         let line_height_factor = style.line_height.unwrap_or(line_height_base);
         let line_height = size_px * line_height_factor;
@@ -1526,10 +1531,6 @@ fn layout_blocks(
                     }
                 })
                 .sum::<f32>();
-            // 行内代码的左右 padding（0.15em × 0.92）也要计入行宽，否则胶囊会压出页边距。
-            if grapheme == "\u{000E}" {
-                width += size_px * 0.92 * 0.3;
-            }
             let indent_px = if first_line { start_indent * size_px } else { 0.0 };
             if has_content && line_width + width > content_width - indent_px {
                 let mut break_at: Option<usize> = None;

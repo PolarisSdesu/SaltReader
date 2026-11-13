@@ -1096,22 +1096,10 @@ internal fun NativeTextReaderContent(
                                     val runText = buffer.toString()
                                     val runAdvance = paint.measureText(runText) +
                                         if (justifyExtra > 0f) justifyExtra * runText.length else 0f
-                                    if (richMono && !line.mono) {
-                                        // WebView: 行内代码浅灰底胶囊（padding 0.15em、圆角 3dp）。
-                                        val em = fontSizePx * line.sizeRatio * 0.92f
-                                        val pad = em * 0.15f
-                                        val metrics = paint.fontMetrics
-                                        drawRoundRect(
-                                            color = Color(0x1A808080),
-                                            topLeft = Offset(cursorX - pad, baseline + metrics.ascent - 2.dp.toPx()),
-                                            size = Size(
-                                                runAdvance + pad * 2f,
-                                                (metrics.descent - metrics.ascent) + 4.dp.toPx(),
-                                            ),
-                                            cornerRadius = CornerRadius(3.dp.toPx()),
-                                        )
-                                    }
-                                    if (justifyExtra > 0f) {
+                                    // 两端对齐不要把字距加进行内代码，否则代码会变成逐字母散开；
+                                    // 余量留在整个 run 之后，行尾仍然对齐。
+                                    val justifyThisRun = justifyExtra > 0f && !richMono
+                                    if (justifyThisRun) {
                                         for (glyphIndex in buffer.indices) {
                                             val glyph = buffer[glyphIndex].toString()
                                             canvas.nativeCanvas.drawText(glyph, cursorX, runBaseline, paint)
@@ -1119,7 +1107,10 @@ internal fun NativeTextReaderContent(
                                         }
                                     } else {
                                         canvas.nativeCanvas.drawText(runText, cursorX, runBaseline, paint)
-                                        cursorX += paint.measureText(runText)
+                                        // 行内代码整体按一个“词”参与两端对齐，避免每个字母/每个
+                                        // 代码 run 后都塞进一大段空白。
+                                        cursorX += paint.measureText(runText) +
+                                            if (justifyExtra > 0f) justifyExtra else 0f
                                     }
                                     buffer.clear()
                                 }
@@ -1293,15 +1284,6 @@ internal fun NativeTextReaderContent(
                                     }
                                 ) {
                                     val indent = line.leftIndentEm * fontSizePx
-                                    if (line.mono) {
-                                        // pre/code 块背景，对应 WebView #book pre 的浅色底（先画底再画字）。
-                                        drawRoundRect(
-                                            color = readerTextColor.copy(alpha = 0.055f),
-                                            topLeft = Offset(contentLeft + 2f, yTop),
-                                            size = Size(contentWidth - 4f, lineBox),
-                                            cornerRadius = CornerRadius(2.dp.toPx()),
-                                        )
-                                    }
                                     when (line.align) {
                                         1 -> {
                                             paint.textAlign = Paint.Align.CENTER
