@@ -1022,11 +1022,18 @@ internal fun NativeTextReaderContent(
                                 paint.textAlign = Paint.Align.LEFT
                                 val richIndent = line.leftIndentEm * fontSizePx
                                 // 行内样式行的对齐：先量出整行宽度，再按居中/右对齐决定起点（两端对齐暂按左对齐）。
-                                var richSlots = 0
+                                var richBoundaries = 0
                                 val richWidth = run {
                                     var widthSum = 0f
                                     var tokenIndex = 0
-                                    val measurePaint = paintFor(line)
+                                    var measureMono = line.mono
+                                    var measureBold = line.bold
+                                    var measureItalic = line.italic
+                                    var measureUnderline = false
+                                    var measureStrike = false
+                                    var measureSup = false
+                                    var measureSub = false
+                                    var previousChar: Char? = null
                                     while (tokenIndex < line.text.length) {
                                         val tokenChar = line.text[tokenIndex]
                                         when {
@@ -1042,15 +1049,38 @@ internal fun NativeTextReaderContent(
                                                     .coerceAtLeast(0.05f)
                                                 val em = fontSizePx * line.sizeRatio
                                                 widthSum += em * 1.15f * tokenAspect + em * 0.2f
-                                                richSlots += 1
+                                                previousChar = null
                                                 tokenIndex = tokenEnd + 1
                                             }
 
-                                            tokenChar.code in 0x0006..0x0013 -> tokenIndex += 1
+                                            tokenChar == '\u0006' -> { measureBold = true; tokenIndex += 1 }
+                                            tokenChar == '\u0007' -> { measureBold = false; tokenIndex += 1 }
+                                            tokenChar == '\u0008' -> { measureItalic = true; tokenIndex += 1 }
+                                            tokenChar == '\u0009' -> { measureItalic = false; tokenIndex += 1 }
+                                            tokenChar == '\u000A' -> { measureUnderline = true; tokenIndex += 1 }
+                                            tokenChar == '\u000B' -> { measureUnderline = false; tokenIndex += 1 }
+                                            tokenChar == '\u000C' -> { measureStrike = true; tokenIndex += 1 }
+                                            tokenChar == '\u000D' -> { measureStrike = false; tokenIndex += 1 }
+                                            tokenChar == '\u000E' -> { measureMono = true; tokenIndex += 1 }
+                                            tokenChar == '\u000F' -> { measureMono = false; tokenIndex += 1 }
+                                            tokenChar == '\u0010' -> { measureSup = true; measureSub = false; tokenIndex += 1 }
+                                            tokenChar == '\u0011' -> { measureSup = false; tokenIndex += 1 }
+                                            tokenChar == '\u0012' -> { measureSub = true; measureSup = false; tokenIndex += 1 }
+                                            tokenChar == '\u0013' -> { measureSub = false; tokenIndex += 1 }
 
                                             else -> {
-                                                widthSum += measurePaint.measureText(tokenChar.toString())
-                                                richSlots += 1
+                                                val measurePaint = richPaintFor(
+                                                    line, measureBold, measureItalic, measureUnderline,
+                                                    measureStrike, measureMono,
+                                                )
+                                                val scale = if (measureSup || measureSub) 0.72f else 1f
+                                                widthSum += measurePaint.measureText(tokenChar.toString()) * scale
+                                                if (!measureMono) {
+                                                    if (justifyBoundary(previousChar, tokenChar)) richBoundaries++
+                                                    previousChar = tokenChar
+                                                } else {
+                                                    previousChar = null
+                                                }
                                                 tokenIndex += 1
                                             }
                                         }
@@ -1063,9 +1093,9 @@ internal fun NativeTextReaderContent(
                                     else -> contentLeft + richIndent
                                 }
                                 if (line.align == 2) cursorX = cursorX.coerceAtLeast(contentLeft)
-                                // 两端对齐：把剩余宽度均摊到每个字形/行内图片上（最后一行 Rust 已改为左对齐）。
-                                val justifyExtra = if (line.align == 3 && richSlots > 0) {
-                                    ((contentWidth - richIndent - richWidth).coerceAtLeast(0f)) / richSlots
+                                // 两端对齐：只在中文边界/空格处拉开间距（行内代码整体不拉伸）。
+                                val justifyExtra = if (line.align == 3 && richBoundaries > 0) {
+                                    ((contentWidth - richIndent - richWidth).coerceAtLeast(0f)) / richBoundaries
                                 } else {
                                     0f
                                 }
@@ -1096,21 +1126,22 @@ internal fun NativeTextReaderContent(
                                     val runText = buffer.toString()
                                     val runAdvance = paint.measureText(runText) +
                                         if (justifyExtra > 0f) justifyExtra * runText.length else 0f
-                                    // 两端对齐不要把字距加进行内代码，否则代码会变成逐字母散开；
-                                    // 余量留在整个 run 之后，行尾仍然对齐。
-                                    val justifyThisRun = justifyExtra > 0f && !richMono
-                                    if (justifyThisRun) {
+                                    // 行内代码整体绘制、不参与字距拉伸；普通文本仅在中文边界/空格处
+                                    // 补 justifyExtra，和 WebView 的 justify 一致。
+                                    if (justifyExtra > 0f && !richMono) {
                                         for (glyphIndex in buffer.indices) {
                                             val glyph = buffer[glyphIndex].toString()
                                             canvas.nativeCanvas.drawText(glyph, cursorX, runBaseline, paint)
-                                            cursorX += paint.measureText(glyph) + justifyExtra
+                                            cursorX += paint.measureText(glyph)
+                                            if (glyphIndex < buffer.lastIndex &&
+                                                justifyBoundary(buffer[glyphIndex], buffer[glyphIndex + 1])
+                                            ) {
+                                                cursorX += justifyExtra
+                                            }
                                         }
                                     } else {
                                         canvas.nativeCanvas.drawText(runText, cursorX, runBaseline, paint)
-                                        // 行内代码整体按一个“词”参与两端对齐，避免每个字母/每个
-                                        // 代码 run 后都塞进一大段空白。
-                                        cursorX += paint.measureText(runText) +
-                                            if (justifyExtra > 0f) justifyExtra else 0f
+                                        cursorX += paint.measureText(runText)
                                     }
                                     buffer.clear()
                                 }
@@ -2090,6 +2121,12 @@ private fun isCjkChar(ch: Char): Boolean {
         code in 0xFF00..0xFF60 || code in 0x3000..0x303F
 }
 
+/** 两端对齐的间距边界：中日文之间、或空格处（与 WebView justify 行为一致）。 */
+private fun justifyBoundary(current: Char?, next: Char?): Boolean {
+    if (current == null || next == null) return false
+    return isCjkChar(current) || isCjkChar(next) || current == ' '
+}
+
 /**
  * 两端对齐：仅在中日文边界/空格处拉开间距（和 WebView 的 justify 行为接近），
  * 最后一行由 Rust 标记为左对齐，不参与拉伸。
@@ -2120,11 +2157,7 @@ private fun drawJustifiedLine(
     }
     fun gapBoundary(position: Int): Boolean {
         if (position >= clusters.size - 1) return false
-        val current = clusters[position].lastOrNull()
-        val next = clusters[position + 1].firstOrNull()
-        return (current != null && isCjkChar(current)) ||
-            (next != null && isCjkChar(next)) ||
-            current == ' '
+        return justifyBoundary(clusters[position].lastOrNull(), clusters[position + 1].firstOrNull())
     }
     var gaps = 0
     for (position in 0 until clusters.size - 1) if (gapBoundary(position)) gaps++
