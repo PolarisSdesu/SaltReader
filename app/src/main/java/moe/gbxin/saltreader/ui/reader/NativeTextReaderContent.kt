@@ -723,7 +723,12 @@ internal fun NativeTextReaderContent(
 
     /** 当前页每行的顶部/高度，用于长按命中测试。 */
     fun lineTops(page: List<NativeLine>): List<Float> {
-        val start = (pageSet?.topPadPx ?: topPadPx)
+        // 纵向模式的页绘制在 LazyColumn item 内，坐标从 0 开始；分页模式从版心顶部开始。
+        val start = if (settings.readerMode == ReaderMode.VERTICAL) {
+            0f
+        } else {
+            pageSet?.topPadPx ?: topPadPx
+        }
         val result = ArrayList<Float>(page.size)
         var y = start
         for (line in page) {
@@ -906,7 +911,6 @@ internal fun NativeTextReaderContent(
     }
 
     fun handleReaderLongPress(offset: Offset) {
-        if (settings.readerMode == ReaderMode.VERTICAL) return
         val page = pageSet?.pages?.getOrNull(safePageIndex) ?: return
         val range = paragraphRangeAt(page, offset.y) ?: return
         selectionPage = safePageIndex
@@ -974,18 +978,7 @@ internal fun NativeTextReaderContent(
                         pageArea = size
                     }
                 }
-                .then(
-                    if (settings.readerMode == ReaderMode.VERTICAL) {
-                        Modifier.pointerInput(totalPages, activePanel, pageSet) {
-                            detectTapGestures(
-                                onLongPress = { offset -> handleReaderLongPress(offset) },
-                                onTap = { offset -> handleReaderTap(offset, size.width.toFloat()) },
-                            )
-                        }
-                    } else {
-                        Modifier
-                    },
-                ),
+                ,
             contentAlignment = Alignment.Center,
         ) {
                 val drawPage: @Composable (List<NativeLine>, Float, Float, Boolean, Int) -> Unit = { pageLines, offsetX, topInset, showDebug, chunkIndex ->
@@ -1012,8 +1005,7 @@ internal fun NativeTextReaderContent(
                                 val debugGapPx = line.gapEm * fontSizePx
                                 val debugGapTop = yTop
                                 if (line.gapEm > 0f) yTop += line.gapEm * fontSizePx
-                                if (selectionPage == safePageIndex &&
-                                    pageLines === pageSet?.pages?.getOrNull(safePageIndex) &&
+                                if (pageLines === pageSet?.pages?.getOrNull(selectionPage) &&
                                     lineIndex in selectionStartLine..selectionEndLine
                                 ) {
                                     drawRect(
@@ -1510,7 +1502,26 @@ internal fun NativeTextReaderContent(
                                     "first=\"${lines.firstOrNull()?.text?.replace('\u0001', ' ')?.take(12)}\"",
                             )
                         }
-                        Box(Modifier.fillMaxWidth().height(itemHeightDp)) {
+                        var lastTouch by remember { mutableStateOf(Offset.Zero) }
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(itemHeightDp)
+                                .pointerInput(Unit) {
+                                    awaitPointerEventScope {
+                                        while (true) {
+                                            val event = awaitPointerEvent(PointerEventPass.Initial)
+                                            event.changes.lastOrNull()?.let { lastTouch = it.position }
+                                        }
+                                    }
+                                }
+                                .combinedClickable(
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    indication = null,
+                                    onClick = { handleReaderTap(lastTouch, view.width.toFloat()) },
+                                    onLongClick = { handleReaderLongPress(lastTouch) },
+                                ),
+                        ) {
                             drawPage(pages[index], 0f, 0f, index == verticalState.firstVisibleItemIndex, index)
                         }
                     }
