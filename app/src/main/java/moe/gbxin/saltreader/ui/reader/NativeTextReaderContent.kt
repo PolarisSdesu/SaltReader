@@ -880,6 +880,11 @@ internal fun NativeTextReaderContent(
      * 一页实际内容高度：与绘制端的 y 推进完全一致（行高 + 段前距 + 图片实际高度 + 表格行），
      * 纵向模式按它堆叠页面，避免页尾留白，也避免图片页高度不足导致下一页文字重叠。
      */
+    /** 整页只有一张图片：按页面满宽显示（不受“图片全宽显示”开关影响）。 */
+    fun isImageOnlyPage(page: List<NativeLine>): Boolean =
+        page.count { it.imageId >= 0 } == 1 &&
+            page.none { it.imageId < 0 && (it.tableCols > 0 || it.text.isNotBlank()) }
+
     fun pageContentHeightPx(page: List<NativeLine>): Float {
         val geometry = pageSet
         val contentWidth = geometry?.contentWidthPx ?: (pageArea.width - leftPadPx - rightPadPx).coerceAtLeast(1f)
@@ -895,8 +900,12 @@ internal fun NativeTextReaderContent(
                 line.imageId >= 0 -> {
                     val aspect = (geometry?.imageAspects?.getOrNull(line.imageId) ?: 1.5f)
                         .coerceAtLeast(0.05f)
-                    if (settings.readerMode == ReaderMode.VERTICAL && imageFullWidthEffective) {
-                        y += pageArea.width.toFloat() / aspect
+                    val imageOnly = isImageOnlyPage(page)
+                    if (imageOnly || (settings.readerMode == ReaderMode.VERTICAL && imageFullWidthEffective)) {
+                        y += minOf(
+                            pageArea.width.toFloat() / aspect,
+                            contentHeight * imageHeightRatio,
+                        )
                     } else {
                         val base = if (imageFullWidthEffective) fullWidth else contentWidth
                         y += minOf(base / aspect, contentHeight * imageHeightRatio)
@@ -1226,38 +1235,27 @@ internal fun NativeTextReaderContent(
                                     // 插画：按宽高比预留整块，居中绘制；位图还没解码好时画占位块。
                                     val aspect = (pageSet?.imageAspects?.getOrNull(line.imageId) ?: 1.5f)
                                         .coerceAtLeast(0.05f)
-                                    val verticalFull = settings.readerMode == ReaderMode.VERTICAL && imageFullWidthEffective
-                                    val imageWidth: Float
-                                    val imageHeight: Float
-                                    if (verticalFull) {
-                                        // 纵向全宽：边到边，但不超过图片原始宽度（WebView max-width）。
-                                        val intrinsicWidth = pageSet?.imageWidths?.getOrNull(line.imageId) ?: 0f
-                                        imageWidth = if (intrinsicWidth > 0f) {
-                                            minOf(size.width, intrinsicWidth)
-                                        } else {
-                                            size.width
-                                        }
-                                        imageHeight = imageWidth / aspect
-                                    } else {
-                                        val contentHeight = geometryHeight.coerceAtLeast(1f)
-                                        val imageBaseWidth = if (imageFullWidthEffective) {
-                                            (leftPadPx + contentWidth + rightPadPx).coerceAtLeast(1f)
-                                        } else {
-                                            contentWidth
-                                        }
-                                        // WebView: max-width 语义——不超过图片原始宽度，也不超过版面宽度。
-                                        val intrinsicWidth = pageSet?.imageWidths?.getOrNull(line.imageId) ?: 0f
-                                        val cappedBase = if (intrinsicWidth > 0f) {
-                                            minOf(imageBaseWidth, intrinsicWidth)
-                                        } else {
-                                            imageBaseWidth
-                                        }
-                                        val fullHeight = cappedBase / aspect
-                                        val cap = contentHeight * if (settings.readerMode == ReaderMode.VERTICAL) 1f else 0.92f
-                                        imageHeight = minOf(fullHeight, cap)
-                                        imageWidth = imageHeight * aspect
+                                    val imageOnly = isImageOnlyPage(pageLines)
+                                    val contentHeight = geometryHeight.coerceAtLeast(1f)
+                                    // 满宽：整页单图，或“图片全宽显示”开启（纵向模式同样边到边）。
+                                    val fullBleed = imageOnly ||
+                                        (imageFullWidthEffective &&
+                                            (settings.readerMode == ReaderMode.VERTICAL || true))
+                                    val imageBaseWidth = when {
+                                        fullBleed -> size.width
+                                        else -> contentWidth
                                     }
-                                    val left = if (verticalFull) 0f else if (imageFullWidthEffective) {
+                                    // WebView: max-width 语义——非单图页不超过图片原始宽度。
+                                    val intrinsicWidth = pageSet?.imageWidths?.getOrNull(line.imageId) ?: 0f
+                                    val cappedBase = if (!imageOnly && intrinsicWidth > 0f) {
+                                        minOf(imageBaseWidth, intrinsicWidth)
+                                    } else {
+                                        imageBaseWidth
+                                    }
+                                    val cap = contentHeight * if (settings.readerMode == ReaderMode.VERTICAL) 1f else 0.92f
+                                    val imageHeight = minOf(cappedBase / aspect, cap)
+                                    val imageWidth = imageHeight * aspect
+                                    val left = if (fullBleed) {
                                         (size.width - imageWidth) / 2f
                                     } else {
                                         contentLeft + (contentWidth - imageWidth) / 2f
