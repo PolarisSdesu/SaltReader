@@ -1579,7 +1579,7 @@ internal fun TextReaderContent(
                 shadowElevation = 2.dp,
             ) {
                 Text(
-                    "WEBVIEW → NATIVE",
+                    stringResource(R.string.reader_debug_switch_to_native),
                     modifier = Modifier
                         .clickable {
                             if (onDebugSwitch != null) {
@@ -1758,6 +1758,20 @@ private fun buildBookHtml(
     return HTML_HEAD + body + HTML_TAIL
 }
 
+/** 内联图片「降采样后字节」的小型 LRU：窗口重建/追加时避免重复解码与重编码。 */
+private object InlineImageOptimizedCache {
+    private const val MAX_BYTES = 12 * 1024 * 1024
+    private val cache = object : android.util.LruCache<String, Pair<ByteArray, String>>(MAX_BYTES) {
+        override fun sizeOf(key: String, value: Pair<ByteArray, String>): Int = value.first.size
+    }
+
+    fun get(key: String): Pair<ByteArray, String>? = cache.get(key)?.let { it }
+
+    fun put(key: String, value: Pair<ByteArray, String>) {
+        cache.put(key, value)
+    }
+}
+
 /** WebView 内部用来按需取回内联图片的本地域名；请求由 shouldInterceptRequest 截获。 */
 private const val INLINE_IMAGE_HOST = "salt.local"
 private const val INLINE_IMAGE_SCHEME = "https"
@@ -1789,7 +1803,11 @@ private fun externalizeInlineImages(
         val payload = match.groupValues[3]
         val rawBytes = runCatching { java.util.Base64.getDecoder().decode(payload) }.getOrNull()
             ?: return@replace match.value
-        val optimized = downscaleInlineImage(rawBytes, mime, maxImageWidthPx)
+        val cacheKey = mime + ":" + payload.length + ":" + payload.hashCode()
+        val optimized = InlineImageOptimizedCache.get(cacheKey)
+            ?: downscaleInlineImage(rawBytes, mime, maxImageWidthPx).also {
+                InlineImageOptimizedCache.put(cacheKey, it)
+            }
         val bytes = optimized.first
         val finalMime = optimized.second
         val token = "img" + tokenCounter.incrementAndGet()
@@ -2186,7 +2204,7 @@ private val HTML_TAIL = """
   var lastReportPage = -1, lastReportPages = -1, lastReportRatio = -2;
   var lastTrimAt = 0;
   function trimEarlierSections() {
-    if (mode !== 'vertical') return;
+    if (mode !== 'vertical') { trimEarlierSectionsPaged(); return; }
     var now = Date.now();
     if (now - lastTrimAt < 1200) return;
     var secs = book.querySelectorAll('section.chapter');
@@ -2206,6 +2224,32 @@ private val HTML_TAIL = """
     }
     scroll.scrollTop = Math.max(0, st - removedHeight);
     console.log('JSPERF trim removed=' + keepFrom + ' sh=' + scroll.scrollHeight + ' st=' + scroll.scrollTop);
+    if (window['$BRIDGE_NAME'] && window['$BRIDGE_NAME'].onTrimmed) {
+      window['$BRIDGE_NAME'].onTrimmed(keepFrom);
+    }
+  }
+  function trimEarlierSectionsPaged() {
+    var now = Date.now();
+    if (now - lastTrimAt < 1200) return;
+    var secs = book.querySelectorAll('section.chapter');
+    if (secs.length <= 8) return;
+    var sl = scroll.scrollLeft;
+    var firstVisible = 0;
+    for (var i = 0; i < secs.length; i++) {
+      if (secs[i].offsetLeft + secs[i].offsetWidth > sl) { firstVisible = i; break; }
+    }
+    var keepFrom = Math.max(0, firstVisible - 2);
+    if (keepFrom <= 0) return;
+    lastTrimAt = now;
+    var removedWidth = 0;
+    for (var j = 0; j < keepFrom; j++) {
+      removedWidth += secs[j].offsetWidth;
+      secs[j].parentNode.removeChild(secs[j]);
+    }
+    scroll.scrollLeft = Math.max(0, sl - removedWidth);
+    refreshSnapPoints();
+    report(true);
+    console.log('JSPERF trim-pages removed=' + keepFrom + ' sw=' + scroll.scrollWidth);
     if (window['$BRIDGE_NAME'] && window['$BRIDGE_NAME'].onTrimmed) {
       window['$BRIDGE_NAME'].onTrimmed(keepFrom);
     }
