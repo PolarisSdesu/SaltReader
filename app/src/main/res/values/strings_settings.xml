@@ -146,7 +146,7 @@
     <string name="settings_fonts">Fonts</string>
     <string name="settings_reader_font_mode">Reader font</string>
     <string name="settings_reader_native_reader">Native reader</string>
-    <string name="settings_reader_native_reader_desc">Fast Rust layout engine. Paged and scrolling modes.</string>
+    <string name="settings_reader_native_reader_desc">Native reader built with Rust. Turn it off if rendering issues occur.</string>
     <string name="settings_reader_native_reader_unavailable">Native library unavailable on this device.</string>
     <string name="settings_appearance_section_debug">Debug</string>
     <string name="settings_appearance_debug_mode">Debug mode</string>

@@ -142,7 +142,7 @@
     <string name="settings_fonts">字体</string>
     <string name="settings_reader_font_mode">阅读器字体</string>
     <string name="settings_reader_native_reader">原生阅读器</string>
-    <string name="settings_reader_native_reader_desc">内置 Rust 排版，支持翻页与滚动。</string>
+    <string name="settings_reader_native_reader_desc">使用 Rust 构建的原生阅读器，兼容异常时可关闭。</string>
     <string name="settings_reader_native_reader_unavailable">当前设备未能加载原生库，自动回退到 WebView。</string>
     <string name="settings_appearance_section_debug">Debug</string>
     <string name="settings_appearance_debug_mode">调试模式</string>

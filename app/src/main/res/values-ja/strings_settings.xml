@@ -142,7 +142,7 @@
     <string name="settings_fonts">フォント</string>
     <string name="settings_reader_font_mode">リーダーフォント</string>
     <string name="settings_reader_native_reader">ネイティブリーダー</string>
-    <string name="settings_reader_native_reader_desc">Rust 製レイアウトで高速に描画。</string>
+    <string name="settings_reader_native_reader_desc">Rust 製のネイティブリーダー。不具合時はオフにできます。</string>
     <string name="settings_reader_native_reader_unavailable">この端末ではネイティブライブラリを読み込めないため、WebView にフォールバックします。</string>
     <string name="settings_appearance_section_debug">Debug</string>
     <string name="settings_appearance_debug_mode">デバッグモード</string>
