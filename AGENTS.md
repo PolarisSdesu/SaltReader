@@ -6,7 +6,9 @@ data-layer contracts.
 
 ## Project at a glance
 
-- Kotlin + Jetpack Compose (Material 3 Expressive) Android app; no NDK, no network.
+- Kotlin + Jetpack Compose (Material 3 Expressive) Android app; no network. One optional NDK
+  component: the experimental Rust text-layout engine in `native/text-reader` →
+  `libtext_reader.so` (see `docs/native-text-reader.md`); the default WebView reader does not need it.
 - Books are indexed **in place** through the Storage Access Framework (SAF). The app declares no
   storage or network permissions and never copies user files; app-private storage only holds
   derived data (covers, text/chapter caches, EPUB page-map caches).
@@ -27,6 +29,8 @@ app/src/main/java/moe/gbxin/saltreader/
   ui/components/ shared composables (covers, labels, color picker)
   ui/theme/      Material 3 color/type
 app/src/main/java/org/rr/mobi4java/   vendored MOBI parser (Java, do not rewrite lightly)
+app/src/main/jniLibs/                 prebuilt libtext_reader.so (Rust native reader, arm64/x86_64)
+native/text-reader/                   Rust crate + Android cross-compile script
 app/src/test/    pure-JVM unit tests (no Robolectric)
 docs/            architecture, i18n, versioning contracts
 scripts/         version bump helper

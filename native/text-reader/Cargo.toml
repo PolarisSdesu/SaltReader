@@ -1,0 +1,20 @@
+[package]
+name = "text-reader"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "text_reader"
+crate-type = ["cdylib"]
+
+[dependencies]
+jni = "0.21"
+unicode-linebreak = "0.1"
+unicode-segmentation = "1"
+unicode-width = "0.2"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true
+panic = "abort"

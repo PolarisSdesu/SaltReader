@@ -9,3 +9,6 @@ captures/
 keystore.properties
 keystore/
 .kotlin/
+
+# Rust build artifacts
+native/text-reader/target/

@@ -52,3 +52,23 @@ jobs:
             app/build/reports/tests/
             app/build/reports/lint-results-debug.html
           if-no-files-found: ignore
+
+  rust:
+    name: Rust native text layout (cargo test)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cargo cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/text-reader
+
+      - name: Run Rust unit tests
+        working-directory: native/text-reader
+        run: cargo test --locked --offline || cargo test --locked
