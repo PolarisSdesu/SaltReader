@@ -2045,7 +2045,7 @@ body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; line-height: var(
 /* Paged mode (CSS columns): the column box is inset by page padding so text keeps clear of the
    status bar and the bottom toolbar, like WeChat Reading's page margins. */
 body.paged { height: 100%; overflow: hidden; }
-body.paged #scroll { position: relative; width: 100vw; height: var(--app-vh, 100%); overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: pan-x; scroll-snap-type: x mandatory; -webkit-tap-highlight-color: transparent; }
+body.paged #scroll { position: relative; width: 100vw; height: var(--app-vh, 100%); overflow-x: hidden; overflow-y: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: none; scroll-snap-type: none; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
 body.paged #scroll::-webkit-scrollbar { display: none; }
 body.paged #book { height: calc(var(--app-vh, 100%) - 56px); margin: 28px 0; column-width: 100vw; column-gap: 0; column-fill: auto; -webkit-column-width: 100vw; -webkit-column-gap: 0; -webkit-column-fill: auto; }
 /* Vertical mode: breathing room at the top and enough bottom padding that the last lines can be
@@ -2464,6 +2464,24 @@ private val HTML_TAIL = """
       });
     });
   }
+  // 三次贝塞尔缓动求解（x 轴 Newton 迭代 + y 轴求值），用于翻页与音量键动画。
+  function cubicBezier(x1, y1, x2, y2) {
+    function sampleCurveX(t) { return ((1 - 3 * x2 + 3 * x1) * t + (3 * x2 - 6 * x1)) * t * t + 3 * x1 * t; }
+    function sampleCurveY(t) { return ((1 - 3 * y2 + 3 * y1) * t + (3 * y2 - 6 * y1)) * t * t + 3 * y1 * t; }
+    function solveX(x) {
+      var t = x;
+      for (var i = 0; i < 6; i++) {
+        var dx = sampleCurveX(t) - x;
+        var slope = (3 * (1 - 3 * x2 + 3 * x1) * t + 2 * (3 * x2 - 6 * x1)) * t + 3 * x1;
+        if (Math.abs(slope) < 1e-4) break;
+        t -= dx / slope;
+        if (t < 0) t = 0; else if (t > 1) t = 1;
+      }
+      return t;
+    }
+    return function (x) { return sampleCurveY(solveX(x)); };
+  }
+
   function turn(delta) {
     if (mode !== 'paged') return;
     refreshMetrics();
@@ -2497,9 +2515,10 @@ private val HTML_TAIL = """
     }
     var duration = 110;
     var startedAt = performance.now();
+    var volumeEase = cubicBezier(0.25, 0.46, 0.45, 0.94);
     function step(now) {
       var t = Math.min(1, (now - startedAt) / duration);
-      var eased = 1 - Math.pow(1 - t, 2);
+      var eased = volumeEase(t);
       scroll.scrollLeft = start + (target - start) * eased;
       if (t < 1) {
         requestAnimationFrame(step);
@@ -2518,6 +2537,89 @@ private val HTML_TAIL = """
       report();
     }
   }
+
+  // 统一翻页物理：WebView 与 native 阅读器完全一致（跟手拖动 -> 30%/350px/s 阈值 -> 220ms 缓动吸附）。
+  var customPagedDrag = true;
+  var swipeDrag = { active: false, startX: 0, startLeft: 0, startPage: 0, lastX: 0, lastAt: 0, velocity: 0, moved: false };
+  var swipeRaf = 0;
+  function swipeEase(t) {
+    // cubic-bezier(0.25, 0.46, 0.45, 0.94)
+    return cubicBezier(0.25, 0.46, 0.45, 0.94)(t);
+  }
+  function cancelSwipeAnimation() {
+    if (swipeRaf) cancelAnimationFrame(swipeRaf);
+    swipeRaf = 0;
+  }
+  function animateSwipeTo(target) {
+    cancelSwipeAnimation();
+    var start = scroll.scrollLeft;
+    var delta = target - start;
+    if (Math.abs(delta) < 0.5) {
+      scroll.scrollLeft = target;
+      report(true);
+      return;
+    }
+    var duration = 220;
+    var startedAt = performance.now();
+    function step(now) {
+      var t = Math.min(1, (now - startedAt) / duration);
+      scroll.scrollLeft = start + delta * swipeEase(t);
+      if (t < 1) {
+        swipeRaf = requestAnimationFrame(step);
+      } else {
+        swipeRaf = 0;
+        scroll.scrollLeft = target;
+        report(true);
+      }
+    }
+    swipeRaf = requestAnimationFrame(step);
+  }
+  function endPagedDrag() {
+    if (!swipeDrag.active) return;
+    swipeDrag.active = false;
+    if (mode !== 'paged') return;
+    var w = viewportWidth();
+    var max = Math.max(0, scroll.scrollWidth - scroll.clientWidth);
+    var dx = swipeDrag.lastX - swipeDrag.startX;
+    var turned = Math.abs(dx) > w * 0.3 || Math.abs(swipeDrag.velocity) > 350;
+    var pages = pagedPages();
+    // 起始页 + 一页：不能拿“拖动后已过的页”再加一页，否则会一次翻两页。
+    var page = swipeDrag.startPage;
+    if (turned) {
+      page = Math.min(pages - 1, Math.max(0, page + (dx < 0 ? 1 : -1)));
+    }
+    var target = Math.min(max, Math.max(0, page * w));
+    animateSwipeTo(target);
+  }
+  scroll.addEventListener('pointerdown', function (e) {
+    if (mode !== 'paged' || e.pointerType === 'mouse' && e.button !== 0) return;
+    cancelSwipeAnimation();
+    swipeDrag.active = true;
+    swipeDrag.startX = e.clientX;
+    swipeDrag.lastX = e.clientX;
+    swipeDrag.startLeft = scroll.scrollLeft;
+    swipeDrag.startPage = pagedPage();
+    swipeDrag.lastAt = performance.now();
+    swipeDrag.velocity = 0;
+    swipeDrag.moved = false;
+  });
+  window.addEventListener('pointermove', function (e) {
+    if (!swipeDrag.active) return;
+    if (mode !== 'paged') return;
+    var dx = e.clientX - swipeDrag.startX;
+    if (Math.abs(dx) > 6) swipeDrag.moved = true;
+    var max = Math.max(0, scroll.scrollWidth - scroll.clientWidth);
+    scroll.scrollLeft = Math.min(max, Math.max(0, swipeDrag.startLeft - dx));
+    var now = performance.now();
+    var dt = now - swipeDrag.lastAt;
+    if (dt > 0) {
+      swipeDrag.velocity = (e.clientX - swipeDrag.lastX) / dt * 1000;
+    }
+    swipeDrag.lastX = e.clientX;
+    swipeDrag.lastAt = now;
+  });
+  window.addEventListener('pointerup', endPagedDrag);
+  window.addEventListener('pointercancel', endPagedDrag);
 
   // One swipe = one page. `scroll-snap-stop: always` is the primary guarantee; the gesture guard
   // below also covers a direct drag that crosses more than one page, and an accidental click after
@@ -2552,6 +2654,7 @@ private val HTML_TAIL = """
     gestureClampRaf = requestAnimationFrame(tick);
   }
   scroll.addEventListener('touchstart', function (e) {
+    if (customPagedDrag) return;
     if (mode !== 'paged' || e.touches.length !== 1) return;
     touching = true;
     touchStartX = e.touches[0].clientX;
@@ -2562,14 +2665,14 @@ private val HTML_TAIL = """
     gesturePage = pagedPage();
   }, { passive: true });
   scroll.addEventListener('touchmove', function (e) {
-    if (!touching || e.touches.length !== 1) return;
+    if (customPagedDrag || !touching || e.touches.length !== 1) return;
     var dx = e.touches[0].clientX - touchStartX;
     var dy = e.touches[0].clientY - touchStartY;
     dragDistance = Math.max(dragDistance, Math.abs(dx) + Math.abs(dy));
     if (Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy)) touchIntent = dx < 0 ? 1 : -1;
   }, { passive: true });
   scroll.addEventListener('touchend', function () {
-    if (!touching) return;
+    if (customPagedDrag || !touching) return;
     touching = false;
     watchGestureClamp();
     var intent = touchIntent;
@@ -2588,6 +2691,7 @@ private val HTML_TAIL = """
     }, 320);
   }, { passive: true });
   scroll.addEventListener('touchcancel', function () {
+    if (customPagedDrag) return;
     touching = false;
     touchIntent = 0;
     watchGestureClamp();

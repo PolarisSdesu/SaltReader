@@ -545,8 +545,8 @@ internal fun NativeTextReaderContent(
     // 横向滑动：跟手位移 + 松手吸附；点击翻页仍是瞬时（与 WebView 阅读器一致）。
     var dragOffsetPx by remember { mutableFloatStateOf(0f) }
     val swipeScope = rememberCoroutineScope()
-    // WebView 的翻页/归位使用平台滚动物理（OverScroller）；这里复用同一套曲线。
-    val swipeScroller = remember { OverScroller(context) }
+    // 与 WebView 共用的翻页吸附动画状态。
+    val swipeAnimation = remember { androidx.compose.animation.core.Animatable(0f) }
     // 文本选择（长按选中所在段落，可复制到系统剪贴板）。
     var selectionPage by remember { mutableIntStateOf(-1) }
     var selectionStartLine by remember { mutableIntStateOf(-1) }
@@ -969,31 +969,17 @@ internal fun NativeTextReaderContent(
                             0f
                         }
                         swipeScope.launch {
-                            swipeScroller.forceFinished(true)
-                            val start = dragOffsetPx.roundToInt()
-                            val targetInt = target.roundToInt()
-                            val velocityInt = velocity.roundToInt()
-                            val towardTarget = (target - dragOffsetPx) * velocity >= 0f && abs(velocity) > 120f
-                            if (towardTarget) {
-                                // 平台 fling 物理：减速度、边界钳制到目标页，和 WebView 的 fling 同源。
-                                swipeScroller.fling(
-                                    start,
-                                    0,
-                                    velocityInt,
-                                    0,
-                                    targetInt,
-                                    targetInt,
-                                    0,
-                                    0,
-                                )
-                            } else {
-                                swipeScroller.startScroll(start, 0, targetInt - start, 0, 220)
+                            // 与 WebView 完全一致的翻页动画：220ms cubic-bezier(.25,.46,.45,.94)。
+                            swipeAnimation.snapTo(dragOffsetPx)
+                            swipeAnimation.animateTo(
+                                targetValue = target,
+                                animationSpec = tween(
+                                    durationMillis = 220,
+                                    easing = CubicBezierEasing(0.25f, 0.46f, 0.45f, 0.94f),
+                                ),
+                            ) {
+                                dragOffsetPx = value
                             }
-                            while (swipeScroller.computeScrollOffset()) {
-                                dragOffsetPx = swipeScroller.currX.toFloat()
-                                withFrameNanos { }
-                            }
-                            dragOffsetPx = target
                             if (turn != 0 && totalPages > 0) {
                                 pageIndex = (pageIndex + turn).coerceIn(0, totalPages - 1)
                             }
