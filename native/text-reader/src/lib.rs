@@ -470,6 +470,19 @@ fn normalize_block_text(text: &str, preserve: bool) -> String {
 
 /// 解析章节 HTML 得到块序列。
 fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) -> Vec<Block> {
+    // 规则索引：避免每个块开/关都全量扫所有 CSS 规则。
+    let mut tag_rules: HashMap<&str, Vec<usize>> = HashMap::new();
+    let mut class_rules: HashMap<&str, Vec<usize>> = HashMap::new();
+    for (rule_index, rule) in css_rules.iter().enumerate() {
+        match (&rule.tag, &rule.class_name) {
+            (Some(tag), None) => tag_rules.entry(tag.as_str()).or_default().push(rule_index),
+            (_, Some(class_name)) => class_rules
+                .entry(class_name.as_str())
+                .or_default()
+                .push(rule_index),
+            _ => {}
+        }
+    }
     let mut blocks: Vec<Block> = Vec::new();
     let mut text = String::new();
     let mut tag_stack: Vec<String> = Vec::new();
@@ -666,7 +679,7 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                     }
                     _ => {}
                 }
-                apply_stack_css(&mut current_style, &tag_stack, css_rules);
+                apply_stack_css(&mut current_style, &tag_stack, css_rules, &tag_rules);
                     preserve = false;
                 } else if is_inline_tag(&tag) {
                     if let Some(marker) = inline_marker(&tag, true) {
@@ -745,10 +758,10 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                 let class_attr = attr_value(attributes, "class");
                 let mut style = default_style_for_tag(&tag).unwrap_or_default();
                 current_style = style;
-                apply_stack_css(&mut current_style, &tag_stack, css_rules);
+                apply_stack_css(&mut current_style, &tag_stack, css_rules, &tag_rules);
                 if let Some(classes) = &class_attr {
                     for class_name in classes.split_whitespace() {
-                        apply_class_css(&mut current_style, &tag, class_name, css_rules);
+                        apply_class_css(&mut current_style, &tag, class_name, css_rules, &class_rules);
                     }
                 }
                 if let Some(style_attr) = attr_value(attributes, "style") {
@@ -764,7 +777,7 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                 if let Some(classes) = &class_attr {
                     for class_name in classes.split_whitespace() {
                         apply_known_class(&mut current_style, class_name);
-                        apply_class_css(&mut current_style, &tag, class_name, &css_rules);
+                        apply_class_css(&mut current_style, &tag, class_name, css_rules, &class_rules);
                     }
                 }
                 preserve = tag == "pre";
@@ -831,24 +844,33 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
     blocks
 }
 
-fn apply_stack_css(style: &mut Style, stack: &[String], rules: &[CssRule]) {
-    for rule in rules {
-        let Some(rule_tag) = &rule.tag else { continue };
-        // `p.foo` 不能作用到所有 p：带 class 的规则交给 apply_class_css。
-        if rule.class_name.is_some() {
-            continue;
-        }
-        if stack.iter().any(|value| value == rule_tag) {
-            apply_declarations(style, &rule.declarations);
+fn apply_stack_css(
+    style: &mut Style,
+    stack: &[String],
+    rules: &[CssRule],
+    index: &HashMap<&str, Vec<usize>>,
+) {
+    // 外层标签的规则也要生效：按栈顺序（浅 -> 深）应用。
+    for tag in stack {
+        let Some(rule_ids) = index.get(tag.as_str()) else { continue };
+        for rule_index in rule_ids {
+            if let Some(rule) = rules.get(*rule_index) {
+                apply_declarations(style, &rule.declarations);
+            }
         }
     }
 }
 
-fn apply_class_css(style: &mut Style, tag: &str, class_name: &str, rules: &[CssRule]) {
-    for rule in rules {
-        if rule.class_name.as_deref() != Some(class_name) {
-            continue;
-        }
+fn apply_class_css(
+    style: &mut Style,
+    tag: &str,
+    class_name: &str,
+    rules: &[CssRule],
+    index: &HashMap<&str, Vec<usize>>,
+) {
+    let Some(rule_ids) = index.get(class_name) else { return };
+    for rule_index in rule_ids {
+        let Some(rule) = rules.get(*rule_index) else { continue };
         if let Some(rule_tag) = &rule.tag {
             if rule_tag != tag {
                 continue;
@@ -983,14 +1005,50 @@ fn is_no_line_start(ch: char) -> bool {
     )
 }
 
-fn char_width(ch: char, font_size: f32, scale: f32, advances: &HashMap<u32, f32>) -> f32 {
+/// 字宽表：BMP 用数组直接索引，非 BMP 回退 HashMap（避免逐字 SipHash）。
+#[derive(Default)]
+struct WidthTable {
+    bmp: Vec<f32>,
+    other: HashMap<u32, f32>,
+}
+
+impl WidthTable {
+    fn from_map(map: &HashMap<u32, f32>) -> Self {
+        let max_bmp = map.keys().copied().filter(|cp| *cp < 0x10000).max().unwrap_or(0) as usize;
+        let mut bmp = vec![0f32; max_bmp + 1];
+        let mut other = HashMap::new();
+        for (cp, width) in map {
+            if (*cp as usize) < bmp.len() {
+                bmp[*cp as usize] = *width;
+            } else if *cp >= 0x10000 {
+                other.insert(*cp, *width);
+            }
+        }
+        Self { bmp, other }
+    }
+
+    #[inline]
+    fn get(&self, cp: u32) -> Option<f32> {
+        if (cp as usize) < self.bmp.len() {
+            let width = self.bmp[cp as usize];
+            if width > 0.0 {
+                return Some(width);
+            }
+            None
+        } else {
+            self.other.get(&cp).copied().filter(|width| *width > 0.0)
+        }
+    }
+}
+
+fn char_width(ch: char, font_size: f32, scale: f32, advances: &WidthTable) -> f32 {
     // 行内样式标记（\u0006..\u000F）不占排版宽度。
     if ('\u{0006}'..='\u{0013}').contains(&ch) {
         return 0.0;
     }
-    if let Some(w) = advances.get(&(ch as u32)) {
-        if *w > 0.0 {
-            return *w * scale;
+    if let Some(w) = advances.get(ch as u32) {
+        if w > 0.0 {
+            return w * scale;
         }
     }
     match UnicodeWidthChar::width(ch).unwrap_or(1) {
@@ -1000,7 +1058,8 @@ fn char_width(ch: char, font_size: f32, scale: f32, advances: &HashMap<u32, f32>
     }
 }
 
-fn encode_style(style: &Style, line_height_factor: f32, gap_em: f32) -> String {
+/// 直接写入输出缓冲，避免每行一次 String 分配。
+fn write_style(out: &mut String, style: &Style, line_height_factor: f32, gap_em: f32) {
     let size = (style.size * 10.0).round().clamp(6.0, 40.0) as u32;
     let line_height = (line_height_factor * 10.0).round().clamp(9.0, 40.0) as u32;
     let mut flags = 0u32;
@@ -1015,7 +1074,9 @@ fn encode_style(style: &Style, line_height_factor: f32, gap_em: f32) -> String {
     }
     let left_indent = (style.left_indent * 10.0).round().clamp(0.0, 90.0) as u32;
     let gap = (gap_em * 10.0).round().clamp(0.0, 99.0) as u32;
-    format!(
+    use std::fmt::Write as _;
+    let _ = write!(
+        out,
         "{:02}{:02}{}{:02}{:02}{:02}",
         size,
         line_height,
@@ -1023,7 +1084,7 @@ fn encode_style(style: &Style, line_height_factor: f32, gap_em: f32) -> String {
         style.align,
         left_indent,
         gap,
-    )
+    );
 }
 
 fn wrap_simple(
@@ -1031,7 +1092,7 @@ fn wrap_simple(
     width: f32,
     size_px: f32,
     scale: f32,
-    advances: &HashMap<u32, f32>,
+    advances: &WidthTable,
 ) -> Vec<String> {
     if text.trim().is_empty() {
         return vec![String::new()];
@@ -1077,6 +1138,8 @@ fn layout_blocks(
     image_base_width: f32,
     image_max_height_ratio: f32,
 ) -> Vec<Vec<RenderLine>> {
+    let widths = WidthTable::from_map(advances);
+    let advances = &widths;
     let mut pages: Vec<Vec<RenderLine>> = Vec::new();
     let mut page_lines: Vec<RenderLine> = Vec::new();
     let mut y = 0.0f32;
@@ -1613,7 +1676,14 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
         image_max_height_ratio,
     );
 
-    let mut out = String::new();
+    let estimated = pages
+        .iter()
+        .flat_map(|page| page.iter())
+        .map(|line| line.text.len() + 32)
+        .sum::<usize>()
+        .max(64);
+    let mut out = String::with_capacity(estimated);
+    use std::fmt::Write as _;
     for (page_index, page) in pages.iter().enumerate() {
         if page_index > 0 {
             out.push('\u{0}');
@@ -1624,7 +1694,12 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
             }
             if let Some(image_id) = line.image {
                 out.push('\u{3}');
-                out.push_str(&format!("{:05}{:02}", image_id, (line.gap_em * 10.0).round().clamp(0.0, 99.0) as u32));
+                let _ = write!(
+                    out,
+                    "{:05}{:02}",
+                    image_id,
+                    (line.gap_em * 10.0).round().clamp(0.0, 99.0) as u32,
+                );
                 continue;
             }
             if let Some(meta) = line.table {
@@ -1639,10 +1714,10 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
                 if meta.row_end {
                     flags |= 4;
                 }
-                out.push_str(&format!("{:02}{:02}{}", meta.col, meta.cols, flags));
+                let _ = write!(out, "{:02}{:02}{}", meta.col, meta.cols, flags);
             }
             out.push('\u{1}');
-            out.push_str(&encode_style(&line.style, line.line_height_factor, line.gap_em));
+            write_style(&mut out, &line.style, line.line_height_factor, line.gap_em);
             out.push_str(&line.text);
         }
     }
