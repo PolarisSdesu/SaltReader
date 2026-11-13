@@ -15,7 +15,7 @@
     <string name="about_open_failed">沒有可以開啟此連結的應用程式</string>
     <string name="about_unknown">未知</string>
     <string name="about_debug_enable">開啟偵錯模式</string>
-    <string name="about_debug_enabled">偵錯模式已開啟，可在「外觀」設定中查看。</string>
+    <string name="about_debug_enabled">已顯示偵錯模式選項，可在「外觀」設定中開啟。</string>
     <string name="about_close">關閉</string>
     <string name="about_debug_disable">關閉偵錯模式</string>
 </resources>

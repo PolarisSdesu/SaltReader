@@ -15,7 +15,7 @@
     <string name="about_open_failed">No app can open this link</string>
     <string name="about_unknown">unknown</string>
     <string name="about_debug_enable">Enable debug mode</string>
-    <string name="about_debug_enabled">Debug mode enabled. Find it in Display settings.</string>
+    <string name="about_debug_enabled">Debug option shown in Display settings (switch is off).</string>
     <string name="about_close">Close</string>
     <string name="about_debug_disable">Disable debug mode</string>
 </resources>

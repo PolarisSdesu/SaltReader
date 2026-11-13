@@ -1158,8 +1158,6 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                         logoPresses += 1
                         if (logoPresses >= 5) {
                             logoPresses = 0
-                            // 解锁后 Debug 菜单持久显示，即使随后关闭调试模式。
-                            app.settings.update { it.copy(debugUnlocked = true) }
                             showDebug = true
                         }
                     },
@@ -1242,20 +1240,25 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
             confirmButton = {
                 Row {
                     TextButton(onClick = {
-                        val enable = !settings.debugMode
-                        app.settings.update { it.copy(debugMode = enable) }
-                        showDebug = false
-                        if (enable) {
+                        if (settings.debugUnlocked) {
+                            // 关闭入口：强制关闭调试模式并隐藏 Debug 项目。
+                            app.settings.update {
+                                it.copy(debugUnlocked = false, debugMode = false)
+                            }
+                        } else {
+                            // 只显示 Debug 项目，调试开关保持默认关闭。
+                            app.settings.update { it.copy(debugUnlocked = true) }
                             Toast.makeText(
                                 context,
                                 R.string.about_debug_enabled,
                                 Toast.LENGTH_SHORT,
                             ).show()
                         }
+                        showDebug = false
                     }) {
                         Text(
                             stringResource(
-                                if (settings.debugMode) {
+                                if (settings.debugUnlocked) {
                                     R.string.about_debug_disable
                                 } else {
                                     R.string.about_debug_enable

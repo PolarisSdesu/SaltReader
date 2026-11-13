@@ -15,7 +15,7 @@
     <string name="about_open_failed">このリンクを開けるアプリがありません</string>
     <string name="about_unknown">不明</string>
     <string name="about_debug_enable">デバッグモードを有効にする</string>
-    <string name="about_debug_enabled">デバッグモードを有効にしました。「外観」設定で確認できます。</string>
+    <string name="about_debug_enabled">「外観」設定にデバッグモード項目を表示しました（スイッチはオフ）。</string>
     <string name="about_close">閉じる</string>
     <string name="about_debug_disable">デバッグモードを無効にする</string>
 </resources>
