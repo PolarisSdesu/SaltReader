@@ -56,6 +56,7 @@ struct Block {
     style: Style,
     table: Option<Vec<Vec<String>>>,
     image: Option<u32>,
+    preserve: bool,
 }
 
 /// 输出协议使用 \u0000..\u0005 等控制字符做分隔，正文里的控制字符必须清洗掉。
@@ -476,6 +477,8 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
     let mut inline = InlineState::default();
     let mut preserve = false;
     let mut skip_until: Option<String> = None;
+    // display:none / hidden 子树：记录标签名与嵌套深度。
+    let mut hidden: Option<(String, usize)> = None;
     let mut in_table = false;
     let mut table_rows: Vec<Vec<String>> = Vec::new();
     let mut table_row: Vec<String> = Vec::new();
@@ -543,6 +546,41 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
             }
             let attributes = parts.next().unwrap_or("");
 
+            if let Some((hidden_tag, depth)) = hidden.as_mut() {
+                if tag == *hidden_tag {
+                    if closing {
+                        *depth = depth.saturating_sub(1);
+                        if *depth == 0 {
+                            hidden = None;
+                        }
+                    } else {
+                        *depth += 1;
+                    }
+                }
+                continue;
+            }
+            if !closing {
+                let style_attr = attr_value(attributes, "style").unwrap_or_default();
+                let class_attr = attr_value(attributes, "class").unwrap_or_default();
+                let inline_none = style_attr
+                    .to_ascii_lowercase()
+                    .split(';')
+                    .any(|decl| decl.replace(' ', "") == "display:none");
+                let hidden_attr = attributes
+                    .split_whitespace()
+                    .any(|part| part.eq_ignore_ascii_case("hidden"));
+                let void = matches!(
+                    tag.as_str(),
+                    "img" | "br" | "hr" | "meta" | "link" | "input" | "source" | "col"
+                );
+                if inline_none || hidden_attr || rules_display_none(&tag, &class_attr, css_rules) {
+                    if !void {
+                        hidden = Some((tag.clone(), 1));
+                    }
+                    continue;
+                }
+            }
+
             if in_table {
                 match (closing, tag.as_str()) {
                     (false, "tr") => table_row.clear(),
@@ -569,6 +607,7 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                                 style: table_style(),
                                 table: Some(std::mem::take(&mut table_rows)),
                                 image: None,
+                                preserve: false,
                             });
                         }
                     }
@@ -689,6 +728,7 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                                 style: image_style,
                                 table: None,
                                 image: id.parse::<u32>().ok(),
+                                preserve: false,
                             });
                         }
                     } else {
@@ -753,6 +793,9 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
             continue;
         }
         let decoded = decode_entities(chunk);
+        if hidden.is_some() {
+            continue;
+        }
         if in_table {
             if let Some(cell) = table_cell.as_mut() {
                 cell.push_str(&decoded);
@@ -778,7 +821,9 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
     flush_block(&mut blocks, &mut text, current_style, preserve, base_after);
 
     for block in blocks.iter_mut() {
-        block.text = block.text.trim().to_string();
+        if !block.preserve {
+            block.text = block.text.trim().to_string();
+        }
     }
     blocks.retain(|block| {
         !block.text.is_empty() || block.style.bullet || block.table.is_some() || block.image.is_some()
@@ -811,6 +856,29 @@ fn apply_class_css(style: &mut Style, tag: &str, class_name: &str, rules: &[CssR
         }
         apply_declarations(style, &rule.declarations);
     }
+}
+
+/// CSS 规则里是否对该元素设置了 display:none（tag / .class 选择器）。
+fn rules_display_none(tag: &str, class_attr: &str, rules: &[CssRule]) -> bool {
+    let classes: Vec<&str> = class_attr.split_whitespace().collect();
+    for rule in rules {
+        if let Some(rule_tag) = &rule.tag {
+            if rule_tag != tag {
+                continue;
+            }
+        }
+        if let Some(rule_class) = &rule.class_name {
+            if !classes.contains(&rule_class.as_str()) {
+                continue;
+            }
+        }
+        for (name, value) in &rule.declarations {
+            if name == "display" && value.eq_ignore_ascii_case("none") {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 fn attr_value(attributes: &str, name: &str) -> Option<String> {
@@ -866,19 +934,27 @@ fn attr_value(attributes: &str, name: &str) -> Option<String> {
     None
 }
 
-fn flush_block(blocks: &mut Vec<Block>, text: &mut String, style: Style, _preserve: bool, base_after: &mut f32) {
-    let normalized = text.trim_matches('\n').trim();
+fn flush_block(blocks: &mut Vec<Block>, text: &mut String, style: Style, preserve: bool, base_after: &mut f32) {
+    let normalized = text.trim_matches('\n');
     *base_after = base_after.min(style.space_after);
-    if normalized.is_empty() {
+    if normalized.trim().is_empty() {
         text.clear();
         return;
     }
+    let stored = if preserve {
+        // <pre>: 保留首行缩进、空行与连续空格。
+        normalized.to_string()
+    } else {
+        normalized.trim().to_string()
+    };
     blocks.push(Block {
-        text: std::mem::take(text),
+        text: stored,
         style,
         table: None,
         image: None,
+        preserve,
     });
+    text.clear();
 }
 
 #[derive(Clone, Copy)]
@@ -1098,6 +1174,12 @@ fn layout_blocks(
                     y = 0.0;
                 }
                 for line_index in 0..max_lines {
+                    // 单个表格行高于一页时也要按视觉行拆页，不能画到页外。
+                    if y + line_height > height && !page_lines.is_empty() {
+                        pages.push(std::mem::take(&mut page_lines));
+                        y = 0.0;
+                        table_gap_em = 0.0;
+                    }
                     for column in 0..cols {
                         let text = cell_lines
                             .get(column)
@@ -1213,6 +1295,7 @@ fn layout_blocks(
                         height,
                         true,
                         if first_line { line_gap_em } else { 0.0 },
+                        block.preserve,
                     );
                     first_line = false;
                     start_indent = 0.0;
@@ -1241,6 +1324,7 @@ fn layout_blocks(
                     height,
                     true,
                     if first_line { line_gap_em } else { 0.0 },
+                    block.preserve,
                 );
                 index += 1;
                 first_line = false;
@@ -1263,11 +1347,29 @@ fn layout_blocks(
                     }
                 }
                 let min_break = (line_start_byte + 1).min(block.text.len());
-                let break_byte = break_at
+                let mut break_byte = break_at
                     .filter(|position| *position > line_start_byte)
                     .unwrap_or(byte_start)
                     .max(min_break)
                     .min(block.text.len());
+                // 行首禁则：收尾标点不能出现在下一行行首（悬挂到本行）。
+                let mut cursor = graphemes.iter().position(|(position, _)| *position == break_byte);
+                while let Some(at) = cursor {
+                    let Some((_, grapheme)) = graphemes.get(at) else { break };
+                    if !grapheme.chars().all(is_no_line_start) {
+                        break;
+                    }
+                    match graphemes.get(at + 1) {
+                        Some((next_position, _)) => {
+                            break_byte = *next_position;
+                            cursor = Some(at + 1);
+                        }
+                        None => {
+                            break_byte = block.text.len();
+                            break;
+                        }
+                    }
+                }
                 let take = &block.text[line_start_byte..break_byte];
                 line.clear();
                 line.push_str(take.trim_end());
@@ -1288,6 +1390,7 @@ fn layout_blocks(
                     height,
                     false,
                     if first_line { line_gap_em } else { 0.0 },
+                    block.preserve,
                 );
                 let next_start = graphemes
                     .iter()
@@ -1337,6 +1440,7 @@ fn layout_blocks(
                 height,
                 true,
                 if first_line { line_gap_em } else { 0.0 },
+                block.preserve,
             );
         }
         pending_after = style.space_after * font_size;
@@ -1368,8 +1472,9 @@ fn push_line(
     height: f32,
     is_last_line: bool,
     gap_em: f32,
+    preserve: bool,
 ) {
-    if line.trim().is_empty() {
+    if !preserve && line.trim().is_empty() {
         return;
     }
     let mut gap_em = gap_em;
@@ -1382,14 +1487,18 @@ fn push_line(
         gap_em = 0.0;
     }
     let mut text = String::new();
-    if style.bullet && first_line {
-        text.push_str(bullet_prefix);
+    if preserve {
+        text.push_str(line);
+    } else {
+        if style.bullet && first_line {
+            text.push_str(bullet_prefix);
+        }
+        let indent_chars = start_indent_em.round().clamp(0.0, 8.0) as usize;
+        for _ in 0..indent_chars {
+            text.push('　');
+        }
+        text.push_str(line.trim());
     }
-    let indent_chars = start_indent_em.round().clamp(0.0, 8.0) as usize;
-    for _ in 0..indent_chars {
-        text.push('　');
-    }
-    text.push_str(line.trim());
     *y += line_height;
     let mut line_style = style;
     if line_style.align == 3 && is_last_line {
@@ -1596,6 +1705,76 @@ mod gap_tests {
         assert_eq!(decode_entities("&#x4E2D;文"), "中文");
         assert_eq!(decode_entities("&hellip;」下一句"), "…」下一句");
         assert_eq!(decode_entities("&unknown;x"), "&unknown;x");
+    }
+
+    #[test]
+    fn pre_preserves_indent_and_blank_lines() {
+        let mut after = 0.0;
+        let blocks = parse_html_blocks("<pre>line1\n  indented\n\nlast</pre>", &[], &mut after);
+        let text: String = blocks.iter().map(|b| b.text.clone()).collect();
+        assert!(text.contains("  indented"), "text={text:?}");
+        assert!(text.contains("\n\n"), "text={text:?}");
+        let advances: HashMap<u32, f32> = HashMap::new();
+        let pages = layout_blocks(&blocks, 600.0, 1634.0, 38.0, 1.8, &advances, &[], 600.0, 1.0);
+        let lines: Vec<String> = pages.iter().flatten().map(|line| line.text.clone()).collect();
+        assert!(lines.iter().any(|line| line.is_empty() || line.trim().is_empty()), "lines={lines:?}");
+        assert!(lines.iter().any(|line| line.starts_with("  indented")), "lines={lines:?}");
+    }
+
+    #[test]
+    fn display_none_subtree_is_hidden() {
+        let mut after = 0.0;
+        let inline = parse_html_blocks(
+            "<p>a</p><span style='display:none'>hidden</span><p>b</p>",
+            &[],
+            &mut after,
+        );
+        let text: String = inline.iter().map(|b| b.text.clone()).collect();
+        assert!(text.contains('a') && text.contains('b') && !text.contains("hidden"), "text={text:?}");
+
+        let rules = parse_css(".hidden { display: none }");
+        let mut after2 = 0.0;
+        let class_hidden = parse_html_blocks(
+            "<p>keep</p><p class=\"hidden\">drop</p><p hidden>drop2</p>",
+            &rules,
+            &mut after2,
+        );
+        let text2: String = class_hidden.iter().map(|b| b.text.clone()).collect();
+        assert!(text2.contains("keep") && !text2.contains("drop"), "text={text2:?}");
+    }
+
+    #[test]
+    fn tall_table_row_splits_across_pages() {
+        let cell = "很长的单元格内容。".repeat(30);
+        let html = format!("<table><tr><td>{cell}</td><td>x</td></tr></table>");
+        let mut after = 0.0;
+        let blocks = parse_html_blocks(&html, &[], &mut after);
+        let advances: HashMap<u32, f32> = HashMap::new();
+        let height = 220.0;
+        let pages = layout_blocks(&blocks, 300.0, height, 38.0, 1.8, &advances, &[], 300.0, 1.0);
+        assert!(pages.len() > 1, "pages={}", pages.len());
+        let style = blocks[0].style;
+        let line_height = 38.0 * style.size * style.line_height.unwrap_or(1.8);
+        for page in &pages {
+            let max_cell_lines = page
+                .iter()
+                .filter(|line| line.table.is_some() && line.table.unwrap().col == 0)
+                .count();
+            let page_height = max_cell_lines as f32 * line_height;
+            assert!(page_height <= height + 1.0, "page height {page_height} > {height}");
+        }
+    }
+
+    #[test]
+    fn line_does_not_start_with_closing_punctuation() {
+        let mut after = 0.0;
+        let blocks = parse_html_blocks("<p>Hello。World</p>", &[], &mut after);
+        let advances: HashMap<u32, f32> = HashMap::new();
+        let pages = layout_blocks(&blocks, 150.0, 1634.0, 38.0, 1.8, &advances, &[], 150.0, 1.0);
+        let lines: Vec<String> = pages.iter().flatten().map(|line| line.text.clone()).collect();
+        assert!(!lines.iter().any(|line| line.trim_start().starts_with('。')), "lines={lines:?}");
+        let joined: String = lines.iter().map(|line| line.trim_start_matches('　').trim()).collect::<Vec<_>>().join("");
+        assert_eq!(joined.replace(' ', ""), "Hello。World");
     }
 
     #[test]
