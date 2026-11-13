@@ -9,6 +9,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.Text
+import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.TooltipBox
 import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
@@ -28,11 +29,19 @@ fun TooltipIconButton(
     label: String,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    /** 顶部栏按钮设为 true：tooltip 向下展开，避让状态栏安全区。 */
+    anchorBelow: Boolean = false,
 ) {
     val hostView = LocalView.current
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         TooltipBox(
-            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+            positionProvider = if (anchorBelow) {
+                TooltipDefaults.rememberTooltipPositionProvider(
+                    TooltipAnchorPosition.Below,
+                )
+            } else {
+                TooltipDefaults.rememberPlainTooltipPositionProvider()
+            },
             tooltip = { PlainTooltip { Text(label) } },
             state = rememberTooltipState(),
         ) {

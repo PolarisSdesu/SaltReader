@@ -253,16 +253,19 @@ fun LibraryScreen(
                         icon = Icons.Filled.Search,
                         label = stringResource(R.string.library_action_search),
                         onClick = onOpenSearch,
+                        anchorBelow = true,
                     )
                     TooltipIconButton(
                         icon = Icons.Filled.GridView,
                         label = stringResource(R.string.library_action_layout),
                         onClick = { showLayoutSheet = true },
+                        anchorBelow = true,
                     )
                     TooltipIconButton(
                         icon = Icons.Filled.Settings,
                         label = stringResource(R.string.library_action_settings),
                         onClick = onOpenSettings,
+                        anchorBelow = true,
                     )
                 },
                 scrollBehavior = scrollBehavior,
