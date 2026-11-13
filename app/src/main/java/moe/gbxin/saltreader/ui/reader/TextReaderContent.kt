@@ -2540,7 +2540,9 @@ private val HTML_TAIL = """
 
   // 统一翻页物理：WebView 与 native 阅读器完全一致（跟手拖动 -> 30%/350px/s 阈值 -> 220ms 缓动吸附）。
   var customPagedDrag = true;
-  var swipeDrag = { active: false, startX: 0, startLeft: 0, startPage: 0, lastX: 0, lastAt: 0, velocity: 0, moved: false };
+  var swipeDrag = { active: false, startX: 0, startY: 0, startLeft: 0, startPage: 0, lastX: 0, lastAt: 0, velocity: 0, moved: false };
+  var lastScrollAt = 0;
+  var dragDistance = 0;
   var swipeRaf = 0;
   function swipeEase(t) {
     // cubic-bezier(0.25, 0.46, 0.45, 0.94)
@@ -2591,111 +2593,51 @@ private val HTML_TAIL = """
     var target = Math.min(max, Math.max(0, page * w));
     animateSwipeTo(target);
   }
-  scroll.addEventListener('pointerdown', function (e) {
-    if (mode !== 'paged' || e.pointerType === 'mouse' && e.button !== 0) return;
+  // 分页手势：跟手拖动 + 松手按与 native 相同的阈值/时长/曲线吸附。
+  scroll.addEventListener('touchstart', function (e) {
+    if (mode !== 'paged' || e.touches.length !== 1) return;
     cancelSwipeAnimation();
+    var touch = e.touches[0];
     swipeDrag.active = true;
-    swipeDrag.startX = e.clientX;
-    swipeDrag.lastX = e.clientX;
+    swipeDrag.startX = touch.clientX;
+    swipeDrag.startY = touch.clientY;
+    swipeDrag.lastX = touch.clientX;
     swipeDrag.startLeft = scroll.scrollLeft;
     swipeDrag.startPage = pagedPage();
     swipeDrag.lastAt = performance.now();
     swipeDrag.velocity = 0;
     swipeDrag.moved = false;
-  });
-  window.addEventListener('pointermove', function (e) {
-    if (!swipeDrag.active) return;
-    if (mode !== 'paged') return;
-    var dx = e.clientX - swipeDrag.startX;
-    if (Math.abs(dx) > 6) swipeDrag.moved = true;
+    dragDistance = 0;
+  }, { passive: false });
+  scroll.addEventListener('touchmove', function (e) {
+    if (!swipeDrag.active || e.touches.length !== 1) return;
+    var touch = e.touches[0];
+    var dx = touch.clientX - swipeDrag.startX;
+    dragDistance = Math.max(dragDistance, Math.abs(dx));
+    var dy = touch.clientY - swipeDrag.startY;
+    if (Math.abs(dx) > 6) {
+      swipeDrag.moved = true;
+      if (e.cancelable) e.preventDefault();
+    }
     var max = Math.max(0, scroll.scrollWidth - scroll.clientWidth);
     scroll.scrollLeft = Math.min(max, Math.max(0, swipeDrag.startLeft - dx));
     var now = performance.now();
     var dt = now - swipeDrag.lastAt;
     if (dt > 0) {
-      swipeDrag.velocity = (e.clientX - swipeDrag.lastX) / dt * 1000;
+      swipeDrag.velocity = (touch.clientX - swipeDrag.lastX) / dt * 1000;
     }
-    swipeDrag.lastX = e.clientX;
+    swipeDrag.lastX = touch.clientX;
     swipeDrag.lastAt = now;
-  });
-  window.addEventListener('pointerup', endPagedDrag);
-  window.addEventListener('pointercancel', endPagedDrag);
-
-  // One swipe = one page. `scroll-snap-stop: always` is the primary guarantee; the gesture guard
-  // below also covers a direct drag that crosses more than one page, and an accidental click after
-  // a swipe (which would otherwise add a tap-turn on top of the snap).
-  var touchStartX = 0, touchStartY = 0, touchStartLeft = 0, touchIntent = 0, touching = false;
-  var gesturePage = -1, dragDistance = 0, lastScrollAt = 0, gestureClampRaf = 0;
-  /**
-   * Clamp the landing page to at most one page away from where the gesture started. Runs after the
-   * scroller has come to rest, so it never fights the native fling: a fast flick lands on the next
-   * page instead of skipping three, exactly like the image pager.
-   */
-  function watchGestureClamp() {
-    if (gestureClampRaf) return;
-    function tick() {
-      gestureClampRaf = 0;
-      if (gesturePage < 0) return;
-      if (touching) {
-        gestureClampRaf = requestAnimationFrame(tick);
-        return;
-      }
-      if (performance.now() - lastScrollAt < 130) {
-        gestureClampRaf = requestAnimationFrame(tick);
-        return;
-      }
-      var delta = pagedPage() - gesturePage;
-      if (Math.abs(delta) > 1) {
-        scroll.scrollLeft = (gesturePage + (delta > 0 ? 1 : -1)) * viewportWidth();
-        report(true);
-      }
-      gesturePage = -1;
-    }
-    gestureClampRaf = requestAnimationFrame(tick);
-  }
-  scroll.addEventListener('touchstart', function (e) {
-    if (customPagedDrag) return;
-    if (mode !== 'paged' || e.touches.length !== 1) return;
-    touching = true;
-    touchStartX = e.touches[0].clientX;
-    touchStartY = e.touches[0].clientY;
-    touchStartLeft = scroll.scrollLeft;
-    touchIntent = 0;
-    dragDistance = 0;
-    gesturePage = pagedPage();
-  }, { passive: true });
-  scroll.addEventListener('touchmove', function (e) {
-    if (customPagedDrag || !touching || e.touches.length !== 1) return;
-    var dx = e.touches[0].clientX - touchStartX;
-    var dy = e.touches[0].clientY - touchStartY;
-    dragDistance = Math.max(dragDistance, Math.abs(dx) + Math.abs(dy));
-    if (Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy)) touchIntent = dx < 0 ? 1 : -1;
-  }, { passive: true });
-  scroll.addEventListener('touchend', function () {
-    if (customPagedDrag || !touching) return;
-    touching = false;
-    watchGestureClamp();
-    var intent = touchIntent;
-    touchIntent = 0;
-    if (intent === 0) return;
-    var w = viewportWidth();
-    var startPage = gesturePage >= 0 ? gesturePage : Math.round(touchStartLeft / w);
-    setTimeout(function () {
-      var left = scroll.scrollLeft;
-      // Only step in when the native snap fell back to the starting page: a real drag already
-      // moved far enough and must be left alone.
-      if (Math.abs(left - startPage * w) > w * 0.2) return;
-      var pages = pagedPages();
-      var target = Math.min(pages - 1, Math.max(0, startPage + intent));
-      scroll.scrollTo({ left: target * w, behavior: 'smooth' });
-    }, 320);
-  }, { passive: true });
+  }, { passive: false });
+  scroll.addEventListener('touchend', function (e) {
+    if (!swipeDrag.active) return;
+    if (swipeDrag.moved && e.cancelable) e.preventDefault();
+    endPagedDrag();
+  }, { passive: false });
   scroll.addEventListener('touchcancel', function () {
-    if (customPagedDrag) return;
-    touching = false;
-    touchIntent = 0;
-    watchGestureClamp();
-  }, { passive: true });
+    if (!swipeDrag.active) return;
+    endPagedDrag();
+  }, { passive: false });
 
   scroll.addEventListener('scroll', function () {
     lastScrollAt = performance.now();
