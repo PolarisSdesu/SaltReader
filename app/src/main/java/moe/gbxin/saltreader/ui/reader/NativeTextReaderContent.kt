@@ -1119,6 +1119,9 @@ internal fun NativeTextReaderContent(
                                 var richSup = false
                                 var richSub = false
                                 val buffer = StringBuilder()
+                                // 与宽度测量同一套边界判定：兼容粗体/斜体/上下标等行内 run，
+                                // 跨 run 的中文—英文边界也要补 justifyExtra，否则行末会对不齐。
+                                var lastRenderedChar: Char? = null
                                 fun flushText() {
                                     if (buffer.isEmpty()) return
                                     val basePaint = richPaintFor(
@@ -1136,24 +1139,25 @@ internal fun NativeTextReaderContent(
                                         else -> baseline
                                     }
                                     val runText = buffer.toString()
-                                    val runAdvance = paint.measureText(runText) +
-                                        if (justifyExtra > 0f) justifyExtra * runText.length else 0f
                                     // 行内代码整体绘制、不参与字距拉伸；普通文本仅在中文边界/空格处
                                     // 补 justifyExtra，和 WebView 的 justify 一致。
                                     if (justifyExtra > 0f && !richMono) {
                                         for (glyphIndex in buffer.indices) {
-                                            val glyph = buffer[glyphIndex].toString()
-                                            canvas.nativeCanvas.drawText(glyph, cursorX, runBaseline, paint)
-                                            cursorX += paint.measureText(glyph)
-                                            if (glyphIndex < buffer.lastIndex &&
-                                                justifyBoundary(buffer[glyphIndex], buffer[glyphIndex + 1])
-                                            ) {
+                                            val glyphChar = buffer[glyphIndex]
+                                            if (justifyBoundary(lastRenderedChar, glyphChar)) {
                                                 cursorX += justifyExtra
                                             }
+                                            canvas.nativeCanvas.drawText(
+                                                glyphChar.toString(), cursorX, runBaseline, paint,
+                                            )
+                                            cursorX += paint.measureText(glyphChar.toString())
+                                            lastRenderedChar = glyphChar
                                         }
                                     } else {
                                         canvas.nativeCanvas.drawText(runText, cursorX, runBaseline, paint)
                                         cursorX += paint.measureText(runText)
+                                        // 行内代码是一个整体 slot：前后都不参与中文边界拉伸。
+                                        lastRenderedChar = if (richMono) null else runText.lastOrNull()
                                     }
                                     buffer.clear()
                                 }
@@ -1206,6 +1210,7 @@ internal fun NativeTextReaderContent(
                                                 )
                                             }
                                             cursorX = imageLeft + imageWidth + sideMargin + justifyExtra
+                                            lastRenderedChar = null
                                             richIndex = tokenEnd + 1
                                         }
                                         else -> { buffer.append(ch); richIndex++ }
