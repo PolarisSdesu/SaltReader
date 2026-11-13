@@ -2004,11 +2004,12 @@ body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; line-height: var(
 #book pre {
   white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word;
   font-size: 0.86em; line-height: 1.5 !important; text-indent: 0;
-  margin: 0.7em var(--reader-page-margin-x, 30px); padding: 0.55em 0.7em;
-  border-radius: 8px; background: rgba(127, 127, 127, 0.10);
+  /* 与段落相同的左右页边距；不要额外 padding/底色/圆角。 */
+  margin: 0.7em var(--reader-page-margin-x, 30px); padding: 0;
+  border-radius: 0; background: transparent;
 }
 #book pre code { font-size: 1em; background: transparent; padding: 0; }
-#book code { font-size: 0.92em; padding: 0 0.15em; border-radius: 3px; background: rgba(127, 127, 127, 0.10); }
+#book code { font-size: 0.92em; background: transparent; padding: 0; }
 /* WebView 156（Android 17）对个别书的原生表格排版会异常占用数 GB 内存并拖垮渲染进程，
    因此阅读器里不使用原生 table 布局，改成"每行一块、单元格行内排列"的等价排版。
    这是规避 Chromium 表格布局缺陷的降级方案，样式上仍保持可读。 */

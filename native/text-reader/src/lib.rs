@@ -1391,8 +1391,8 @@ fn layout_blocks(
         }
         let mut style = block.style;
         if style.mono {
-            // WebView #book pre：0.86em、行高 1.5。
-            style.size *= 0.86;
+            // WebView #book pre 是绝对 0.86em（覆盖出版社 CSS，而不是再乘书自带字号）。
+            style.size = 0.86;
             style.line_height = Some(1.5);
         }
         let size_px = font_size * style.size;
