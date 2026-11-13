@@ -8,10 +8,14 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.DashPathEffect
+import android.graphics.Rect
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Build
 import android.os.SystemClock
+import android.view.ActionMode
+import android.view.Menu
+import android.view.MenuItem
 import android.view.WindowManager
 import android.text.Html
 import android.util.Base64
@@ -27,6 +31,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.animateContentSize
@@ -88,6 +93,7 @@ import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
@@ -1380,6 +1386,53 @@ internal fun NativeTextReaderContent(
                         }
                     }
                 }
+            // Android 原生复制菜单（floating ActionMode）。
+            var copyActionMode by remember { mutableStateOf<ActionMode?>(null) }
+            fun selectionContentRect(outRect: Rect) {
+                val page = pageSet?.pages?.getOrNull(selectionPage)
+                val tops = if (page != null) lineTops(page) else emptyList()
+                val startTop = tops.getOrNull(selectionStartLine) ?: topPadPx
+                val endTop = tops.getOrNull(selectionEndLine) ?: startTop
+                val lineHeight = fontSizePx * 1.8f
+                val geometry = pageSet
+                val left = geometry?.contentLeftPx ?: leftPadPx
+                val width = geometry?.contentWidthPx ?: (pageArea.width - leftPadPx - rightPadPx)
+                outRect.set(left.roundToInt(), startTop.roundToInt(), (left + width).roundToInt(), (endTop + lineHeight).roundToInt())
+            }
+
+            fun startCopyActionMode(): ActionMode? = view.startActionMode(
+                object : ActionMode.Callback2() {
+                    override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+                        menu.add(0, 1, 0, context.getString(R.string.reader_action_copy))
+                        return true
+                    }
+                    override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
+                    override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+                        if (item.itemId != 1) return false
+                        pageSet?.pages?.getOrNull(selectionPage)?.let { copySelection(it) }
+                        mode.finish()
+                        return true
+                    }
+                    override fun onDestroyActionMode(mode: ActionMode) {
+                        copyActionMode = null
+                        clearSelection()
+                    }
+                    override fun onGetContentRect(mode: ActionMode, target: android.view.View, outRect: Rect) {
+                        selectionContentRect(outRect)
+                    }
+                },
+                ActionMode.TYPE_FLOATING,
+            )
+
+            LaunchedEffect(selectionPage) {
+                if (selectionPage >= 0) {
+                    if (copyActionMode == null) copyActionMode = startCopyActionMode()
+                } else {
+                    copyActionMode?.finish()
+                    copyActionMode = null
+                }
+            }
+
             val pages = pageSet?.pages
             val currentPage = pages?.getOrNull(safePageIndex)
             if (currentPage == null) {
@@ -1445,44 +1498,27 @@ internal fun NativeTextReaderContent(
                     beyondViewportPageCount = 1,
                 ) { pageIndexItem ->
                     val pageLines = pageSet?.pages?.getOrNull(pageIndexItem) ?: return@HorizontalPager
-                    Box(Modifier.fillMaxSize()) {
+                    var lastTouch by remember { mutableStateOf(Offset.Zero) }
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            // 不消费事件的指针跟踪：长按/点击位置用于选区定位，不影响 Pager 拖动。
+                            .pointerInput(Unit) {
+                                awaitPointerEventScope {
+                                    while (true) {
+                                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                                        event.changes.lastOrNull()?.let { lastTouch = it.position }
+                                    }
+                                }
+                            }
+                            .combinedClickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = { handleReaderTap(lastTouch, view.width.toFloat()) },
+                                onLongClick = { handleReaderLongPress(lastTouch) },
+                            ),
+                    ) {
                         drawPage(pageLines, 0f, Float.NaN, true, -1)
-                        // 点击热区：滑动交给 Pager；点击不消费拖动，因此能与翻页共存。
-                        Row(Modifier.fillMaxSize()) {
-                            Box(
-                                Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null,
-                                    ) { turnPage(if (rtl) 1 else -1) },
-                            )
-                            Box(
-                                Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null,
-                                    ) {
-                                        if (activePanel != ReaderChromePanel.NONE) {
-                                            activePanel = ReaderChromePanel.NONE
-                                        } else {
-                                            chromeVisible = !chromeVisible
-                                        }
-                                    },
-                            )
-                            Box(
-                                Modifier
-                                    .weight(1f)
-                                    .fillMaxHeight()
-                                    .clickable(
-                                        interactionSource = remember { MutableInteractionSource() },
-                                        indication = null,
-                                    ) { turnPage(if (rtl) -1 else 1) },
-                            )
-                        }
                     }
                 }
             }
@@ -1575,45 +1611,6 @@ internal fun NativeTextReaderContent(
                 containerColor = chromeBarColor,
                 contentColor = chromeContentColor,
             )
-        }
-
-        // 文本选择浮条（长按段落选中后可复制）。
-        if (selectionPage >= 0 && selectionPage == safePageIndex) {
-            val currentPageForCopy = pageSet?.pages?.getOrNull(safePageIndex)
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .padding(top = with(density) { topPadPx.toDp() }),
-                color = Color(0xF2FFFFFF),
-                contentColor = Color(0xFF1B1B1B),
-                shape = RoundedCornerShape(10.dp),
-                shadowElevation = 3.dp,
-            ) {
-                Row(
-                    Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(stringResource(R.string.reader_selection_selected), style = MaterialTheme.typography.labelMedium)
-                    Text(
-                        stringResource(R.string.reader_action_copy),
-                        modifier = Modifier
-                            .padding(start = 16.dp)
-                            .clickable {
-                                currentPageForCopy?.let { copySelection(it) }
-                            },
-                        style = MaterialTheme.typography.labelLarge,
-                        color = accent,
-                    )
-                    Text(
-                        stringResource(R.string.reader_action_cancel),
-                        modifier = Modifier
-                            .padding(start = 12.dp)
-                            .clickable { clearSelection() },
-                        style = MaterialTheme.typography.labelMedium,
-                        color = Color(0xFF666666),
-                    )
-                }
-            }
         }
 
         // 原生底栏 + 面板：与 WebView 阅读器相同的滑入动画，面板用 animateContentSize。
