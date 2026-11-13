@@ -141,8 +141,8 @@
     <string name="settings_reader_battery_indicator_supporting">阅读时在左下角显示电池图标与百分比</string>
     <string name="settings_fonts">字体</string>
     <string name="settings_reader_font_mode">阅读器字体</string>
-    <string name="settings_reader_native_reader">原生阅读器（测试）</string>
-    <string name="settings_reader_native_reader_desc">使用内置 Rust 排版引擎渲染文字书，绕过 WebView；目前仅支持横向翻页。</string>
+    <string name="settings_reader_native_reader">原生阅读器</string>
+    <string name="settings_reader_native_reader_desc">内置 Rust 排版，支持翻页与滚动。</string>
     <string name="settings_reader_native_reader_unavailable">当前设备未能加载原生库，自动回退到 WebView。</string>
     <string name="settings_appearance_section_debug">Debug</string>
     <string name="settings_appearance_debug_mode">调试模式</string>

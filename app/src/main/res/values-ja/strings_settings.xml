@@ -141,8 +141,8 @@
     <string name="settings_reader_battery_indicator_supporting">閲覧中に左下へバッテリーアイコンとパーセントを表示します</string>
     <string name="settings_fonts">フォント</string>
     <string name="settings_reader_font_mode">リーダーフォント</string>
-    <string name="settings_reader_native_reader">ネイティブリーダー（試験）</string>
-    <string name="settings_reader_native_reader_desc">WebView を使わず Rust 製レイアウトエンジンで本文を描画します。現在は横組みページのみ対応。</string>
+    <string name="settings_reader_native_reader">ネイティブリーダー</string>
+    <string name="settings_reader_native_reader_desc">Rust 製レイアウトで高速に描画。</string>
     <string name="settings_reader_native_reader_unavailable">この端末ではネイティブライブラリを読み込めないため、WebView にフォールバックします。</string>
     <string name="settings_appearance_section_debug">Debug</string>
     <string name="settings_appearance_debug_mode">デバッグモード</string>

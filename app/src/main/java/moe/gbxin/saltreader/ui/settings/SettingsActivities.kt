@@ -52,6 +52,7 @@ import androidx.compose.material.icons.outlined.BatteryFull
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Contrast
 import androidx.compose.material.icons.outlined.DarkMode
+import androidx.compose.material.icons.outlined.Memory
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FilterBAndW
@@ -469,7 +470,7 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
             SettingsSectionLabel(stringResource(R.string.settings_reader_section_layout))
             SettingsCard {
                 SettingsSwitchRow(
-                    icon = Icons.Outlined.Speed,
+                    icon = Icons.Outlined.Memory,
                     title = stringResource(R.string.settings_reader_native_reader),
                     supporting = if (NativeTextLayout.isAvailable) {
                         stringResource(R.string.settings_reader_native_reader_desc)

@@ -145,8 +145,8 @@
     <string name="settings_reader_battery_indicator_supporting">Show the battery icon and percentage in the lower-left corner while reading</string>
     <string name="settings_fonts">Fonts</string>
     <string name="settings_reader_font_mode">Reader font</string>
-    <string name="settings_reader_native_reader">Native text reader (experimental)</string>
-    <string name="settings_reader_native_reader_desc">Render text books with the bundled Rust layout engine instead of WebView. Paged mode only.</string>
+    <string name="settings_reader_native_reader">Native reader</string>
+    <string name="settings_reader_native_reader_desc">Fast Rust layout engine. Paged and scrolling modes.</string>
     <string name="settings_reader_native_reader_unavailable">Native library unavailable on this device.</string>
     <string name="settings_appearance_section_debug">Debug</string>
     <string name="settings_appearance_debug_mode">Debug mode</string>
