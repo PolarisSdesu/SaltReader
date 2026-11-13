@@ -545,8 +545,8 @@ internal fun NativeTextReaderContent(
     // 横向滑动：跟手位移 + 松手吸附；点击翻页仍是瞬时（与 WebView 阅读器一致）。
     var dragOffsetPx by remember { mutableFloatStateOf(0f) }
     val swipeScope = rememberCoroutineScope()
-    // 与 WebView 共用的翻页吸附动画状态。
-    val swipeAnimation = remember { androidx.compose.animation.core.Animatable(0f) }
+    // 与 WebView 同源的翻页/归位物理：OverScroller（平台 fling 减速度）。
+    val swipeScroller = remember { OverScroller(context) }
     // 文本选择（长按选中所在段落，可复制到系统剪贴板）。
     var selectionPage by remember { mutableIntStateOf(-1) }
     var selectionStartLine by remember { mutableIntStateOf(-1) }
@@ -968,27 +968,32 @@ internal fun NativeTextReaderContent(
                         } else {
                             0f
                         }
-                        // 速度继承：把松手速度换算成“页/秒”，越快吸附越短（300ms -> 160ms）。
-                        val towardTarget = (target - dragOffsetPx) * velocity >= 0f
-                        val pagesPerSecond = if (towardTarget) {
-                            abs(velocity) / width.coerceAtLeast(1f)
-                        } else {
-                            0f
-                        }
-                        val speedFactor = (pagesPerSecond / 2f).coerceIn(0f, 1f)
-                        val settleDurationMs = (300f - 140f * speedFactor).roundToInt().coerceAtLeast(160)
                         swipeScope.launch {
-                            // 与 WebView 完全一致的缓出贝塞尔 + 速度继承时长。
-                            swipeAnimation.snapTo(dragOffsetPx)
-                            swipeAnimation.animateTo(
-                                targetValue = target,
-                                animationSpec = tween(
-                                    durationMillis = settleDurationMs,
-                                    easing = CubicBezierEasing(0.22f, 0.61f, 0.36f, 1f),
-                                ),
-                            ) {
-                                dragOffsetPx = value
+                            // 与 WebView 同源的平台 fling：松手速度决定惯性，边界钳制到目标页。
+                            swipeScroller.forceFinished(true)
+                            val start = dragOffsetPx.roundToInt()
+                            val targetInt = target.roundToInt()
+                            val velocityInt = velocity.roundToInt()
+                            val towardTarget = (target - dragOffsetPx) * velocity >= 0f && abs(velocity) > 120f
+                            if (towardTarget) {
+                                swipeScroller.fling(
+                                    start,
+                                    0,
+                                    velocityInt,
+                                    0,
+                                    targetInt,
+                                    targetInt,
+                                    0,
+                                    0,
+                                )
+                            } else {
+                                swipeScroller.startScroll(start, 0, targetInt - start, 0, 220)
                             }
+                            while (swipeScroller.computeScrollOffset()) {
+                                dragOffsetPx = swipeScroller.currX.toFloat()
+                                withFrameNanos { }
+                            }
+                            dragOffsetPx = target
                             if (turn != 0 && totalPages > 0) {
                                 pageIndex = (pageIndex + turn).coerceIn(0, totalPages - 1)
                             }

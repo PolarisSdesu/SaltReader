@@ -2045,7 +2045,7 @@ body { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; line-height: var(
 /* Paged mode (CSS columns): the column box is inset by page padding so text keeps clear of the
    status bar and the bottom toolbar, like WeChat Reading's page margins. */
 body.paged { height: 100%; overflow: hidden; }
-body.paged #scroll { position: relative; width: 100vw; height: var(--app-vh, 100%); overflow-x: hidden; overflow-y: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: none; scroll-snap-type: none; -webkit-tap-highlight-color: transparent; user-select: none; -webkit-user-select: none; }
+body.paged #scroll { position: relative; width: 100vw; height: var(--app-vh, 100%); overflow-x: auto; overflow-y: hidden; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; scrollbar-width: none; touch-action: pan-x; scroll-snap-type: x mandatory; -webkit-tap-highlight-color: transparent; }
 body.paged #scroll::-webkit-scrollbar { display: none; }
 body.paged #book { height: calc(var(--app-vh, 100%) - 56px); margin: 28px 0; column-width: 100vw; column-gap: 0; column-fill: auto; -webkit-column-width: 100vw; -webkit-column-gap: 0; -webkit-column-fill: auto; }
 /* Vertical mode: breathing room at the top and enough bottom padding that the last lines can be
@@ -2397,7 +2397,7 @@ private val HTML_TAIL = """
       book.style.height = Math.max(1, (window.innerHeight || 0) - PAGE_PAD_TOP - PAGE_PAD_BOTTOM) + 'px';
       book.style.marginTop = PAGE_PAD_TOP + 'px';
       book.style.marginBottom = PAGE_PAD_BOTTOM + 'px';
-      scroll.style.scrollSnapType = 'none';
+      scroll.style.scrollSnapType = 'x mandatory';
       refreshSnapPoints();
     } else {
       book.style.webkitColumnWidth = 'auto';
@@ -2515,10 +2515,9 @@ private val HTML_TAIL = """
     }
     var duration = 110;
     var startedAt = performance.now();
-    var volumeEase = cubicBezier(0.25, 0.46, 0.45, 0.94);
     function step(now) {
       var t = Math.min(1, (now - startedAt) / duration);
-      var eased = volumeEase(t);
+      var eased = 1 - Math.pow(1 - t, 2);
       scroll.scrollLeft = start + (target - start) * eased;
       if (t < 1) {
         requestAnimationFrame(step);
@@ -2538,112 +2537,79 @@ private val HTML_TAIL = """
     }
   }
 
-  // 统一翻页物理：WebView 与 native 阅读器完全一致（跟手拖动 -> 30%/350px/s 阈值 -> 220ms 缓动吸附）。
-  var customPagedDrag = true;
-  var swipeDrag = { active: false, startX: 0, startY: 0, startLeft: 0, startPage: 0, lastX: 0, lastAt: 0, velocity: 0, moved: false };
-  var lastScrollAt = 0;
-  var dragDistance = 0;
-  var swipeRaf = 0;
-  function swipeEase(t) {
-    // cubic-bezier(0.22, 0.61, 0.36, 1)：缓出、末段更柔和，与 native 一致。
-    return cubicBezier(0.22, 0.61, 0.36, 1)(t);
-  }
-  function cancelSwipeAnimation() {
-    if (swipeRaf) cancelAnimationFrame(swipeRaf);
-    swipeRaf = 0;
-  }
-  function animateSwipeTo(target, duration) {
-    cancelSwipeAnimation();
-    var start = scroll.scrollLeft;
-    var delta = target - start;
-    if (Math.abs(delta) < 0.5) {
-      scroll.scrollLeft = target;
-      report(true);
-      return;
-    }
-    var duration = Math.max(160, duration || 300);
-    var startedAt = performance.now();
-    function step(now) {
-      var t = Math.min(1, (now - startedAt) / duration);
-      scroll.scrollLeft = start + delta * swipeEase(t);
-      if (t < 1) {
-        swipeRaf = requestAnimationFrame(step);
-      } else {
-        swipeRaf = 0;
-        scroll.scrollLeft = target;
+  // One swipe = one page. `scroll-snap-stop: always` is the primary guarantee; the gesture guard
+  // below also covers a direct drag that crosses more than one page, and an accidental click after
+  // a swipe (which would otherwise add a tap-turn on top of the snap).
+  var touchStartX = 0, touchStartY = 0, touchStartLeft = 0, touchIntent = 0, touching = false;
+  var gesturePage = -1, dragDistance = 0, lastScrollAt = 0, gestureClampRaf = 0;
+  /**
+   * Clamp the landing page to at most one page away from where the gesture started. Runs after the
+   * scroller has come to rest, so it never fights the native fling: a fast flick lands on the next
+   * page instead of skipping three, exactly like the image pager.
+   */
+  function watchGestureClamp() {
+    if (gestureClampRaf) return;
+    function tick() {
+      gestureClampRaf = 0;
+      if (gesturePage < 0) return;
+      if (touching) {
+        gestureClampRaf = requestAnimationFrame(tick);
+        return;
+      }
+      if (performance.now() - lastScrollAt < 130) {
+        gestureClampRaf = requestAnimationFrame(tick);
+        return;
+      }
+      var delta = pagedPage() - gesturePage;
+      if (Math.abs(delta) > 1) {
+        scroll.scrollLeft = (gesturePage + (delta > 0 ? 1 : -1)) * viewportWidth();
         report(true);
       }
+      gesturePage = -1;
     }
-    swipeRaf = requestAnimationFrame(step);
+    gestureClampRaf = requestAnimationFrame(tick);
   }
-  function endPagedDrag() {
-    if (!swipeDrag.active) return;
-    swipeDrag.active = false;
-    if (mode !== 'paged') return;
-    var w = viewportWidth();
-    var max = Math.max(0, scroll.scrollWidth - scroll.clientWidth);
-    var dx = swipeDrag.lastX - swipeDrag.startX;
-    var turned = Math.abs(dx) > w * 0.3 || Math.abs(swipeDrag.velocity) > 350;
-    var pages = pagedPages();
-    // 起始页 + 一页：不能拿“拖动后已过的页”再加一页，否则会一次翻两页。
-    var page = swipeDrag.startPage;
-    if (turned) {
-      page = Math.min(pages - 1, Math.max(0, page + (dx < 0 ? 1 : -1)));
-    }
-    var target = Math.min(max, Math.max(0, page * w));
-    // 速度继承：松手速度换算成页/秒，越快吸附越短（与 native 同一公式）。
-    var towardTarget = (target - scroll.scrollLeft) * swipeDrag.velocity >= 0;
-    var pagesPerSecond = towardTarget ? Math.abs(swipeDrag.velocity) / Math.max(1, w) : 0;
-    var speedFactor = Math.min(1, pagesPerSecond / 2);
-    var settleDuration = Math.max(160, Math.round(300 - 140 * speedFactor));
-    animateSwipeTo(target, settleDuration);
-  }
-  // 分页手势：跟手拖动 + 松手按与 native 相同的阈值/时长/曲线吸附。
   scroll.addEventListener('touchstart', function (e) {
     if (mode !== 'paged' || e.touches.length !== 1) return;
-    cancelSwipeAnimation();
-    var touch = e.touches[0];
-    swipeDrag.active = true;
-    swipeDrag.startX = touch.clientX;
-    swipeDrag.startY = touch.clientY;
-    swipeDrag.lastX = touch.clientX;
-    swipeDrag.startLeft = scroll.scrollLeft;
-    swipeDrag.startPage = pagedPage();
-    swipeDrag.lastAt = performance.now();
-    swipeDrag.velocity = 0;
-    swipeDrag.moved = false;
+    touching = true;
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchStartLeft = scroll.scrollLeft;
+    touchIntent = 0;
     dragDistance = 0;
-  }, { passive: false });
+    gesturePage = pagedPage();
+  }, { passive: true });
   scroll.addEventListener('touchmove', function (e) {
-    if (!swipeDrag.active || e.touches.length !== 1) return;
-    var touch = e.touches[0];
-    var dx = touch.clientX - swipeDrag.startX;
-    dragDistance = Math.max(dragDistance, Math.abs(dx));
-    var dy = touch.clientY - swipeDrag.startY;
-    if (Math.abs(dx) > 6) {
-      swipeDrag.moved = true;
-      if (e.cancelable) e.preventDefault();
-    }
-    var max = Math.max(0, scroll.scrollWidth - scroll.clientWidth);
-    var want = Math.min(max, Math.max(0, swipeDrag.startLeft - dx));
-    scroll.scrollLeft = want;
-    var now = performance.now();
-    var dt = now - swipeDrag.lastAt;
-    if (dt > 0) {
-      swipeDrag.velocity = (touch.clientX - swipeDrag.lastX) / dt * 1000;
-    }
-    swipeDrag.lastX = touch.clientX;
-    swipeDrag.lastAt = now;
-  }, { passive: false });
-  scroll.addEventListener('touchend', function (e) {
-    if (!swipeDrag.active) return;
-    if (swipeDrag.moved && e.cancelable) e.preventDefault();
-    endPagedDrag();
-  }, { passive: false });
+    if (!touching || e.touches.length !== 1) return;
+    var dx = e.touches[0].clientX - touchStartX;
+    var dy = e.touches[0].clientY - touchStartY;
+    dragDistance = Math.max(dragDistance, Math.abs(dx) + Math.abs(dy));
+    if (Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy)) touchIntent = dx < 0 ? 1 : -1;
+  }, { passive: true });
+  scroll.addEventListener('touchend', function () {
+    if (!touching) return;
+    touching = false;
+    watchGestureClamp();
+    var intent = touchIntent;
+    touchIntent = 0;
+    if (intent === 0) return;
+    var w = viewportWidth();
+    var startPage = gesturePage >= 0 ? gesturePage : Math.round(touchStartLeft / w);
+    setTimeout(function () {
+      var left = scroll.scrollLeft;
+      // Only step in when the native snap fell back to the starting page: a real drag already
+      // moved far enough and must be left alone.
+      if (Math.abs(left - startPage * w) > w * 0.2) return;
+      var pages = pagedPages();
+      var target = Math.min(pages - 1, Math.max(0, startPage + intent));
+      scroll.scrollTo({ left: target * w, behavior: 'smooth' });
+    }, 320);
+  }, { passive: true });
   scroll.addEventListener('touchcancel', function () {
-    if (!swipeDrag.active) return;
-    endPagedDrag();
-  }, { passive: false });
+    touching = false;
+    touchIntent = 0;
+    watchGestureClamp();
+  }, { passive: true });
 
   scroll.addEventListener('scroll', function () {
     lastScrollAt = performance.now();
