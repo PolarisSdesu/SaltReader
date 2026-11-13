@@ -120,6 +120,7 @@ import moe.gbxin.saltreader.R
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.AppSettings
 import moe.gbxin.saltreader.data.ComicBook
+import moe.gbxin.saltreader.data.NativeTextLayout
 import moe.gbxin.saltreader.data.ReaderBackground
 import moe.gbxin.saltreader.data.RegionPage
 import moe.gbxin.saltreader.data.ReaderMode
@@ -150,6 +151,8 @@ fun ReaderScreen(
 ) {
     val app = LocalContext.current.applicationContext as SaltReaderApplication
     val settings by app.settings.state.collectAsStateWithLifecycle()
+    // Debug：在两个阅读器之间切换时传递阅读比例（仅 debug 按钮使用）。
+    var debugSwitchRatio by remember { mutableStateOf<Float?>(null) }
     val uiState by vm.uiState.collectAsStateWithLifecycle()
     val tallPages by vm.tallPages.collectAsStateWithLifecycle()
     val textReaderBackground = pageBackgroundColor(
@@ -220,16 +223,48 @@ fun ReaderScreen(
                 modifier = modifier,
             )
 
-            is ReaderUiState.TextReady -> TextReaderContent(
-                vm = vm,
-                book = state.book,
-                chapters = state.chapters,
-                settings = settings,
-                onBack = onBack,
-                volumePageEvents = volumePageEvents,
-                modifier = modifier,
-                onSettingsChange = { transform -> app.settings.update(transform) },
-            )
+            is ReaderUiState.TextReady -> if (settings.nativeReader && NativeTextLayout.isAvailable) {
+                NativeTextReaderContent(
+                    vm = vm,
+                    book = state.book,
+                    chapters = state.chapters,
+                    settings = settings,
+                    onBack = {
+                        // 返回书架后清掉调试切换的临时比例，避免下次打开书被旧比例覆盖。
+                        debugSwitchRatio = null
+                        onBack()
+                    },
+                    volumePageEvents = volumePageEvents,
+                    modifier = modifier,
+                    onSettingsChange = { transform -> app.settings.update(transform) },
+                    initialRatioOverride = debugSwitchRatio,
+                    onDebugSwitch = { ratio ->
+                        // debug：切到 WebView 前记录当前阅读比例，保证两边看同一段内容。
+                        debugSwitchRatio = ratio
+                        app.settings.update { it.copy(nativeReader = false) }
+                    },
+                )
+            } else {
+                TextReaderContent(
+                    vm = vm,
+                    book = state.book,
+                    chapters = state.chapters,
+                    settings = settings,
+                    onBack = {
+                        // 返回书架后清掉调试切换的临时比例，避免下次打开书被旧比例覆盖。
+                        debugSwitchRatio = null
+                        onBack()
+                    },
+                    volumePageEvents = volumePageEvents,
+                    modifier = modifier,
+                    onSettingsChange = { transform -> app.settings.update(transform) },
+                    initialRatioOverride = debugSwitchRatio,
+                    onDebugSwitch = { ratio ->
+                        debugSwitchRatio = ratio
+                        app.settings.update { it.copy(nativeReader = true) }
+                    },
+                )
+            }
 
             is ReaderUiState.Failed -> ReaderFailed(
                 errorLog = state.errorLog,

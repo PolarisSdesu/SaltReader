@@ -190,6 +190,8 @@ internal fun ReaderBottomBar(
     progress: () -> Float,
     label: @Composable () -> String,
     onJump: (Float) -> Unit,
+    /** 分页模式下的总页数；>1 时进度条按页吸附，否则按连续百分比。 */
+    snapPages: Int = 0,
     progressLabelSizeSp: Int = 12,
     accentColor: Color = MaterialTheme.colorScheme.primary,
     activePanel: ReaderChromePanel,
@@ -198,6 +200,8 @@ internal fun ReaderBottomBar(
     onOpenSettings: () -> Unit,
     showTypography: Boolean = false,
     onTypographyToggle: () -> Unit = {},
+    /** 原生阅读器尚未实现纵向模式，按钮先禁用显示。 */
+    modeToggleEnabled: Boolean = true,
     readerMode: ReaderMode,
     onReaderModeToggle: () -> Unit,
     modifier: Modifier = Modifier,
@@ -243,10 +247,17 @@ internal fun ReaderBottomBar(
                     Slider(
                         state = sliderState,
                         onValueChange = { value ->
-                            sliderState.value = value
+                            // 分页模式下把拖动位置吸附到最近的页；非分页仍按连续百分比。
+                            val snapped = if (snapPages > 1) {
+                                val page = (value * (snapPages - 1)).roundToInt()
+                                page.toFloat() / (snapPages - 1)
+                            } else {
+                                value
+                            }
+                            sliderState.value = snapped
                             // Light tick every ~2% while scrubbing, like a physical page dial.
-                            if (abs(value - lastHapticTick) >= 0.02f) {
-                                lastHapticTick = value
+                            if (abs(snapped - lastHapticTick) >= 0.02f) {
+                                lastHapticTick = snapped
                                 haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
                             }
                         },
@@ -298,6 +309,7 @@ internal fun ReaderBottomBar(
                         else Icons.Rounded.ViewCarousel,
                         label = modeLabel,
                         active = false,
+                        enabled = modeToggleEnabled,
                         onClick = onReaderModeToggle,
                         contentColor = contentColor,
                         modifier = Modifier.weight(1f),
@@ -347,6 +359,7 @@ private fun ReaderBarIcon(
     contentColor: Color,
     modifier: Modifier = Modifier,
     activeColor: Color = MaterialTheme.colorScheme.primary,
+    enabled: Boolean = true,
     /** 面板类按钮（目录/主题/字号）激活时在图标下方画圆角矩形指示器；一次性动作不需要。 */
     showIndicator: Boolean = false,
 ) {
@@ -363,6 +376,7 @@ private fun ReaderBarIcon(
 
     IconButton(
         onClick = onClick,
+        enabled = enabled,
         modifier = modifier,
     ) {
         Box(
@@ -376,7 +390,11 @@ private fun ReaderBarIcon(
             Icon(
                 icon,
                 contentDescription = label,
-                tint = if (active) activeColor else contentColor,
+                tint = when {
+                    !enabled -> contentColor.copy(alpha = 0.28f)
+                    active -> activeColor
+                    else -> contentColor
+                },
                 modifier = Modifier.size(24.dp),
             )
         }
@@ -975,5 +993,36 @@ private fun ReaderThemeRow(
             }
         }
     }
+    }
+}
+
+/** 阅读器顶/底栏与角标配色：原生与 WebView 阅读器共用同一套规则。 */
+internal data class ReaderChromeColors(
+    val bar: Color,
+    val content: Color,
+    val indicator: Color,
+)
+
+@Composable
+internal fun rememberReaderChromeColors(
+    settings: moe.gbxin.saltreader.data.AppSettings,
+    readerBackground: Color,
+    readerTextColor: Color,
+): ReaderChromeColors {
+    val darkPaper = readerBackground.luminance() < 0.5f
+    val monetChrome = settings.readerBackground == moe.gbxin.saltreader.data.ReaderBackground.AUTO
+    val bar = when {
+        monetChrome -> MaterialTheme.colorScheme.surfaceContainer
+        darkPaper -> blendOver(readerBackground, Color.Black.copy(alpha = 0.62f))
+        else -> blendOver(readerBackground, Color.White.copy(alpha = 0.72f))
+    }
+    val content = when {
+        monetChrome -> MaterialTheme.colorScheme.onSurface
+        darkPaper && readerBackground == Color.Black -> Color.White
+        darkPaper -> Color(0xFFEDE6DD)
+        else -> Color(0xFF2A2622)
+    }
+    return remember(bar, content, readerTextColor) {
+        ReaderChromeColors(bar = bar, content = content, indicator = readerTextColor.copy(alpha = 0.6f))
     }
 }
