@@ -146,7 +146,7 @@
     <string name="settings_reader_native_reader_unavailable">当前设备未能加载原生库，自动回退到 WebView。</string>
     <string name="settings_appearance_section_debug">Debug</string>
     <string name="settings_appearance_debug_mode">调试模式</string>
-    <string name="settings_appearance_debug_mode_supporting">在阅读器里显示版心锚点、参数面板，并提供原生/WebView 快捷切换。</string>
+    <string name="settings_appearance_debug_mode_supporting">显示版心锚点、参数面板与原生/WebView 切换。</string>
     <string name="settings_reader_image_full_width">图片全宽显示</string>
     <string name="settings_reader_image_full_width_supporting">忽略左右页边距，让图片铺满页面宽度；关闭后图片跟随页边距收缩。</string>
 </resources>

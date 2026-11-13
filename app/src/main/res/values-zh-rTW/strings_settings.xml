@@ -146,7 +146,7 @@
     <string name="settings_reader_native_reader_unavailable">目前裝置無法載入原生程式庫，自動回退為 WebView。</string>
     <string name="settings_appearance_section_debug">Debug</string>
     <string name="settings_appearance_debug_mode">偵錯模式</string>
-    <string name="settings_appearance_debug_mode_supporting">在閱讀器裡顯示版心錨點、參數面板，並提供原生/WebView 快速切換。</string>
+    <string name="settings_appearance_debug_mode_supporting">顯示版心錨點、參數面板與原生/WebView 切換。</string>
     <string name="settings_reader_image_full_width">圖片全寬顯示</string>
     <string name="settings_reader_image_full_width_supporting">忽略左右頁邊距，讓圖片鋪滿頁面寬度；關閉後圖片跟隨頁邊距收縮。</string>
 </resources>

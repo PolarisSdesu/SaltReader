@@ -443,14 +443,17 @@ private fun AppearanceSettingsPage(onBack: () -> Unit) {
                     checked = settings.amoledBlack,
                 ) { app.settings.update { it.copy(amoledBlack = it.amoledBlack.not()) } }
             }
-            SettingsSectionLabel(stringResource(R.string.settings_appearance_section_debug))
-            SettingsCard {
-                SettingsSwitchRow(
-                    icon = Icons.Outlined.BugReport,
-                    title = stringResource(R.string.settings_appearance_debug_mode),
-                    supporting = stringResource(R.string.settings_appearance_debug_mode_supporting),
-                    checked = settings.debugMode,
-                ) { app.settings.update { it.copy(debugMode = it.debugMode.not()) } }
+            // Debug 入口默认隐藏，通过在「关于」页连续点击图标解锁。
+            if (settings.debugMode) {
+                SettingsSectionLabel(stringResource(R.string.settings_appearance_section_debug))
+                SettingsCard {
+                    SettingsSwitchRow(
+                        icon = Icons.Outlined.BugReport,
+                        title = stringResource(R.string.settings_appearance_debug_mode),
+                        supporting = stringResource(R.string.settings_appearance_debug_mode_supporting),
+                        checked = settings.debugMode,
+                    ) { app.settings.update { it.copy(debugMode = it.debugMode.not()) } }
+                }
             }
         }
     }
@@ -1096,6 +1099,7 @@ private const val REPO_URL = "https://github.com/PolarisSdesu/SaltReader"
 @Composable
 private fun AboutSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current
+    val app = context.applicationContext as SaltReaderApplication
     var showDebug by remember { mutableStateOf(false) }
     var logoPresses by remember { mutableIntStateOf(0) }
 
@@ -1146,7 +1150,10 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                 Surface(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.primaryContainer,
-                    modifier = Modifier.size(96.dp).clickable {
+                    modifier = Modifier
+                        .size(96.dp)
+                        .clip(CircleShape)
+                        .clickable {
                         logoPresses += 1
                         if (logoPresses >= 5) {
                             logoPresses = 0
@@ -1230,16 +1237,29 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    copy(debugInfo)
-                    showDebug = false
-                }) {
-                    Text(stringResource(R.string.about_copy))
+                Row {
+                    TextButton(onClick = {
+                        app.settings.update { it.copy(debugMode = true) }
+                        showDebug = false
+                        Toast.makeText(
+                            context,
+                            R.string.about_debug_enabled,
+                            Toast.LENGTH_SHORT,
+                        ).show()
+                    }) {
+                        Text(stringResource(R.string.about_debug_enable))
+                    }
+                    TextButton(onClick = {
+                        copy(debugInfo)
+                        showDebug = false
+                    }) {
+                        Text(stringResource(R.string.about_copy))
+                    }
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showDebug = false }) {
-                    Text(stringResource(R.string.settings_about_title))
+                    Text(stringResource(R.string.about_close))
                 }
             },
         )
