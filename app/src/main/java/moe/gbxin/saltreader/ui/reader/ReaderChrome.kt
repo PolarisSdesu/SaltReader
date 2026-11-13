@@ -68,10 +68,10 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import android.view.HapticFeedbackConstants
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.PlainTooltip
-import androidx.compose.material3.TooltipBox
-import androidx.compose.material3.TooltipDefaults
 import androidx.compose.material3.rememberTooltipState
+import androidx.compose.material3.TooltipDefaults
+import androidx.compose.material3.TooltipBox
+import androidx.compose.material3.PlainTooltip
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.ListItemDefaults
 import androidx.compose.material3.MaterialTheme
@@ -384,75 +384,70 @@ private fun ReaderBarIcon(
         label = "readerBarOuterIndicator",
     )
 
+    val hostView = LocalView.current
     // 外层 Box 承载 Row 的 weight；TooltipBox 自身不吃 weight，否则会占满整行。
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
-    // 长按显示功能名（Material plain tooltip 的小 chip），与系统/主流 App 行为一致。
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = {
-            PlainTooltip {
-                Text(label)
-            }
-        },
-        state = rememberTooltipState(),
-    ) {
-        val hostView = LocalView.current
-    IconButton(
-            onClick = onClick,
-            enabled = enabled,
-            modifier = Modifier
-                .fillMaxWidth()
-                // 长按与 tooltip 同时发生：这里只做震动，不消费事件。
-                .pointerInput(Unit) {
-                    awaitEachGesture {
-                        val down = awaitFirstDown(requireUnconsumed = false)
-                        var moved = false
-                        var released = false
-                        val timeout = viewConfiguration.longPressTimeoutMillis
-                        val timedOut = withTimeoutOrNull(timeout) {
-                            while (true) {
-                                val event = awaitPointerEvent()
-                                val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                                if (!change.pressed) {
-                                    released = true
-                                    break
-                                }
-                                if ((change.position - down.position).getDistance() >
-                                    viewConfiguration.touchSlop
-                                ) {
-                                    moved = true
-                                    break
-                                }
-                            }
-                            null
-                        }
-                        if (timedOut == null && !moved && !released) {
-                            hostView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
-                        }
-                    }
-                },
+        TooltipBox(
+            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+            tooltip = { PlainTooltip { Text(label) } },
+            state = rememberTooltipState(),
         ) {
-            Box(
+            IconButton(
+                onClick = onClick,
+                enabled = enabled,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(48.dp)
-                    .clip(CircleShape)
-                    .background(outerIndicatorColor),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    icon,
-                    contentDescription = label,
-                    tint = when {
-                        !enabled -> contentColor.copy(alpha = 0.28f)
-                        active -> activeColor
-                        else -> contentColor
+                    .pointerInput(Unit) {
+                        // 长按与 tooltip 同时发生：这里只做震动，不消费事件。
+                        awaitEachGesture {
+                            val down = awaitFirstDown(requireUnconsumed = false)
+                            var moved = false
+                            var released = false
+                            val timeout = viewConfiguration.longPressTimeoutMillis
+                            val timedOut = withTimeoutOrNull(timeout) {
+                                while (true) {
+                                    val event = awaitPointerEvent()
+                                    val change = event.changes.firstOrNull { it.id == down.id } ?: break
+                                    if (!change.pressed) {
+                                        released = true
+                                        break
+                                    }
+                                    if ((change.position - down.position).getDistance() >
+                                        viewConfiguration.touchSlop
+                                    ) {
+                                        moved = true
+                                        break
+                                    }
+                                }
+                                null
+                            }
+                            if (timedOut == null && !moved && !released) {
+                                hostView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                            }
+                        }
                     },
-                    modifier = Modifier.size(24.dp),
-                )
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp)
+                        .clip(CircleShape)
+                        .background(outerIndicatorColor),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        icon,
+                        contentDescription = label,
+                        tint = when {
+                            !enabled -> contentColor.copy(alpha = 0.28f)
+                            active -> activeColor
+                            else -> contentColor
+                        },
+                        modifier = Modifier.size(24.dp),
+                    )
+                }
             }
         }
-    }
     }
 }
 

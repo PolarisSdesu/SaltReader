@@ -129,6 +129,7 @@ import moe.gbxin.saltreader.data.LibraryLayout
 import moe.gbxin.saltreader.data.LibraryMetaField
 import moe.gbxin.saltreader.data.LibrarySort
 import moe.gbxin.saltreader.ui.components.ComicCover
+import moe.gbxin.saltreader.ui.components.TooltipIconButton
 import moe.gbxin.saltreader.ui.components.bookFormatLabel
 import moe.gbxin.saltreader.ui.components.bookMetaLabel
 import moe.gbxin.saltreader.ui.components.bookProgressLabel
@@ -248,15 +249,21 @@ fun LibraryScreen(
             LargeTopAppBar(
                 title = { Text("Salt Reader", maxLines = 1) },
                 actions = {
-                    IconButton(onClick = onOpenSearch) {
-                        Icon(Icons.Filled.Search, contentDescription = stringResource(R.string.library_action_search))
-                    }
-                    IconButton(onClick = { showLayoutSheet = true }) {
-                        Icon(Icons.Filled.GridView, contentDescription = stringResource(R.string.library_action_layout))
-                    }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.library_action_settings))
-                    }
+                    TooltipIconButton(
+                        icon = Icons.Filled.Search,
+                        label = stringResource(R.string.library_action_search),
+                        onClick = onOpenSearch,
+                    )
+                    TooltipIconButton(
+                        icon = Icons.Filled.GridView,
+                        label = stringResource(R.string.library_action_layout),
+                        onClick = { showLayoutSheet = true },
+                    )
+                    TooltipIconButton(
+                        icon = Icons.Filled.Settings,
+                        label = stringResource(R.string.library_action_settings),
+                        onClick = onOpenSettings,
+                    )
                 },
                 scrollBehavior = scrollBehavior,
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -446,12 +453,11 @@ private fun ShelfHeader(
             }
         }
         Box {
-            IconButton(onClick = { sortOpen = true }) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Sort,
-                    contentDescription = stringResource(R.string.library_sort_action),
-                )
-            }
+            TooltipIconButton(
+                icon = Icons.AutoMirrored.Filled.Sort,
+                label = stringResource(R.string.library_sort_action),
+                onClick = { sortOpen = true },
+            )
             DropdownMenu(
                 expanded = sortOpen,
                 onDismissRequest = { sortOpen = false },
