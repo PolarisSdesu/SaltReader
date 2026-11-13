@@ -2397,7 +2397,7 @@ private val HTML_TAIL = """
       book.style.height = Math.max(1, (window.innerHeight || 0) - PAGE_PAD_TOP - PAGE_PAD_BOTTOM) + 'px';
       book.style.marginTop = PAGE_PAD_TOP + 'px';
       book.style.marginBottom = PAGE_PAD_BOTTOM + 'px';
-      scroll.style.scrollSnapType = 'x mandatory';
+      scroll.style.scrollSnapType = 'none';
       refreshSnapPoints();
     } else {
       book.style.webkitColumnWidth = 'auto';
@@ -2620,7 +2620,8 @@ private val HTML_TAIL = """
       if (e.cancelable) e.preventDefault();
     }
     var max = Math.max(0, scroll.scrollWidth - scroll.clientWidth);
-    scroll.scrollLeft = Math.min(max, Math.max(0, swipeDrag.startLeft - dx));
+    var want = Math.min(max, Math.max(0, swipeDrag.startLeft - dx));
+    scroll.scrollLeft = want;
     var now = performance.now();
     var dt = now - swipeDrag.lastAt;
     if (dt > 0) {
