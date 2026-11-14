@@ -74,5 +74,10 @@
   - **行内标记迁移到私用区 U+E000..U+E00D**：原先 `\u0006..\u0013` 里的 TAB/LF/VT/FF/CR
     与文本换行、分页分隔符冲突（下划线开启标记 `\u000A` 会被当成换行拆页）。Rust 与 Kotlin
     的测量、绘制、复制过滤全部同步更新。
-  待办：table caption、blockquote 左侧竖线；该测试书在 native 路径 `images extracted=0`
-  （图片被 `stripHeavyPayloads` 清掉），需单独排查。
+  - `table caption` 已作为居中块输出（此前被直接丢弃）；blockquote 按 left_indent + 两端对齐
+    特征补了左侧竖线。
+  - 图片提取为 0 的原因已确认：EpubIndexer 会丢弃源码里直接写死的 `data:` 图片，只内联相对路径
+    图片；已修正 `tools/make_html5_tags_epub.py` 改为打包 `images/sample.png` 并相对引用，
+    现在 native 日志为 `images extracted=2`。
+  待办：`mark` 高亮（需要背景色协议）、`q` 引号、`small` 字号、表格 colspan/rowspan；
+  forms/media 按设计不渲染交互控件。

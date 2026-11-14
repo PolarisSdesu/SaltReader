@@ -17,8 +17,8 @@ import zlib
 OUT = sys.argv[1] if len(sys.argv) > 1 else "Html5-Tags.epub"
 
 
-def png_data_uri(width: int = 180, height: int = 110) -> str:
-    """生成一张渐变色 PNG 的 data URI（不依赖 Pillow）。"""
+def png_bytes(width: int = 180, height: int = 110) -> bytes:
+    """生成一张渐变色 PNG（不依赖 Pillow）。"""
     rows = []
     for y in range(height):
         row = bytearray([0])  # filter: none
@@ -36,11 +36,13 @@ def png_data_uri(width: int = 180, height: int = 110) -> str:
         )
 
     ihdr = struct.pack(">IIBBBBB", width, height, 8, 2, 0, 0, 0)
-    png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
-    return "data:image/png;base64," + base64.b64encode(png).decode("ascii")
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", ihdr) + chunk(b"IDAT", zlib.compress(raw, 9)) + chunk(b"IEND", b"")
 
 
-IMAGE = png_data_uri()
+# 图片必须作为 EPUB 内的独立文件、用相对路径引用：EpubIndexer 会丢弃源码里直接写死的
+# `data:` URI（它只负责把相对路径图片内联），否则阅读器里整张图都不会出现。
+IMAGE_SRC = "images/sample.png"
+IMAGE = IMAGE_SRC
 
 
 def xhtml(title: str, body: str) -> str:
@@ -168,9 +170,12 @@ container = (
     'media-type="application/oebps-package+xml"/></rootfiles></container>'
 )
 
-manifest = "".join(
-    f'<item id="c{i + 1}" href="c{i + 1}.xhtml" media-type="application/xhtml+xml"/>'
-    for i in range(len(chapters))
+manifest = (
+    '<item id="img1" href="images/sample.png" media-type="image/png"/>'
+    + "".join(
+        f'<item id="c{i + 1}" href="c{i + 1}.xhtml" media-type="application/xhtml+xml"/>'
+        for i in range(len(chapters))
+    )
 )
 spine = "".join(f'<itemref idref="c{i + 1}"/>' for i in range(len(chapters)))
 opf = (
@@ -203,6 +208,7 @@ with zipfile.ZipFile(OUT, "w") as archive:
         "OEBPS/content.opf": opf,
         "OEBPS/toc.ncx": ncx,
     }
+    archive.writestr("OEBPS/images/sample.png", png_bytes(), compress_type=zipfile.ZIP_DEFLATED)
     for i, (title, body) in enumerate(chapters):
         files[f"OEBPS/c{i + 1}.xhtml"] = xhtml(title, body)
     for name, content in files.items():

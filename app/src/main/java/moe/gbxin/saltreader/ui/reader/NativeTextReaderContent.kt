@@ -1054,6 +1054,15 @@ internal fun NativeTextReaderContent(
                                 }
                                 val baseline = yTop + (lineBox - (fontMetrics.descent - fontMetrics.ascent)) / 2f -
                                     fontMetrics.ascent
+                                // 引用块：WebView 的 blockquote 有 3px 左边线。Rust 用
+                                // left_indent + 两端对齐表示引用段落，这里按同一特征补竖线。
+                                if (line.leftIndentEm >= 1.0f && line.align == 3) {
+                                    drawRect(
+                                        color = readerTextColor.copy(alpha = 0.28f),
+                                        topLeft = Offset(contentLeft + 0.15f * fontSizePx, yTop),
+                                        size = Size(2.dp.toPx(), lineBox),
+                                    )
+                                }
                                 if (line.text == "\u0014") {
                                     // Rust 用 \u0014 表示 <hr>：画一条与版心同宽的分隔线。
                                     val ruleY = yTop + lineBox / 2f

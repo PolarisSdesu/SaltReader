@@ -591,6 +591,8 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
     let mut table_rows: Vec<Vec<String>> = Vec::new();
     let mut table_row: Vec<String> = Vec::new();
     let mut table_cell: Option<String> = None;
+    let mut table_caption = String::new();
+    let mut in_caption = false;
     // <ol> 序号栈；<hr> 直接用分隔行近似 WebView 的水平线。
     let mut ol_stack: Vec<u32> = Vec::new();
 
@@ -730,11 +732,32 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                             table_row.push(normalize_block_text(&cell, false));
                         }
                     }
+                    (false, "caption") => {
+                        in_caption = true;
+                        table_caption.clear();
+                    }
+                    (true, "caption") => in_caption = false,
                     (true, "table") => {
                         in_table = false;
                         table_cell = None;
+                        in_caption = false;
                         if !table_row.is_empty() {
                             table_rows.push(std::mem::take(&mut table_row));
+                        }
+                        if !table_caption.trim().is_empty() {
+                            let mut caption_style = table_style();
+                            caption_style.align = 1;
+                            caption_style.space_before = 0.5;
+                            caption_style.space_after = 0.2;
+                            blocks.push(Block {
+                                text: table_caption.trim().to_string(),
+                                style: caption_style,
+                                table: None,
+                                image: None,
+                                preserve: false,
+                                keep_blank_lines: false,
+                            });
+                            table_caption.clear();
                         }
                         if !table_rows.is_empty() {
                             blocks.push(Block {
@@ -946,7 +969,9 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
             continue;
         }
         if in_table {
-            if let Some(cell) = table_cell.as_mut() {
+            if in_caption {
+                table_caption.push_str(&decoded);
+            } else if let Some(cell) = table_cell.as_mut() {
                 cell.push_str(&decoded);
             }
             continue;
@@ -2505,6 +2530,14 @@ mod html5_structure_tests {
     fn hr_becomes_a_rule_marker_block() {
         let parsed = blocks("<p>上</p><hr/><p>下</p>");
         assert!(parsed.iter().any(|b| b.text == "\u{0014}"), "blocks={:?}", parsed.iter().map(|b| &b.text).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn table_caption_becomes_a_centered_block_before_the_table() {
+        let parsed = blocks("<table><caption>表格标题</caption><tr><td>a</td><td>b</td></tr></table>");
+        let caption = parsed.iter().find(|b| b.text == "表格标题").expect("caption block");
+        assert_eq!(caption.style.align, 1);
+        assert!(parsed.iter().any(|b| b.table.is_some()));
     }
 
     #[test]
