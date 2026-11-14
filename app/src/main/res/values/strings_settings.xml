@@ -142,7 +142,7 @@
     <string name="settings_reader_page_info">Page indicator</string>
     <string name="settings_reader_page_indicator_size">Page text size</string>
     <string name="settings_reader_battery_indicator">Battery indicator</string>
-    <string name="settings_reader_battery_indicator_supporting">Show the battery icon and percentage in the lower-left corner while reading</string>
+    <string name="settings_reader_battery_indicator_supporting">Show battery icon and percentage while reading</string>
     <string name="settings_fonts">Fonts</string>
     <string name="settings_reader_font_mode">Reader font</string>
     <string name="settings_reader_native_reader">Native reader</string>
@@ -150,9 +150,9 @@
     <string name="settings_reader_native_reader_unavailable">Native library unavailable on this device.</string>
     <string name="settings_appearance_section_debug">Debug</string>
     <string name="settings_appearance_debug_mode">Debug mode</string>
-    <string name="settings_appearance_debug_mode_supporting">Show layout anchors, parameters and the native/WebView switch.</string>
+    <string name="settings_appearance_debug_mode_supporting">Show layout anchors and the native/WebView switch.</string>
     <string name="settings_reader_image_full_width">Full-width images</string>
-    <string name="settings_reader_image_full_width_supporting">Ignore page margins so images span the full page width.</string>
+    <string name="settings_reader_image_full_width_supporting">Ignore margins so images span the full page width.</string>
     <string name="settings_reader_live_update">Reading progress Live Update</string>
-    <string name="settings_reader_live_update_supporting">Show progress while the reader is in the background; tap to continue reading. Android 16+.</string>
+    <string name="settings_reader_live_update_supporting">Background progress notification; tap to resume. Android 16+.</string>
 </resources>

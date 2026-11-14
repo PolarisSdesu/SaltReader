@@ -148,7 +148,7 @@
     <string name="settings_appearance_debug_mode">调试模式</string>
     <string name="settings_appearance_debug_mode_supporting">显示版心锚点、参数面板与原生/WebView 切换。</string>
     <string name="settings_reader_image_full_width">图片全宽显示</string>
-    <string name="settings_reader_image_full_width_supporting">忽略左右页边距，让图片铺满页面宽度；关闭后图片跟随页边距收缩。</string>
+    <string name="settings_reader_image_full_width_supporting">忽略页边距，让图片铺满页面宽度。</string>
     <string name="settings_reader_live_update">阅读进度实时通知</string>
-    <string name="settings_reader_live_update_supporting">离开阅读器后在通知栏显示进度，可一键继续阅读。Android 16+。</string>
+    <string name="settings_reader_live_update_supporting">离开阅读器后在通知栏显示进度。Android 16+。</string>
 </resources>
