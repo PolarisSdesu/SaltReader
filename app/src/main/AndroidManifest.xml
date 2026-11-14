@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- Reading progress Live Update (Android 16+). POST_NOTIFICATIONS is requested at runtime
+         when the user enables the feature; POST_PROMOTED_NOTIFICATIONS enables the promoted
+         ongoing treatment. No storage/network permissions are added. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS" />
+
     <!-- Local-first reader: the library is accessed only through the Storage Access
          Framework (folders explicitly picked by the user). The app therefore requests
          no storage permission, no MANAGE_EXTERNAL_STORAGE and no network permission. -->

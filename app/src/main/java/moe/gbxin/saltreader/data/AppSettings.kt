@@ -80,6 +80,8 @@ data class AppSettings(
     val readerPageIndicatorSizeSp: Int = READER_PAGE_INDICATOR_SIZE_DEFAULT_SP,
     /** Lower-left battery icon + percentage while the chrome is hidden, next to the page indicator. */
     val readerBatteryIndicator: Boolean = true,
+    /** Android 16 Live Update: show reading progress while the reader is in the background. */
+    val readerLiveUpdate: Boolean = false,
     /** 文字书使用的字体类型。 */
     val readerFontFamily: ReaderFontFamily = ReaderFontFamily.HEI,
     /** "自定义"模式使用的字体；为空时跟随黑体。 */
@@ -151,6 +153,7 @@ class SettingsRepository(context: Context) {
         readerPageIndicatorSizeSp = prefs.getInt("reader_page_indicator_size", READER_PAGE_INDICATOR_SIZE_DEFAULT_SP)
             .coerceIn(READER_PAGE_INDICATOR_SIZE_MIN_SP, READER_PAGE_INDICATOR_SIZE_MAX_SP),
         readerBatteryIndicator = prefs.getBoolean("reader_battery_indicator", true),
+        readerLiveUpdate = prefs.getBoolean("reader_live_update", false),
         libraryLayout = runCatching { LibraryLayout.valueOf(prefs.getString("library_layout", LibraryLayout.COMFORTABLE.name)!!) }.getOrDefault(LibraryLayout.COMFORTABLE),
         libraryColumns = prefs.getInt("library_columns", 0),
         libraryTitleSizeSp = prefs.getInt("library_title_size", 20),
@@ -192,6 +195,9 @@ class SettingsRepository(context: Context) {
         if (next.nativeReader != old.nativeReader) editor.putBoolean("native_reader_enabled", next.nativeReader)
         if (next.readerPageInfo != old.readerPageInfo) editor.putString("reader_page_info", next.readerPageInfo.name)
         if (next.volumeKeyPaging != old.volumeKeyPaging) editor.putBoolean("volume_key_paging", next.volumeKeyPaging)
+        if (next.readerLiveUpdate != old.readerLiveUpdate) {
+            editor.putBoolean("reader_live_update", next.readerLiveUpdate)
+        }
         if (next.grayscale != old.grayscale) editor.putBoolean("reader_grayscale", next.grayscale)
         if (next.invertColors != old.invertColors) editor.putBoolean("reader_invert", next.invertColors)
         if (next.readerFontSizeSp != old.readerFontSizeSp) {

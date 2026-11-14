@@ -153,4 +153,6 @@
     <string name="settings_appearance_debug_mode_supporting">Show layout anchors, parameters and the native/WebView switch.</string>
     <string name="settings_reader_image_full_width">Full-width images</string>
     <string name="settings_reader_image_full_width_supporting">Ignore page margins so images span the full page width.</string>
+    <string name="settings_reader_live_update">Reading progress Live Update</string>
+    <string name="settings_reader_live_update_supporting">Show progress while the reader is in the background; tap to continue reading. Android 16+.</string>
 </resources>

@@ -149,4 +149,6 @@
     <string name="settings_appearance_debug_mode_supporting">顯示版心錨點、參數面板與原生/WebView 切換。</string>
     <string name="settings_reader_image_full_width">圖片全寬顯示</string>
     <string name="settings_reader_image_full_width_supporting">忽略左右頁邊距，讓圖片鋪滿頁面寬度；關閉後圖片跟隨頁邊距收縮。</string>
+    <string name="settings_reader_live_update">閱讀進度即時通知</string>
+    <string name="settings_reader_live_update_supporting">離開閱讀器後在通知列顯示進度，可一鍵繼續閱讀。Android 16+。</string>
 </resources>

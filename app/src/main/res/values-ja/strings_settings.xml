@@ -149,4 +149,6 @@
     <string name="settings_appearance_debug_mode_supporting">レイアウト枠・パラメータ・WebView 切替を表示。</string>
     <string name="settings_reader_image_full_width">画像を全幅表示</string>
     <string name="settings_reader_image_full_width_supporting">左右の余白を無視して画像をページ幅いっぱいに表示します。オフにすると余白に合わせて縮小します。</string>
+    <string name="settings_reader_live_update">読書の進捗通知</string>
+    <string name="settings_reader_live_update_supporting">リーダーを離れたときに進捗を通知し、タップで読書を再開できます。Android 16 以降。</string>
 </resources>

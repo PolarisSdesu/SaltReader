@@ -156,4 +156,8 @@
     <string name="reader_image_placeholder">［Image］</string>
     <string name="reader_debug_switch_to_webview">NATIVE → WEBVIEW (debug)</string>
     <string name="reader_debug_switch_to_native">WEBVIEW → NATIVE (debug)</string>
+    <string name="reader_live_update_channel">Reading progress</string>
+    <string name="reader_live_update_continue">Continue reading</string>
+    <string name="reader_live_update_progress">%1$d%% read</string>
+    <string name="reader_live_update_pages">Page %1$d of %2$d</string>
 </resources>

@@ -382,6 +382,9 @@ class ReaderViewModel(
         return latest?.progressOffset ?: 0L
     }
 
+    /** Repository snapshot with the latest in-memory progress (used by the Live Update). */
+    fun latestBook(): ComicBook? = repo.books.value.firstOrNull { it.id == bookId }
+
     fun updateTextProgress(offset: Long) {
         repo.updateTextProgress(bookId, offset)
     }

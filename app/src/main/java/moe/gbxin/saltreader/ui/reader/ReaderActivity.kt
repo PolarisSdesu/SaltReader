@@ -16,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.MutableSharedFlow
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.ui.LocalizedActivity
@@ -36,6 +37,38 @@ class ReaderActivity : LocalizedActivity() {
      */
     private val readerViewModel: ReaderViewModel by viewModels {
         ReaderViewModel.Factory(application, bookId)
+    }
+
+    override fun onStart() {
+        super.onStart()
+        ReadingLiveUpdate.cancel(this)
+    }
+
+    /**
+     * Post the Android 16 Live Update only when the user leaves the app (Home / recents / another
+     * app), not when an in-app screen such as Reader settings is opened.
+     */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        val app = application as SaltReaderApplication
+        if (!app.settings.state.value.readerLiveUpdate) return
+        val book = readerViewModel.latestBook() ?: return
+        val percent = if (book.reflowable) {
+            val total = book.charCount.coerceAtLeast(1L)
+            ((book.progressOffset.toFloat() / total.toFloat()).coerceIn(0f, 1f) * 100f).roundToInt()
+        } else {
+            (book.progress * 100f).roundToInt()
+        }
+        ReadingLiveUpdate.post(
+            this,
+            ReadingLiveUpdate.Snapshot(
+                bookId = book.id,
+                title = book.title,
+                percent = percent,
+                page = if (book.reflowable) 0 else book.currentPage + 1,
+                total = if (book.reflowable) 0 else book.pageCount,
+            ),
+        )
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent?): Boolean {

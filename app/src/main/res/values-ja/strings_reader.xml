@@ -156,4 +156,8 @@
     <string name="reader_image_placeholder">［画像］</string>
     <string name="reader_debug_switch_to_webview">NATIVE → WEBVIEW（デバッグ）</string>
     <string name="reader_debug_switch_to_native">WEBVIEW → NATIVE（デバッグ）</string>
+    <string name="reader_live_update_channel">読書の進捗</string>
+    <string name="reader_live_update_continue">読書を続ける</string>
+    <string name="reader_live_update_progress">%1$d%% 読了</string>
+    <string name="reader_live_update_pages">%1$d / %2$d ページ</string>
 </resources>

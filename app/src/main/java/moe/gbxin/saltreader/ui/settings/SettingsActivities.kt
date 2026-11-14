@@ -1,14 +1,17 @@
 package moe.gbxin.saltreader.ui.settings
 
 
+import android.Manifest
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Intent
 import android.net.Uri
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.core.content.ContextCompat
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -53,6 +56,7 @@ import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Contrast
 import androidx.compose.material.icons.outlined.DarkMode
 import androidx.compose.material.icons.outlined.Memory
+import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Description
 import androidx.compose.material.icons.outlined.FilterBAndW
@@ -465,6 +469,9 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
     val app = context.applicationContext as SaltReaderApplication
     val settings by app.settings.state.collectAsStateWithLifecycle()
     var showCustomBackground by remember { mutableStateOf(false) }
+    val notificationPermission = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { }
     SettingsScaffold(stringResource(R.string.settings_reader_title), onBack) { innerPadding ->
         Column(
             Modifier.fillMaxSize().padding(innerPadding).verticalScroll(rememberScrollState())
@@ -632,6 +639,23 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                     supporting = stringResource(R.string.settings_reader_volume_key_paging_supporting),
                     checked = settings.volumeKeyPaging,
                 ) { app.settings.update { it.copy(volumeKeyPaging = it.volumeKeyPaging.not()) } }
+                SettingsSwitchRow(
+                    icon = Icons.Outlined.Notifications,
+                    title = stringResource(R.string.settings_reader_live_update),
+                    supporting = stringResource(R.string.settings_reader_live_update_supporting),
+                    checked = settings.readerLiveUpdate,
+                ) {
+                    val enable = !settings.readerLiveUpdate
+                    app.settings.update { it.copy(readerLiveUpdate = enable) }
+                    if (enable && Build.VERSION.SDK_INT >= 33 &&
+                        ContextCompat.checkSelfPermission(
+                            context,
+                            Manifest.permission.POST_NOTIFICATIONS,
+                        ) != PackageManager.PERMISSION_GRANTED
+                    ) {
+                        notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                    }
+                }
             }
             SettingsSectionLabel(stringResource(R.string.settings_reader_section_filter))
             SettingsCard {

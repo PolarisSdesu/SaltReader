@@ -156,4 +156,8 @@
     <string name="reader_image_placeholder">［圖片］</string>
     <string name="reader_debug_switch_to_webview">NATIVE → WEBVIEW（偵錯）</string>
     <string name="reader_debug_switch_to_native">WEBVIEW → NATIVE（偵錯）</string>
+    <string name="reader_live_update_channel">閱讀進度</string>
+    <string name="reader_live_update_continue">繼續閱讀</string>
+    <string name="reader_live_update_progress">已讀 %1$d%%</string>
+    <string name="reader_live_update_pages">第 %1$d / %2$d 頁</string>
 </resources>
