@@ -1862,7 +1862,9 @@ internal fun NativeTextReaderContent(
                                     onLongClick = { handleReaderLongPress(lastTouch, index) },
                                 ),
                         ) {
-                            drawPage(pages[index], 0f, 0f, index == verticalState.firstVisibleItemIndex, index)
+                            // debug 锚点所有纵向页都绘制：只画 firstVisible 会在滚动时
+                            // 一页页"慢慢渲染"出锚点，与其他页的锚点不一致。
+                            drawPage(pages[index], 0f, 0f, true, index)
                         }
                     }
                 }
