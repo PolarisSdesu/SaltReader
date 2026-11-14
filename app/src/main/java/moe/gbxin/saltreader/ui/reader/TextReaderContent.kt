@@ -2054,7 +2054,9 @@ body.paged #book { height: calc(var(--app-vh, 100%) - 56px); margin: 28px 0; col
 body.vertical { height: auto; }
 body.vertical #scroll { width: 100vw; height: var(--app-vh, 100%); overflow-y: auto; overflow-x: hidden; -webkit-overflow-scrolling: touch; padding: var(--reader-vertical-pad-top, 20px) 0 var(--reader-vertical-pad-bottom, 96px); box-sizing: border-box; }
 body.vertical #book { height: auto; column-width: auto; }
-body.vertical #book img { content-visibility: auto; }
+/* 注意：不要给纵向模式的 img 加 content-visibility:auto——layout containment 会让离屏图片
+   的 auto 高度塌陷（尤其前插章节），用户滚近时再膨胀，把当前页面往下推，表现为"自己动"。
+   离屏不解码已由 loading=lazy 保证，宽高属性负责预留布局空间。 */
 </style>
 </head>
 <body class="paged">
@@ -2079,8 +2081,15 @@ private val HTML_TAIL = """
     book.style.width = pageWidth + 'px';
     return pageWidth;
   }
+  var lastViewportHeight = -1, lastViewportWidth = -1;
   function updateViewportHeight() {
     var viewportHeight = Math.max(1, window.innerHeight || 0);
+    // 上一次成功应用的视口尺寸。resize 事件可能在图片解码/系统栏动画时连发多次，
+    // 尺寸没变时重排 CSS 分栏 + 重新吸附页码会让页面"抽动"，因此这里做去重。
+    var viewportWidth = Math.max(1, window.innerWidth || 0);
+    if (viewportHeight === lastViewportHeight && viewportWidth === lastViewportWidth) return;
+    lastViewportHeight = viewportHeight;
+    lastViewportWidth = viewportWidth;
     document.documentElement.style.setProperty('--app-vh', viewportHeight + 'px');
     // Paged mode sizes the column box in px as well; keep it in sync on rotation / multi-window.
     // Re-flowing the columns invalidates scrollLeft, so re-align to the nearest page afterwards
@@ -2144,7 +2153,11 @@ private val HTML_TAIL = """
       var marker = document.createElement('div');
       // `scroll-snap-stop: always` is what makes a swipe turn exactly one page: without it a fast
       // fling skips intermediate snap points and can land several pages away (Chrome >= 75).
-      marker.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:1px;scroll-snap-align:start;scroll-snap-stop:always;pointer-events:none;';
+      // snap area 必须是整页大小（宽=页宽、高=视口高）：1px 的小标记可能被 Chrome 忽略，
+      // 导致 scroll-snap-stop: always 失效、快速 fling 直接跳好几页。
+      var snapHeight = Math.max(1, window.innerHeight || 0);
+      marker.style.cssText = 'position:absolute;top:0;left:0;width:' + w + 'px;height:' + snapHeight +
+        'px;scroll-snap-align:start;scroll-snap-stop:always;pointer-events:none;';
       marker.style.left = (snapLayer.childElementCount * w) + 'px';
       snapLayer.appendChild(marker);
     }
@@ -2152,6 +2165,7 @@ private val HTML_TAIL = """
       snapWidth = w;
       for (var i = 0; i < snapLayer.childElementCount; i++) {
         snapLayer.children[i].style.left = (i * w) + 'px';
+        snapLayer.children[i].style.width = w + 'px';
       }
     }
   }
@@ -2204,10 +2218,24 @@ private val HTML_TAIL = """
   // reports are dropped: the progress label is integer percent, the page numbers are integers.
   var lastReportPage = -1, lastReportPages = -1, lastReportRatio = -2;
   var lastTrimAt = 0;
+  var trimRetryTimer = 0;
   function trimEarlierSections() {
     if (mode !== 'vertical') { trimEarlierSectionsPaged(); return; }
+    if (restoring) return;
     var now = Date.now();
     if (now - lastTrimAt < 1200) return;
+    // 惯性滚动进行中设置 scrollTop 会打断原生 fling（表现为滑动抽搐）。
+    // 只在滚动停止片刻后再裁剪；滚动事件仍在连发时安排一次延迟重试，
+    // 否则滚动停止后不再有 report，裁剪会永远不执行。
+    if (performance.now() - lastScrollAt < 400) {
+      if (!trimRetryTimer) {
+        trimRetryTimer = setTimeout(function () {
+          trimRetryTimer = 0;
+          trimEarlierSections();
+        }, 500);
+      }
+      return;
+    }
     var secs = book.querySelectorAll('section.chapter');
     if (secs.length <= 8) return;
     var st = scroll.scrollTop;
@@ -2218,12 +2246,13 @@ private val HTML_TAIL = """
     var keepFrom = Math.max(0, firstVisible - 2);
     if (keepFrom <= 0) return;
     lastTrimAt = now;
-    var removedHeight = 0;
+    // 补偿量不靠 offsetHeight 累加（外边距/塌陷会算不准，残留误差会让页面在空闲时
+    // 自己缓慢滚动）：记录第一个保留区块的位置，裁剪后按它的实际位移精确回滚。
+    var keptBefore = secs[keepFrom].getBoundingClientRect().top;
     for (var j = 0; j < keepFrom; j++) {
-      removedHeight += secs[j].offsetHeight;
       secs[j].parentNode.removeChild(secs[j]);
     }
-    scroll.scrollTop = Math.max(0, st - removedHeight);
+    scroll.scrollTop = Math.max(0, st - (keptBefore - secs[keepFrom].getBoundingClientRect().top));
     console.log('JSPERF trim removed=' + keepFrom + ' sh=' + scroll.scrollHeight + ' st=' + scroll.scrollTop);
     if (window['$BRIDGE_NAME'] && window['$BRIDGE_NAME'].onTrimmed) {
       window['$BRIDGE_NAME'].onTrimmed(keepFrom);
@@ -2242,15 +2271,24 @@ private val HTML_TAIL = """
     var keepFrom = Math.max(0, firstVisible - 2);
     if (keepFrom <= 0) return;
     lastTrimAt = now;
-    var removedWidth = 0;
+    // 多栏布局里 block 元素被碎片化到多个分栏：offsetWidth 只等于单个分栏宽，
+    // 累加会严重低估被裁章节的真实横向占宽，补偿后 scrollLeft 偏小、页面被猛拉回去
+    // （表现为图片书翻页时抽搐/跳页）。改用首尾碎片的包围盒跨度测量总占宽，
+    // 并把落点吸附到页边界，交给 CSS scroll-snap 对齐。
+    var firstRect = secs[0].getBoundingClientRect();
+    var lastRect = secs[keepFrom - 1].getBoundingClientRect();
+    var removedWidth = lastRect.right - firstRect.left;
+    trimming = true;
+    setTimeout(function () { trimming = false; }, 300);
     for (var j = 0; j < keepFrom; j++) {
-      removedWidth += secs[j].offsetWidth;
       secs[j].parentNode.removeChild(secs[j]);
     }
-    scroll.scrollLeft = Math.max(0, sl - removedWidth);
+    var w = Math.max(1, scroll.clientWidth || window.innerWidth);
+    scroll.scrollLeft = Math.max(0, Math.round((sl - removedWidth) / w) * w);
     refreshSnapPoints();
     report(true);
-    console.log('JSPERF trim-pages removed=' + keepFrom + ' sw=' + scroll.scrollWidth);
+    console.log('JSPERF trim-pages removed=' + keepFrom + ' rw=' + Math.round(removedWidth) +
+      ' sw=' + scroll.scrollWidth + ' sl=' + scroll.scrollLeft);
     if (window['$BRIDGE_NAME'] && window['$BRIDGE_NAME'].onTrimmed) {
       window['$BRIDGE_NAME'].onTrimmed(keepFrom);
     }
@@ -2258,6 +2296,7 @@ private val HTML_TAIL = """
   var lastNeedMoreAt = 0;
   function maybeRequestMoreForVertical() {
     if (mode !== 'vertical') return;
+    if (restoring) return;
     if (scroll.scrollHeight > scroll.clientHeight + 8) return;
     var now = Date.now();
     if (now - lastNeedMoreAt < 500) return;
@@ -2271,6 +2310,9 @@ private val HTML_TAIL = """
     // every throttled scroll event forces a synchronous layout; refresh them only at known layout
     // boundaries (or for an explicit state refresh).
     if (force || !cachedWidth) refreshMetrics();
+    // 落位（restore）尚未完成时上报的位置是无效的：会以旧 st 触发 prepend/trim/进度写回，
+    // 与随后的 restore 落点互相打架。
+    if (restoring && !force) return;
     // Late image decode can change the page count; a missing snap target would let a fling run past
     // the end of the marker layer, so keep the marker count in sync with the real column layout.
     if (mode === 'paged' && snapLayer.childElementCount !== cachedPages) refreshSnapPoints();
@@ -2416,6 +2458,9 @@ private val HTML_TAIL = """
   }
   function restore(r) {
     // 图片解码会改变 scrollHeight：跳转/恢复位置前先等图片就绪，避免落点偏移。
+    // 注意 restoring 必须立刻置位：等待期间 report 上报的是旧位置（可能是 st=0），
+    // 会误触发 prepend/trim，与随后的落点互相打架（表现为进度条/页面瞬移）。
+    restoring = true;
     whenImagesReady(function () { restoreNow(r); });
   }
   function restoreNow(r) {
@@ -2542,7 +2587,10 @@ private val HTML_TAIL = """
   // below also covers a direct drag that crosses more than one page, and an accidental click after
   // a swipe (which would otherwise add a tap-turn on top of the snap).
   var touchStartX = 0, touchStartY = 0, touchStartLeft = 0, touchIntent = 0, touching = false;
-  var gesturePage = -1, dragDistance = 0, lastScrollAt = 0, gestureClampRaf = 0;
+  var gesturePage = -1, dragDistance = 0, lastScrollAt = 0, gestureClampRaf = 0, lastTouchEndAt = 0, hadTouchMove = false;
+  // 章节裁剪（trim）会移动 scrollLeft 以补偿被移除的宽度；这段时间内不做任何落点校正，
+  // 否则校正会把裁剪补偿误当成"滑动越界"拉回去，表现为翻页抽搐。
+  var trimming = false;
   /**
    * Clamp the landing page to at most one page away from where the gesture started. Runs after the
    * scroller has come to rest, so it never fights the native fling: a fast flick lands on the next
@@ -2561,6 +2609,7 @@ private val HTML_TAIL = """
         gestureClampRaf = requestAnimationFrame(tick);
         return;
       }
+      if (trimming) { gesturePage = -1; return; }
       var delta = pagedPage() - gesturePage;
       if (Math.abs(delta) > 1) {
         scroll.scrollLeft = (gesturePage + (delta > 0 ? 1 : -1)) * viewportWidth();
@@ -2571,17 +2620,21 @@ private val HTML_TAIL = """
     gestureClampRaf = requestAnimationFrame(tick);
   }
   scroll.addEventListener('touchstart', function (e) {
-    if (mode !== 'paged' || e.touches.length !== 1) return;
+    if (e.touches.length !== 1) return;
+    // 纵向模式也要跟踪触摸（touchend 需要触发 NeedMore 追加），只是不做分页手势记账。
     touching = true;
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
     touchStartLeft = scroll.scrollLeft;
     touchIntent = 0;
     dragDistance = 0;
+    hadTouchMove = false;
+    if (mode !== 'paged') return;
     gesturePage = pagedPage();
   }, { passive: true });
   scroll.addEventListener('touchmove', function (e) {
     if (!touching || e.touches.length !== 1) return;
+    hadTouchMove = true;
     var dx = e.touches[0].clientX - touchStartX;
     var dy = e.touches[0].clientY - touchStartY;
     dragDistance = Math.max(dragDistance, Math.abs(dx) + Math.abs(dy));
@@ -2590,6 +2643,27 @@ private val HTML_TAIL = """
   scroll.addEventListener('touchend', function () {
     if (!touching) return;
     touching = false;
+    lastTouchEndAt = performance.now();
+    // 纵向模式：滚到已加载窗口末尾时页面被钉住，不再产生 scroll 事件，
+    // report/追加章节的链路会停摆（表现为卡在原地无法继续下滑）。
+    // 只在接近窗口末尾时请求追加（避免每次滑动都把整本书灌进 DOM）；
+    // native 侧在窗口已到书末时会忽略。
+    if (mode === 'vertical') {
+      // 纵向模式不走分页落点逻辑，但手势状态必须清零：残留的 dragDistance 会让
+      // click 守卫（滑动后抑制点按）吞掉后续所有 tap，菜单栏就关不掉了。
+      touchIntent = 0;
+      dragDistance = 0;
+      if (restoring) return;
+      var remaining = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight;
+      var nowReq = Date.now();
+      if (remaining < scroll.clientHeight * 1.5 && nowReq - lastNeedMoreAt > 500) {
+        lastNeedMoreAt = nowReq;
+        if (window['$BRIDGE_NAME'] && window['$BRIDGE_NAME'].onNeedMore) {
+          window['$BRIDGE_NAME'].onNeedMore();
+        }
+      }
+      return;
+    }
     watchGestureClamp();
     var intent = touchIntent;
     touchIntent = 0;
@@ -2597,6 +2671,7 @@ private val HTML_TAIL = """
     var w = viewportWidth();
     var startPage = gesturePage >= 0 ? gesturePage : Math.round(touchStartLeft / w);
     setTimeout(function () {
+      if (trimming) return;
       var left = scroll.scrollLeft;
       // Only step in when the native snap fell back to the starting page: a real drag already
       // moved far enough and must be left alone.
@@ -2630,6 +2705,10 @@ private val HTML_TAIL = """
     if (anchor) { e.preventDefault(); }
     // A swipe that ends over the left/right tap zone must not also turn the page.
     if (dragDistance > 24) return;
+    // 滑动（发生过 touchmove）后的短时间内 click 会叠在惯性上再翻页，抑制；
+    // 纯 tap 没有 touchmove，绝不能抑制——否则 tap 自己的 click（紧跟 touchend，
+    // 恒小于该窗口）会被吞掉，chrome 永远切不动。
+    if (hadTouchMove && performance.now() - lastTouchEndAt < 400) return;
     var x = e.clientX || 0;
     var w = window.innerWidth || 1;
     try {
@@ -2657,15 +2736,18 @@ private val HTML_TAIL = """
     if (!html) return;
     var paged = mode === 'paged';
     var oldSize = paged ? scroll.scrollWidth : scroll.scrollHeight;
-    var anchor = paged ? scroll.scrollLeft : scroll.scrollTop;
     book.insertAdjacentHTML('afterbegin', html);
     // 保持当前阅读位置：前插的内容（尤其内联插图）会同步/异步地增加文档尺寸，按增量补偿滚动偏移。
+    // 用"当前滚动位置 + 增量"而不是固定锚点：锚点写法会把插入期间用户的惯性位移抹掉，
+    // 与二次补偿叠加时表现为进度条/页面瞬移。增量以 compensatedSize 为基线，天然幂等。
+    var compensatedSize = oldSize;
     function compensate() {
       var size = paged ? scroll.scrollWidth : scroll.scrollHeight;
-      var added = size - oldSize;
+      var added = size - compensatedSize;
       if (added > 0) {
-        if (paged) scroll.scrollLeft = anchor + added;
-        else scroll.scrollTop = anchor + added;
+        compensatedSize = size;
+        if (paged) scroll.scrollLeft += added;
+        else scroll.scrollTop += added;
       }
       // Late image loads change the page count: keep the snap targets in sync with the new DOM.
       refreshSnapPoints();

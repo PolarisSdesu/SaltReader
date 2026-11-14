@@ -1,6 +1,7 @@
 package moe.gbxin.saltreader.ui.reader
 
 import android.os.Bundle
+import android.view.ActionMode
 import android.view.KeyEvent
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -80,6 +81,15 @@ class ReaderActivity : LocalizedActivity() {
             }
         }
         return super.onKeyDown(keyCode, event)
+    }
+
+    /**
+     * WebView 选择菜单里的"全选"会选中整个文档，对阅读器没有意义；原生阅读器已用自己的
+     * "全选段落"替代。这里直接移除系统菜单中的全选项，保留复制/分享/朗读等系统项。
+     */
+    override fun onActionModeStarted(mode: ActionMode) {
+        mode.menu?.removeItem(android.R.id.selectAll)
+        super.onActionModeStarted(mode)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
