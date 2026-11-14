@@ -600,6 +600,11 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
     let mut table_cell: Option<String> = None;
     let mut table_caption = String::new();
     let mut in_caption = false;
+    let mut table_cell_span: (usize, usize) = (1, 1);
+    let mut table_rowspans: Vec<(usize, usize)> = Vec::new();
+    let mut table_active_rowspans: Vec<usize> = Vec::new();
+    // <ruby> 基字/读音收集：(base, reading, in_rt)
+    let mut ruby: Option<(String, String, bool)> = None;
     // <ol> 序号栈；<hr> 直接用分隔行近似 WebView 的水平线。
     let mut ol_stack: Vec<u32> = Vec::new();
 
@@ -651,14 +656,35 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                 }
                 continue;
             }
-            // <rp> 是给不支持 ruby 的浏览器看的回退括号，直接跳过；
-            // <rt> 是注音，原生端暂不支持逐字注音排版，回退为「基字（读音）」。
+            // <rp> 是给不支持 ruby 的浏览器看的回退括号，直接跳过。
             if !closing && tag == "rp" {
                 skip_until = Some("rp".to_string());
                 continue;
             }
+            if tag == "ruby" {
+                if closing {
+                    if let Some((base, reading, _)) = ruby.take() {
+                        let base = base.trim();
+                        let reading = reading.trim();
+                        if !base.is_empty() {
+                            text.push('\u{E014}');
+                            text.push_str(base);
+                            if !reading.is_empty() {
+                                text.push('\u{E015}');
+                                text.push_str(reading);
+                            }
+                            text.push('\u{E016}');
+                        }
+                    }
+                } else {
+                    ruby = Some((String::new(), String::new(), false));
+                }
+                continue;
+            }
             if tag == "rt" {
-                text.push(if closing { '）' } else { '（' });
+                if let Some((_, _, in_rt)) = ruby.as_mut() {
+                    *in_rt = !closing;
+                }
                 continue;
             }
             if !closing && (tag == "script" || tag == "head") {
@@ -733,16 +759,55 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
 
             if in_table {
                 match (closing, tag.as_str()) {
-                    (false, "tr") => table_row.clear(),
+                    (false, "tr") => {
+                        table_row.clear();
+                        table_active_rowspans.clear();
+                        for (col, remaining) in table_rowspans.iter_mut() {
+                            if *remaining > 0 {
+                                table_active_rowspans.push(*col);
+                                *remaining -= 1;
+                            }
+                        }
+                        table_rowspans.retain(|(_, remaining)| *remaining > 0);
+                    }
                     (true, "tr") => {
                         if !table_row.is_empty() {
                             table_rows.push(std::mem::take(&mut table_row));
                         }
                     }
-                    (false, "td") | (false, "th") => table_cell = Some(String::new()),
+                    (false, "td") | (false, "th") => {
+                        table_cell = Some(String::new());
+                        table_cell_span = (
+                            attr_value(attributes, "colspan")
+                                .and_then(|value| value.parse::<usize>().ok())
+                                .unwrap_or(1)
+                                .clamp(1, 8),
+                            attr_value(attributes, "rowspan")
+                                .and_then(|value| value.parse::<usize>().ok())
+                                .unwrap_or(1)
+                                .clamp(1, 16),
+                        );
+                    }
                     (true, "td") | (true, "th") => {
                         if let Some(cell) = table_cell.take() {
+                            // 先占住上一行 rowspan 留下的列（空单元格），保持列对齐。
+                            while let Some(position) = table_active_rowspans
+                                .iter()
+                                .position(|col| *col == table_row.len())
+                            {
+                                table_active_rowspans.remove(position);
+                                table_row.push(String::new());
+                            }
+                            let start_column = table_row.len();
                             table_row.push(normalize_block_text(&cell, false));
+                            // colspan：其余列用空单元格占位，避免后续单元格左移。
+                            for _ in 1..table_cell_span.0 {
+                                table_row.push(String::new());
+                            }
+                            if table_cell_span.1 > 1 {
+                                table_rowspans.push((start_column, table_cell_span.1 - 1));
+                            }
+                            table_cell_span = (1, 1);
                         }
                     }
                     (false, "caption") => {
@@ -754,6 +819,9 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                         in_table = false;
                         table_cell = None;
                         in_caption = false;
+                        table_rowspans.clear();
+                        table_active_rowspans.clear();
+                        table_cell_span = (1, 1);
                         if !table_row.is_empty() {
                             table_rows.push(std::mem::take(&mut table_row));
                         }
@@ -803,6 +871,9 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                 table_rows.clear();
                 table_row.clear();
                 table_cell = None;
+                table_rowspans.clear();
+                table_active_rowspans.clear();
+                table_cell_span = (1, 1);
                 continue;
             }
 
@@ -983,6 +1054,14 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
         }
         // skip_until 之前只拦标签，文本节点仍会漏进来（<rp> 的回退括号、<script> 内容等）。
         if skip_until.is_some() {
+            continue;
+        }
+        if let Some((base, reading, in_rt)) = ruby.as_mut() {
+            if *in_rt {
+                reading.push_str(&decoded);
+            } else {
+                base.push_str(&decoded);
+            }
             continue;
         }
         if in_table {
@@ -1249,7 +1328,7 @@ impl WidthTable {
 
 fn char_width(ch: char, font_size: f32, scale: f32, advances: &WidthTable) -> f32 {
     // 行内样式标记（\u0006..\u000F）不占排版宽度。
-    if ('\u{E000}'..='\u{E013}').contains(&ch) {
+    if ('\u{E000}'..='\u{E016}').contains(&ch) {
         return 0.0;
     }
     if let Some(w) = advances.get(ch as u32) {
@@ -1267,7 +1346,7 @@ fn char_width(ch: char, font_size: f32, scale: f32, advances: &WidthTable) -> f3
 /// 等宽字体的近似字宽：代码块的排版宽度与绘制用的 monospace 字体一致，
 /// 否则用正文比例字体估算会偏窄，长代码行会被裁切而不是折行。
 fn mono_char_width(ch: char, size_px: f32, mono_adv_em: f32) -> f32 {
-    if ('\u{E000}'..='\u{E013}').contains(&ch) {
+    if ('\u{E000}'..='\u{E016}').contains(&ch) {
         return 0.0;
     }
     match UnicodeWidthChar::width(ch).unwrap_or(1) {
@@ -1724,6 +1803,80 @@ fn layout_blocks(
                 index = cursor;
                 continue;
             }
+            if grapheme == "\u{E014}" {
+                // ruby token：E014 + 基字 + (E015 + 读音)? + E016，整体不可断开。
+                let mut token = String::from("\u{E014}");
+                let mut base = String::new();
+                let mut reading = String::new();
+                let mut in_reading = false;
+                let mut cursor = index + 1;
+                while cursor < graphemes.len() {
+                    let part = graphemes[cursor].1;
+                    token.push_str(part);
+                    cursor += 1;
+                    if part == "\u{E016}" {
+                        break;
+                    }
+                    if part == "\u{E015}" {
+                        in_reading = true;
+                    } else if in_reading {
+                        reading.push_str(part);
+                    } else {
+                        base.push_str(part);
+                    }
+                }
+                let base_width: f32 = base
+                    .chars()
+                    .map(|ch| {
+                        if style.mono {
+                            mono_char_width(ch, size_px, mono_adv_em)
+                        } else {
+                            char_width(ch, size_px, style.size, advances)
+                        }
+                    })
+                    .sum();
+                let reading_width: f32 = reading
+                    .chars()
+                    .map(|ch| {
+                        if style.mono {
+                            mono_char_width(ch, size_px * 0.5, mono_adv_em)
+                        } else {
+                            char_width(ch, size_px, style.size * 0.5, advances)
+                        }
+                    })
+                    .sum();
+                let ruby_width = base_width.max(reading_width) + size_px * 0.05;
+                let indent_px = if first_line { start_indent * size_px } else { 0.0 };
+                if has_content && line_width + ruby_width > content_width - indent_px {
+                    push_line(
+                        &mut pages,
+                        &mut page_lines,
+                        &mut y,
+                        &mut line,
+                        &mut line_width,
+                        style,
+                        line_height,
+                        line_height_factor,
+                        content_width,
+                        start_indent,
+                        bullet_prefix,
+                        first_line,
+                        height,
+                        false,
+                        if first_line { line_gap_em } else { 0.0 },
+                        block.preserve,
+                        block.preserve || block.keep_blank_lines,
+                    );
+                    first_line = false;
+                    start_indent = 0.0;
+                    has_content = false;
+                }
+                line.push_str(&token);
+                line_width += ruby_width;
+                has_content = true;
+                index = cursor;
+                continue;
+            }
             if grapheme == "\n" {
                 push_line(
                     &mut pages,
@@ -1756,7 +1909,7 @@ fn layout_blocks(
             }
             // 记录行内样式标记，供折行后重新开启；\u000E 之后的字符按 0.92em 等宽估算。
             if let Some(ch) = grapheme.chars().next() {
-                if grapheme.len() == ch.len_utf8() && ('\u{E000}'..='\u{E013}').contains(&ch) {
+                if grapheme.len() == ch.len_utf8() && ('\u{E000}'..='\u{E016}').contains(&ch) {
                     markers.observe(ch);
                 }
             }
@@ -2280,7 +2433,7 @@ mod gap_tests {
         let plain = |html: &str| -> String {
             norm(html)
                 .chars()
-                .filter(|ch| !('\u{E000}'..='\u{E013}').contains(ch))
+                .filter(|ch| !('\u{E000}'..='\u{E016}').contains(ch))
                 .collect::<String>()
                 .replace(' ', "")
         };
@@ -2572,7 +2725,23 @@ mod html5_structure_tests {
         let parsed = blocks("<p><q>引用</q><ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby></p>");
         let text = &parsed[0].text;
         assert!(text.contains("“引用”"), "text={text:?}");
-        assert!(text.contains("漢字（かんじ）"), "text={text:?}");
+        assert!(
+            text.contains("\u{E014}漢字\u{E015}かんじ\u{E016}"),
+            "ruby token missing: {text:?}",
+        );
+    }
+
+    #[test]
+    fn table_spans_preserve_column_alignment() {
+        let parsed = blocks(
+            "<table><tr><td colspan=\"2\">宽</td></tr>\
+<tr><td rowspan=\"2\">高</td><td>b</td></tr><tr><td>c</td></tr></table>",
+        );
+        let table = parsed.iter().find(|b| b.table.is_some()).expect("table");
+        let rows = table.table.as_ref().unwrap();
+        assert_eq!(rows[0], vec!["宽".to_string(), "".to_string()]);
+        assert_eq!(rows[1], vec!["高".to_string(), "b".to_string()]);
+        assert_eq!(rows[2], vec!["".to_string(), "c".to_string()]);
     }
 
     #[test]

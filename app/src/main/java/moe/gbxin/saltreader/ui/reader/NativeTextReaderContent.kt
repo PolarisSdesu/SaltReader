@@ -816,7 +816,29 @@ internal fun NativeTextReaderContent(
                 position = if (end < 0) line.text.length else end + 1
                 continue
             }
-            if (ch.code in 0xE000..0xE013 || ch.code == 0x0014) {
+            // ruby token：复制时输出「基字(读音)」，与回退方案的可读形式一致。
+            if (ch == '\uE014') {
+                val end = line.text.indexOf('\uE016', position)
+                if (end < 0) {
+                    position = line.text.length
+                    continue
+                }
+                val mid = line.text.indexOf('\uE015', position + 1)
+                val base: String
+                val reading: String
+                if (mid in (position + 1) until end) {
+                    base = line.text.substring(position + 1, mid)
+                    reading = line.text.substring(mid + 1, end)
+                } else {
+                    base = line.text.substring(position + 1, end)
+                    reading = ""
+                }
+                builder.append(base)
+                if (reading.isNotEmpty()) builder.append('(').append(reading).append(')')
+                position = end + 1
+                continue
+            }
+            if (ch.code in 0xE000..0xE016 || ch.code == 0x0014) {
                 position += 1
                 continue
             }
@@ -1073,7 +1095,7 @@ internal fun NativeTextReaderContent(
                                         strokeWidth = 1.dp.toPx(),
                                     )
                                     yTop += lineBox
-                                } else if (line.text.any { it == '\u0004' || it in '\uE000'..'\uE013' }) {
+                                } else if (line.text.any { it == '\u0004' || it in '\uE000'..'\uE016' }) {
                                 // 行内 run：样式标记（粗/斜/下划线/删除线/等宽）+ 行内小图。
                                 paint.textAlign = Paint.Align.LEFT
                                 val richIndent = line.leftIndentEm * fontSizePx
@@ -1113,6 +1135,35 @@ internal fun NativeTextReaderContent(
                                                 }
                                                 previousChar = null
                                                 tokenIndex = tokenEnd + 1
+                                            }
+
+                                            tokenChar == '\uE014' -> {
+                                                val end = line.text.indexOf('\uE016', tokenIndex)
+                                                if (end < 0) {
+                                                    tokenIndex = line.text.length
+                                                    continue
+                                                }
+                                                val mid = line.text.indexOf('\uE015', tokenIndex + 1)
+                                                val base = if (mid in (tokenIndex + 1) until end) {
+                                                    line.text.substring(tokenIndex + 1, mid)
+                                                } else {
+                                                    line.text.substring(tokenIndex + 1, end)
+                                                }
+                                                val reading = if (mid in (tokenIndex + 1) until end) {
+                                                    line.text.substring(mid + 1, end)
+                                                } else {
+                                                    ""
+                                                }
+                                                val measurePaint = richPaintFor(
+                                                    line, measureBold, measureItalic, measureUnderline,
+                                                    measureStrike, measureMono,
+                                                )
+                                                val baseWidth = measurePaint.measureText(base)
+                                                val readingWidth = measurePaint.measureText(reading) * 0.5f
+                                                widthSum += maxOf(baseWidth, readingWidth) +
+                                                    fontSizePx * line.sizeRatio * 0.05f
+                                                if (base.isNotEmpty()) previousChar = base.last()
+                                                tokenIndex = end + 1
                                             }
 
                                             tokenChar == '\uE000' -> { measureBold = true; tokenIndex += 1 }
@@ -1266,6 +1317,49 @@ internal fun NativeTextReaderContent(
                                 while (richIndex < richText.length) {
                                     val ch = richText[richIndex]
                                     when (ch) {
+                                        '\uE014' -> {
+                                            flushText()
+                                            val end = richText.indexOf('\uE016', richIndex)
+                                            if (end < 0) {
+                                                richIndex = richText.length
+                                                continue
+                                            }
+                                            val mid = richText.indexOf('\uE015', richIndex + 1)
+                                            val base = if (mid in (richIndex + 1) until end) {
+                                                richText.substring(richIndex + 1, mid)
+                                            } else {
+                                                richText.substring(richIndex + 1, end)
+                                            }
+                                            val reading = if (mid in (richIndex + 1) until end) {
+                                                richText.substring(mid + 1, end)
+                                            } else {
+                                                ""
+                                            }
+                                            val basePaint = richPaintFor(
+                                                line, richBold, richItalic, richUnderline,
+                                                richStrike, richMono,
+                                            )
+                                            val readingPaint = Paint(basePaint).apply {
+                                                textSize = basePaint.textSize * 0.5f
+                                            }
+                                            val baseWidth = basePaint.measureText(base)
+                                            val readingWidth = readingPaint.measureText(reading)
+                                            val rubyWidth = maxOf(baseWidth, readingWidth)
+                                            canvas.nativeCanvas.drawText(base, cursorX, baseline, basePaint)
+                                            if (reading.isNotEmpty()) {
+                                                // 注音居中画在基字上方，与 ruby-position: over 接近。
+                                                val readingX = cursorX + (rubyWidth - readingWidth) / 2f
+                                                canvas.nativeCanvas.drawText(
+                                                    reading,
+                                                    readingX,
+                                                    baseline - basePaint.textSize * 0.62f,
+                                                    readingPaint,
+                                                )
+                                            }
+                                            cursorX += rubyWidth
+                                            lastRenderedChar = base.lastOrNull()
+                                            richIndex = end + 1
+                                        }
                                         '\uE000' -> { flushText(); richBold = true; richIndex++ }
                                         '\uE001' -> { flushText(); richBold = false; richIndex++ }
                                         '\uE002' -> { flushText(); richItalic = true; richIndex++ }
@@ -2003,7 +2097,7 @@ internal fun NativeTextReaderContent(
 
 /** 行内字符是否完全不可见（样式标记、控制符、格式符、零宽字符、空白）。 */
 private fun isInvisibleNativeChar(ch: Char): Boolean {
-    if (ch.code in 0xE000..0xE013 || ch.code == 0x0014) return true
+    if (ch.code in 0xE000..0xE016 || ch.code == 0x0014) return true
     if (ch.code < 0x20 || ch.code == 0x7F) return true
     if (ch.isWhitespace() || Character.isSpaceChar(ch)) return true
     if (ch == '\uFEFF' || ch in '\u200B'..'\u200F' || ch in '\u2060'..'\u2064') return true
