@@ -59,10 +59,11 @@ object ReadingLiveUpdate {
                 .setSmallIcon(R.drawable.ic_reading_live)
                 .setContentTitle(snapshot.title)
                 .setContentText(contentText)
-                .setSubText(context.getString(R.string.reader_live_update_progress, percent))
+                .setVisibility(Notification.VISIBILITY_PUBLIC)
+                .setProgress(100, percent, false)
                 .setStyle(
                     Notification.ProgressStyle()
-                        .setStyledByProgress(false)
+                        .setStyledByProgress(true)
                         .setProgress(percent),
                 )
                 .setShortCriticalText("$percent%")

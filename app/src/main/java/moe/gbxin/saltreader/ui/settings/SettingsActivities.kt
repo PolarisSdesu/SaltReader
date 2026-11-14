@@ -471,7 +471,12 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
     var showCustomBackground by remember { mutableStateOf(false) }
     val notificationPermission = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { }
+    ) { granted ->
+        // 用户拒绝通知权限时，开关不能停留在“已开启”但实际发不出通知的状态。
+        if (!granted) {
+            app.settings.update { it.copy(readerLiveUpdate = false) }
+        }
+    }
     SettingsScaffold(stringResource(R.string.settings_reader_title), onBack) { innerPadding ->
         Column(
             Modifier.fillMaxSize().padding(innerPadding).verticalScroll(rememberScrollState())
