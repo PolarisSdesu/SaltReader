@@ -275,13 +275,12 @@ internal fun NativeTextReaderContent(
     // 纵向模式图片始终全宽（不受开关影响），避免设置状态导致宽度不满。
     val imageFullWidthEffective = settings.readerImageFullWidth || settings.readerMode == ReaderMode.VERTICAL
 
-    // 与 WebView 的上下留白公式一致：
-    // - 分页模式：PAGE_PAD_TOP/BOTTOM = max(28, safe + 8)dp；
-    // - 纵向模式：`--reader-vertical-pad-top/bottom` = max(20, safe+8) / max(96, safe+8)dp。
+    // 与 WebView 的上下留白接近，但按实际观感略收紧：
+    // - 分页模式：WebView 是 28dp，Native 用 24dp；
+    // - 纵向模式：顶部 36dp、底部 92dp（WebView 实测约 40/96dp）。
     val verticalPads = settings.readerMode == ReaderMode.VERTICAL
-    // 实测 WebView 纵向模式的顶部留白为 40dp（其 SAFE_TOP 取值比本进程大），这里取同样的下限。
-    val pagePadTopDp = if (verticalPads) maxOf(40f, safeTopDp + 8f) else maxOf(28f, safeTopDp + 8f)
-    val pagePadBottomDp = if (verticalPads) maxOf(96f, safeBottomDp + 8f) else maxOf(28f, safeBottomDp + 8f)
+    val pagePadTopDp = if (verticalPads) maxOf(36f, safeTopDp + 8f) else maxOf(24f, safeTopDp + 8f)
+    val pagePadBottomDp = if (verticalPads) maxOf(92f, safeBottomDp + 8f) else maxOf(24f, safeBottomDp + 8f)
     val pageMarginLeftDp = maxOf(settings.readerPageMarginDp.toFloat(), safeLeftDp + 8f)
     val pageMarginRightDp = maxOf(settings.readerPageMarginDp.toFloat(), safeRightDp + 8f)
     val topPadPx = with(density) { pagePadTopDp.dp.toPx() }
