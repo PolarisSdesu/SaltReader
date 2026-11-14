@@ -497,6 +497,9 @@ fn inline_marker(tag: &str, closing: bool) -> Option<char> {
         "code" | "tt" | "kbd" | "samp" => ('\u{E008}', '\u{E009}'),
         "sup" => ('\u{E00A}', '\u{E00B}'),
         "sub" => ('\u{E00C}', '\u{E00D}'),
+        "small" => ('\u{E00E}', '\u{E00F}'),
+        "big" => ('\u{E010}', '\u{E011}'),
+        "mark" => ('\u{E012}', '\u{E013}'),
         _ => return None,
     };
     Some(if closing { pair.1 } else { pair.0 })
@@ -1246,7 +1249,7 @@ impl WidthTable {
 
 fn char_width(ch: char, font_size: f32, scale: f32, advances: &WidthTable) -> f32 {
     // 行内样式标记（\u0006..\u000F）不占排版宽度。
-    if ('\u{E000}'..='\u{E00D}').contains(&ch) {
+    if ('\u{E000}'..='\u{E013}').contains(&ch) {
         return 0.0;
     }
     if let Some(w) = advances.get(ch as u32) {
@@ -1264,7 +1267,7 @@ fn char_width(ch: char, font_size: f32, scale: f32, advances: &WidthTable) -> f3
 /// 等宽字体的近似字宽：代码块的排版宽度与绘制用的 monospace 字体一致，
 /// 否则用正文比例字体估算会偏窄，长代码行会被裁切而不是折行。
 fn mono_char_width(ch: char, size_px: f32, mono_adv_em: f32) -> f32 {
-    if ('\u{E000}'..='\u{E00D}').contains(&ch) {
+    if ('\u{E000}'..='\u{E013}').contains(&ch) {
         return 0.0;
     }
     match UnicodeWidthChar::width(ch).unwrap_or(1) {
@@ -1350,6 +1353,9 @@ struct MarkerState {
     mono: bool,
     sup: bool,
     sub: bool,
+    small: bool,
+    big: bool,
+    mark: bool,
 }
 
 impl MarkerState {
@@ -1375,6 +1381,12 @@ impl MarkerState {
                 self.sup = false;
             }
             '\u{E00D}' => self.sub = false,
+            '\u{E00E}' => self.small = true,
+            '\u{E00F}' => self.small = false,
+            '\u{E010}' => self.big = true,
+            '\u{E011}' => self.big = false,
+            '\u{E012}' => self.mark = true,
+            '\u{E013}' => self.mark = false,
             _ => {}
         }
     }
@@ -1401,6 +1413,15 @@ impl MarkerState {
             out.push('\u{E00A}');
         } else if self.sub {
             out.push('\u{E00C}');
+        }
+        if self.small {
+            out.push('\u{E00E}');
+        }
+        if self.big {
+            out.push('\u{E010}');
+        }
+        if self.mark {
+            out.push('\u{E012}');
         }
         out
     }
@@ -1735,7 +1756,7 @@ fn layout_blocks(
             }
             // 记录行内样式标记，供折行后重新开启；\u000E 之后的字符按 0.92em 等宽估算。
             if let Some(ch) = grapheme.chars().next() {
-                if grapheme.len() == ch.len_utf8() && ('\u{E000}'..='\u{E00D}').contains(&ch) {
+                if grapheme.len() == ch.len_utf8() && ('\u{E000}'..='\u{E013}').contains(&ch) {
                     markers.observe(ch);
                 }
             }
@@ -2259,7 +2280,7 @@ mod gap_tests {
         let plain = |html: &str| -> String {
             norm(html)
                 .chars()
-                .filter(|ch| !('\u{E000}'..='\u{E00D}').contains(ch))
+                .filter(|ch| !('\u{E000}'..='\u{E013}').contains(ch))
                 .collect::<String>()
                 .replace(' ', "")
         };
@@ -2564,9 +2585,15 @@ mod html5_structure_tests {
 
     #[test]
     fn inline_semantic_tags_emit_style_markers() {
-        let parsed = blocks("<p><del>a</del><ins>b</ins><kbd>c</kbd><var>d</var><wbr/>e</p>");
+        let parsed = blocks(
+            "<p><del>a</del><ins>b</ins><kbd>c</kbd><var>d</var><small>e</small><big>f</big>\
+<mark>g</mark><wbr/>h</p>",
+        );
         let text = &parsed[0].text;
-        for marker in ['\u{E006}', '\u{E004}', '\u{E008}', '\u{E002}', '\u{200B}'] {
+        for marker in [
+            '\u{E006}', '\u{E004}', '\u{E008}', '\u{E002}', '\u{E00E}', '\u{E010}', '\u{E012}',
+            '\u{200B}',
+        ] {
             assert!(text.contains(marker), "missing {:?} in {:?}", marker, text);
         }
     }

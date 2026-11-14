@@ -81,5 +81,6 @@
     现在 native 日志为 `images extracted=2`。
   - `q` 自动加弯引号；`ruby` 注音回退为「基字（读音）」；`<rp>` 回退括号与 `skip_until`
     文本泄漏一并修掉。
-  待办：`mark` 高亮（需要背景色协议）、`small` 字号、表格 colspan/rowspan；
-  forms/media 按设计不渲染交互控件。
+  - `small/big` 行内字号（0.85em/1.15em）与 `mark` 高亮背景已支持（新增
+    U+E00E..U+E013 标记，测量/绘制同步）。
+  待办：真正的逐字 ruby 注音排版、表格 colspan/rowspan；forms/media 按设计不渲染交互控件。

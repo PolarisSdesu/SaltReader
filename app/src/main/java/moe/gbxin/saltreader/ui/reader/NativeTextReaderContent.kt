@@ -816,7 +816,7 @@ internal fun NativeTextReaderContent(
                 position = if (end < 0) line.text.length else end + 1
                 continue
             }
-            if (ch.code in 0xE000..0xE00D || ch.code == 0x0014) {
+            if (ch.code in 0xE000..0xE013 || ch.code == 0x0014) {
                 position += 1
                 continue
             }
@@ -1073,7 +1073,7 @@ internal fun NativeTextReaderContent(
                                         strokeWidth = 1.dp.toPx(),
                                     )
                                     yTop += lineBox
-                                } else if (line.text.any { it == '\u0004' || it in '\uE000'..'\uE00D' }) {
+                                } else if (line.text.any { it == '\u0004' || it in '\uE000'..'\uE013' }) {
                                 // 行内 run：样式标记（粗/斜/下划线/删除线/等宽）+ 行内小图。
                                 paint.textAlign = Paint.Align.LEFT
                                 val richIndent = line.leftIndentEm * fontSizePx
@@ -1089,6 +1089,8 @@ internal fun NativeTextReaderContent(
                                     var measureStrike = false
                                     var measureSup = false
                                     var measureSub = false
+                                    var measureSmall = false
+                                    var measureBig = false
                                     var previousChar: Char? = null
                                     while (tokenIndex < line.text.length) {
                                         val tokenChar = line.text[tokenIndex]
@@ -1127,13 +1129,24 @@ internal fun NativeTextReaderContent(
                                             tokenChar == '\uE00B' -> { measureSup = false; tokenIndex += 1 }
                                             tokenChar == '\uE00C' -> { measureSub = true; measureSup = false; tokenIndex += 1 }
                                             tokenChar == '\uE00D' -> { measureSub = false; tokenIndex += 1 }
+                                            tokenChar == '\uE00E' -> { measureSmall = true; tokenIndex += 1 }
+                                            tokenChar == '\uE00F' -> { measureSmall = false; tokenIndex += 1 }
+                                            tokenChar == '\uE010' -> { measureBig = true; tokenIndex += 1 }
+                                            tokenChar == '\uE011' -> { measureBig = false; tokenIndex += 1 }
+                                            tokenChar == '\uE012' -> { tokenIndex += 1 }
+                                            tokenChar == '\uE013' -> { tokenIndex += 1 }
 
                                             else -> {
                                                 val measurePaint = richPaintFor(
                                                     line, measureBold, measureItalic, measureUnderline,
                                                     measureStrike, measureMono,
                                                 )
-                                                val scale = if (measureSup || measureSub) 0.72f else 1f
+                                                val scale = when {
+                                                    measureSup || measureSub -> 0.72f
+                                                    measureSmall -> 0.85f
+                                                    measureBig -> 1.15f
+                                                    else -> 1f
+                                                }
                                                 widthSum += measurePaint.measureText(tokenChar.toString()) * scale
                                                 // 与 Blink 一致：空格/CJK 两侧都可拉伸，行内代码
                                                 // 本身不拉伸，但它与中文之间的边界要计入。
@@ -1175,17 +1188,27 @@ internal fun NativeTextReaderContent(
                                 var richMono = line.mono
                                 var richSup = false
                                 var richSub = false
+                                var richSmall = false
+                                var richBig = false
+                                var richMark = false
                                 val buffer = StringBuilder()
                                 // 与宽度测量同一套边界判定：兼容粗体/斜体/上下标等行内 run，
                                 // 跨 run 的中文—英文边界也要补 justifyExtra，否则行末会对不齐。
                                 var lastRenderedChar: Char? = null
+                                val markPaint = Paint().apply { color = 0x66F2C94C }
                                 fun flushText() {
                                     if (buffer.isEmpty()) return
                                     val basePaint = richPaintFor(
                                         line, richBold, richItalic, richUnderline, richStrike, richMono,
                                     )
-                                    val paint = if (richSup || richSub) {
-                                        Paint(basePaint).apply { textSize = basePaint.textSize * 0.72f }
+                                    val sizeScale = when {
+                                        richSup || richSub -> 0.72f
+                                        richSmall -> 0.85f
+                                        richBig -> 1.15f
+                                        else -> 1f
+                                    }
+                                    val paint = if (sizeScale != 1f) {
+                                        Paint(basePaint).apply { textSize = basePaint.textSize * sizeScale }
                                     } else {
                                         basePaint
                                     }
@@ -1198,9 +1221,10 @@ internal fun NativeTextReaderContent(
                                     val runText = buffer.toString()
                                     // 逐字绘制并在可拉伸边界补 justifyExtra，和 WebView 的
                                     // justify 一致；行内代码内部没有 CJK，因此不会被拉开。
-                                    if (justifyExtra > 0f) {
+                                    if (justifyExtra > 0f || richMark) {
                                         // 逐字绘制并在可拉伸边界补间距；行内代码内部没有 CJK
                                         // 字符，因此不会被拉开，但它与中文的边界仍然参与对齐。
+                                        // <mark> 需要逐字背景，所以即使不拉伸也走这条路径。
                                         for (glyphIndex in buffer.indices) {
                                             val glyphChar = buffer[glyphIndex]
                                             if (TextJustification.isExpansionBoundary(
@@ -1209,10 +1233,21 @@ internal fun NativeTextReaderContent(
                                             ) {
                                                 cursorX += justifyExtra
                                             }
+                                            val glyphWidth = paint.measureText(glyphChar.toString())
+                                            if (richMark) {
+                                                val metrics = paint.fontMetrics
+                                                canvas.nativeCanvas.drawRect(
+                                                    cursorX,
+                                                    runBaseline + metrics.ascent,
+                                                    cursorX + glyphWidth,
+                                                    runBaseline + metrics.descent,
+                                                    markPaint,
+                                                )
+                                            }
                                             canvas.nativeCanvas.drawText(
                                                 glyphChar.toString(), cursorX, runBaseline, paint,
                                             )
-                                            cursorX += paint.measureText(glyphChar.toString())
+                                            cursorX += glyphWidth
                                             if (!TextJustification.isDefaultIgnorable(glyphChar.code)) {
                                                 lastRenderedChar = glyphChar
                                             }
@@ -1245,6 +1280,12 @@ internal fun NativeTextReaderContent(
                                         '\uE00B' -> { flushText(); richSup = false; richIndex++ }
                                         '\uE00C' -> { flushText(); richSub = true; richSup = false; richIndex++ }
                                         '\uE00D' -> { flushText(); richSub = false; richIndex++ }
+                                        '\uE00E' -> { flushText(); richSmall = true; richIndex++ }
+                                        '\uE00F' -> { flushText(); richSmall = false; richIndex++ }
+                                        '\uE010' -> { flushText(); richBig = true; richIndex++ }
+                                        '\uE011' -> { flushText(); richBig = false; richIndex++ }
+                                        '\uE012' -> { flushText(); richMark = true; richIndex++ }
+                                        '\uE013' -> { flushText(); richMark = false; richIndex++ }
                                         '\u0004' -> {
                                             flushText()
                                             val tokenEnd = richText.indexOf('\u0005', richIndex)
@@ -1962,7 +2003,7 @@ internal fun NativeTextReaderContent(
 
 /** 行内字符是否完全不可见（样式标记、控制符、格式符、零宽字符、空白）。 */
 private fun isInvisibleNativeChar(ch: Char): Boolean {
-    if (ch.code in 0xE000..0xE00D || ch.code == 0x0014) return true
+    if (ch.code in 0xE000..0xE013 || ch.code == 0x0014) return true
     if (ch.code < 0x20 || ch.code == 0x7F) return true
     if (ch.isWhitespace() || Character.isSpaceChar(ch)) return true
     if (ch == '\uFEFF' || ch in '\u200B'..'\u200F' || ch in '\u2060'..'\u2064') return true
