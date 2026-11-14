@@ -16,7 +16,7 @@ Most comic readers either copy your library into app-private storage or ask for 
 
 The reader is written with Jetpack Compose and Material 3 Expressive. Images are decoded on demand; text books are reflowed by the platform WebView, so font size, line spacing, page margins, paged/scroll layout, chapter navigation and progress work without converting anything to another format.
 
-An experimental native reader (a small Rust layout engine, `libtext_reader.so`) can be enabled in the reading settings; it draws pages with Compose Canvas and is tuned to match the WebView rendering.
+An experimental native reader (a small Rust layout engine, `libsaltreader_layout.so`) can be enabled in the reading settings; it draws pages with Compose Canvas and is tuned to match the WebView rendering.
 
 ## Features
 

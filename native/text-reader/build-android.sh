@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cross-compiles libtext_reader.so for Android (arm64-v8a + x86_64) and copies it into jniLibs.
+# Cross-compiles libsaltreader_layout.so for Android (arm64-v8a + x86_64) and copies it into jniLibs.
 # Requires: rustup targets aarch64-linux-android / x86_64-linux-android, Android NDK.
 set -euo pipefail
 cd "$(dirname "$0")"
@@ -32,6 +32,6 @@ export CARGO_TARGET_X86_64_LINUX_ANDROID_LINKER="$CC_x86_64_linux_android"
 cargo build --release --locked --target aarch64-linux-android --target x86_64-linux-android
 ROOT="$(cd ../.. && pwd)"
 mkdir -p "$ROOT/app/src/main/jniLibs/arm64-v8a" "$ROOT/app/src/main/jniLibs/x86_64"
-cp target/aarch64-linux-android/release/libtext_reader.so "$ROOT/app/src/main/jniLibs/arm64-v8a/"
-cp target/x86_64-linux-android/release/libtext_reader.so "$ROOT/app/src/main/jniLibs/x86_64/"
-echo "copied libtext_reader.so to app/src/main/jniLibs"
+cp target/aarch64-linux-android/release/libsaltreader_layout.so "$ROOT/app/src/main/jniLibs/arm64-v8a/"
+cp target/x86_64-linux-android/release/libsaltreader_layout.so "$ROOT/app/src/main/jniLibs/x86_64/"
+echo "copied libsaltreader_layout.so to app/src/main/jniLibs"

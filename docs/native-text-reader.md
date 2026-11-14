@@ -17,7 +17,7 @@ app/src/main/java/moe/gbxin/saltreader/ui/reader/NativeTextReaderContent.kt
   ├─ Rust 返回带样式前缀的行 → Compose Canvas 逐行 drawText
   └─ 顶栏/底栏/面板复用 ReaderChrome.kt 的原生 chrome
 
-app/src/main/jniLibs/{arm64-v8a,x86_64}/libtext_reader.so   (构建产物)
+app/src/main/jniLibs/{arm64-v8a,x86_64}/libsaltreader_layout.so   (构建产物)
 native/text-reader/                                         (Rust crate)
   ├─ 轻量 HTML 词法 + CSS 子集（font-size/text-align/text-indent/margin/
   │  font-weight/font-style/line-height/display）

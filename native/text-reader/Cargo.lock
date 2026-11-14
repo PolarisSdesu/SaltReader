@@ -105,6 +105,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "saltreader-layout"
+version = "0.1.0"
+dependencies = [
+ "jni",
+ "unicode-linebreak",
+ "unicode-segmentation",
+ "unicode-width",
+]
+
+[[package]]
 name = "same-file"
 version = "1.0.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -122,16 +132,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-ident",
-]
-
-[[package]]
-name = "text-reader"
-version = "0.1.0"
-dependencies = [
- "jni",
- "unicode-linebreak",
- "unicode-segmentation",
- "unicode-width",
 ]
 
 [[package]]

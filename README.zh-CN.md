@@ -16,7 +16,7 @@ Salt Reader 是一个自由、本地优先的 Android 漫画与电子书阅读�
 
 阅读器使用 Jetpack Compose 与 Material 3 Expressive 编写。图片按需解码；文字书交给系统 WebView 重排，因此字号、行距、页边距、分页/滚动、目录跳转和进度都不需要转换格式即可工作。
 
-阅读设置里还可以打开实验性的原生阅读器（Rust 排版引擎 `libtext_reader.so`），它用 Compose Canvas 逐页绘制，排版尽量与 WebView 渲染保持一致。
+阅读设置里还可以打开实验性的原生阅读器（Rust 排版引擎 `libsaltreader_layout.so`），它用 Compose Canvas 逐页绘制，排版尽量与 WebView 渲染保持一致。
 
 ## 功能
 

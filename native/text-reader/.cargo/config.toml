@@ -1,0 +1,6 @@
+# 链接期相同代码折叠：不改变运行时行为，只减小 .text（Android 使用 lld）。
+[target.aarch64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,--icf=all"]
+
+[target.x86_64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,--icf=all"]

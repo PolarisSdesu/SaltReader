@@ -1,7 +1,7 @@
 package moe.gbxin.saltreader.data
 
 /**
- * Rust 原生排版核心（`libtext_reader.so`，见 `native/text-reader`）。
+ * Rust 原生排版核心（`libsaltreader_layout.so`，见 `native/text-reader`）。
  *
  * 负责轻小说/文字书的断行与分页：Kotlin 传入纯文本、版心尺寸、字号/行高/缩进和
  * Paint 实测字宽表，Rust 返回 `页面1\u0000页面2…`（页面内行用 `\n` 分隔）。
@@ -9,7 +9,7 @@ package moe.gbxin.saltreader.data
  */
 object NativeTextLayout {
     /** 当前设备是否加载到了原生库；缺失时阅读器自动回退到 WebView。 */
-    val isAvailable: Boolean = runCatching { System.loadLibrary("text_reader") }.isSuccess
+    val isAvailable: Boolean = runCatching { System.loadLibrary("saltreader_layout") }.isSuccess
 
     /**
      * 解析章节 HTML（含内联 CSS 子集）并分页：返回 `页面1\u0000页面2…`，

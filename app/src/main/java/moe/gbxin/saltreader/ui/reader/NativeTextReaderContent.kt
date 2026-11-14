@@ -186,7 +186,7 @@ private data class NativePageSet(
 private val nativeParserToken = AtomicInteger(0)
 
 /**
- * 原生文字阅读器（实验性）：章节文本 → Rust(`libtext_reader.so`) 断行分页 → Compose Canvas
+ * 原生文字阅读器（实验性）：章节文本 → Rust(`libsaltreader_layout.so`) 断行分页 → Compose Canvas
  * 逐行 drawText。完全绕开 WebView 的 HTML/CSS/多栏布局。
  *
  * 顶栏/底栏复用 App 原生阅读器 chrome（目录/主题/字号/进度/设置），功能分步补齐：

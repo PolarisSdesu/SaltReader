@@ -8,7 +8,7 @@ data-layer contracts.
 
 - Kotlin + Jetpack Compose (Material 3 Expressive) Android app; no network. One optional NDK
   component: the experimental Rust text-layout engine in `native/text-reader` →
-  `libtext_reader.so` (see `docs/native-text-reader.md`); the default WebView reader does not need it.
+  `libsaltreader_layout.so` (see `docs/native-text-reader.md`); the default WebView reader does not need it.
 - Books are indexed **in place** through the Storage Access Framework (SAF). The app declares no
   storage or network permissions and never copies user files; app-private storage only holds
   derived data (covers, text/chapter caches, EPUB page-map caches).
@@ -29,7 +29,7 @@ app/src/main/java/moe/gbxin/saltreader/
   ui/components/ shared composables (covers, labels, color picker, TooltipIconButton)
   ui/theme/      Material 3 color/type
 app/src/main/java/org/rr/mobi4java/   vendored MOBI parser (Java, do not rewrite lightly)
-app/src/main/jniLibs/                 prebuilt libtext_reader.so (Rust native reader, arm64/x86_64)
+app/src/main/jniLibs/                 prebuilt libsaltreader_layout.so (Rust native reader, arm64/x86_64)
 native/text-reader/                   Rust crate + Android cross-compile script
 app/src/test/    pure-JVM unit tests (no Robolectric)
 docs/            architecture, i18n, versioning contracts
@@ -129,7 +129,7 @@ new build is actually published.
 the reference implementation** (`TextReaderContent.kt` CSS/JS). Compare against it before changing
 pagination; the behaviour is documented in `docs/native-text-reader.md`.
 
-- Rebuild `libtext_reader.so` with `native/text-reader/build-android.sh` and commit both ABIs
+- Rebuild `libsaltreader_layout.so` with `native/text-reader/build-android.sh` and commit both ABIs
   whenever the crate changes — the app loads the prebuilt `.so`; Gradle never compiles Rust.
 - `layout_blocks` starts every chapter on a new page, except when the previous page contains only
   images: WebView renders an illustration chapter together with the next chapter's heading and

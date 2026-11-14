@@ -1,4 +1,4 @@
-//! 轻小说文字排版核心（Rust → libtext_reader.so）。
+//! 轻小说文字排版核心（Rust → libsaltreader_layout.so）。
 //!
 //! 输入：章节 HTML（含书籍自带 CSS）、版心尺寸、字号/行高、Kotlin Paint 实测字宽表；
 //! 处理：轻量 HTML 词法 + CSS 子集（font-size / text-align / text-indent / margin /
@@ -2774,5 +2774,34 @@ mod html5_structure_tests {
             assert!(!block.style.bullet, "ol li must not render a bullet: {:?}", block.text);
             assert!(block.text.starts_with("1. ") || block.text.starts_with("2. "), "text={:?}", block.text);
         }
+    }
+}
+
+#[cfg(test)]
+mod perf_bench {
+    use super::*;
+    use std::time::Instant;
+
+    /// 手动基准：`cargo test --release bench_large_book -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn bench_large_book() {
+        let para = "回".repeat(100);
+        let chapter = format!(
+            "<h2>章节</h2>{}",
+            (0..30).map(|_| format!("<p>{para}</p>")).collect::<String>()
+        );
+        let html: String = (0..198).map(|_| chapter.clone()).collect();
+        let mut best = u128::MAX;
+        for _ in 0..5 {
+            let start = Instant::now();
+            let mut after = 1.0f32;
+            let blocks = parse_html_blocks(&html, &[], &mut after);
+            let advances: HashMap<u32, f32> = HashMap::new();
+            let pages = layout_blocks(&blocks, &[], 1000.0, 1600.0, 36.0, 1.8, &advances, &[], &[], 1000.0, 1.0, 0.6);
+            best = best.min(start.elapsed().as_millis());
+            std::hint::black_box(pages);
+        }
+        println!("BENCH parse+layout best={best}ms blocks_len={}", html.len());
     }
 }
