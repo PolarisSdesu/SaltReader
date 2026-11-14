@@ -51,3 +51,23 @@
   排查方向：`layout_blocks` 中图片块占用的高度与绘制高度是否一致（`image_box_height`、`image_aspects` 索引），
   以及图片之后是否被误触发分页（`y > height`）。另外 Native 分页数明显多于 WebView（345 vs 205），
   说明版面密度整体偏差，可一并排查。
+
+- [ ] **7. 纵向模式长按选择段落错位**
+  纵向滚动阅读时（LazyColumn 每个 item 是一页），长按选区高亮/复制会落在错误的段落或行。
+  进展：已定位为 `lineTops()` 与真实绘制不一致——图片行只按一行字高推进、表格每个单元格
+  都推进一行。现在 `lineTops` 复用与 `pageContentHeightPx()` 相同的推进逻辑，待真机长按复核。
+
+- [x] **8. native 调试虚线框与内容包裹错位**
+  虚线框原先自己用 `debugY += 一行字高` 估算，图片/表格/分页顶部偏移后整体漂移。
+  现已改为直接复用 `lineTops()` / 绘制结束时的 `yTop`，与真实内容一致。
+
+- [ ] **9. HTML5 标签预览与 native 优化**
+  已新增 `tools/make_html5_tags_epub.py`（生成 Html5-Tags.epub）并逐屏对照 WebView。
+  已修：
+  - 未知结构标签（address/nav/main/aside/header/footer/details/summary/form/fieldset/
+    legend/dialog）各自成块，不再继承上一个标题的字号/对齐；address 按 UA 样式斜体。
+  - figure/figcaption、dl/dt/dd 的默认样式；pre 制表符按 tab-size 8 展开。
+  - hr 输出为规则行，Kotlin 画 1px 分隔线；修复 `<hr/>`/`<br/>` 自闭合标签解析。
+  - 有序列表不再同时出现「• 1.」；ol 的 li 关闭 bullet。
+  待办：table caption、blockquote 左侧竖线、mark/ins/var/time 等行内语义；该测试书在
+  native 路径 `images extracted=0`（图片被 `stripHeavyPayloads` 清掉），需单独排查。

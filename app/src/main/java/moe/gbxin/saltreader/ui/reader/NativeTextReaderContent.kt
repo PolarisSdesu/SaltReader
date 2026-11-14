@@ -726,19 +726,49 @@ internal fun NativeTextReaderContent(
     }
 
     /** 当前页每行的顶部/高度，用于长按命中测试。 */
+    /** 整页只有一张图片：按页面满宽显示（不受“图片全宽显示”开关影响）。 */
+    fun isImageOnlyPage(page: List<NativeLine>): Boolean =
+        page.count { it.imageId >= 0 } == 1 &&
+            page.none { it.imageId < 0 && (it.tableCols > 0 || it.text.isNotBlank()) }
+
     fun lineTops(page: List<NativeLine>): List<Float> {
+        // 长按选区的 y → 行号换算必须与实际绘制完全一致，否则图片/表格之后的段落会错位。
         // 纵向模式的页绘制在 LazyColumn item 内，坐标从 0 开始；分页模式从版心顶部开始。
-        val start = if (settings.readerMode == ReaderMode.VERTICAL) {
-            0f
-        } else {
-            pageSet?.topPadPx ?: topPadPx
-        }
+        val vertical = settings.readerMode == ReaderMode.VERTICAL
+        val geometry = pageSet
+        val contentWidth = geometry?.contentWidthPx ?: (pageArea.width - leftPadPx - rightPadPx).coerceAtLeast(1f)
+        val contentHeight = geometry?.contentHeightPx ?: (pageArea.height - topPadPx - bottomPadPx).coerceAtLeast(1f)
+        val leftPad = geometry?.contentLeftPx ?: leftPadPx
+        val fullWidth = (leftPad * 2f + contentWidth).coerceAtLeast(contentWidth)
+        val imageHeightRatio = if (vertical) 10f else 0.92f
+        val start = if (vertical) 0f else (geometry?.topPadPx ?: topPadPx)
+        val imageOnly = isImageOnlyPage(page)
         val result = ArrayList<Float>(page.size)
         var y = start
         for (line in page) {
-            if (line.gapEm > 0f) y += line.gapEm * fontSizePx
+            y += line.gapEm * fontSizePx
             result.add(y)
-            y += fontSizePx * line.lineHeightRatio * line.sizeRatio
+            val lineBox = fontSizePx * line.lineHeightRatio * line.sizeRatio
+            when {
+                line.imageId >= 0 -> {
+                    // 与绘制端一致：按实际图片高度推进，而不是一行字高。
+                    val aspect = (geometry?.imageAspects?.getOrNull(line.imageId) ?: 1.5f)
+                        .coerceAtLeast(0.05f)
+                    if (imageOnly || (vertical && imageFullWidthEffective)) {
+                        y += minOf(pageArea.width.toFloat() / aspect, contentHeight * imageHeightRatio)
+                    } else {
+                        val base = if (imageFullWidthEffective) fullWidth else contentWidth
+                        y += minOf(base / aspect, contentHeight * imageHeightRatio)
+                    }
+                }
+
+                line.tableCols > 0 -> {
+                    // 同一视觉行的多个单元格只推进一次（最后一列代表该行结束）。
+                    if (line.tableCol == line.tableCols - 1) y += lineBox
+                }
+
+                else -> y += lineBox
+            }
         }
         return result
     }
@@ -750,8 +780,8 @@ internal fun NativeTextReaderContent(
         if (index < 0) index = 0
         index = index.coerceAtMost(page.size - 1)
         val isBlock = { line: NativeLine ->
-            line.imageId >= 0 || line.tableCols > 0 || line.align == 1 || line.mono ||
-                line.sizeRatio > 1.02f
+            line.imageId >= 0 || line.tableCols > 0 || line.text == "\u0014" ||
+                line.align == 1 || line.mono || line.sizeRatio > 1.02f
         }
         var startLine = index
         var endLine = index
@@ -786,7 +816,7 @@ internal fun NativeTextReaderContent(
                 position = if (end < 0) line.text.length else end + 1
                 continue
             }
-            if (ch.code in 0x0006..0x0013) {
+            if (ch.code in 0x0006..0x0014) {
                 position += 1
                 continue
             }
@@ -880,11 +910,6 @@ internal fun NativeTextReaderContent(
      * 一页实际内容高度：与绘制端的 y 推进完全一致（行高 + 段前距 + 图片实际高度 + 表格行），
      * 纵向模式按它堆叠页面，避免页尾留白，也避免图片页高度不足导致下一页文字重叠。
      */
-    /** 整页只有一张图片：按页面满宽显示（不受“图片全宽显示”开关影响）。 */
-    fun isImageOnlyPage(page: List<NativeLine>): Boolean =
-        page.count { it.imageId >= 0 } == 1 &&
-            page.none { it.imageId < 0 && (it.tableCols > 0 || it.text.isNotBlank()) }
-
     fun pageContentHeightPx(page: List<NativeLine>): Float {
         val geometry = pageSet
         val contentWidth = geometry?.contentWidthPx ?: (pageArea.width - leftPadPx - rightPadPx).coerceAtLeast(1f)
@@ -1029,7 +1054,17 @@ internal fun NativeTextReaderContent(
                                 }
                                 val baseline = yTop + (lineBox - (fontMetrics.descent - fontMetrics.ascent)) / 2f -
                                     fontMetrics.ascent
-                                if (line.text.any { it == '\u0004' || it in '\u0006'..'\u0013' }) {
+                                if (line.text == "\u0014") {
+                                    // Rust 用 \u0014 表示 <hr>：画一条与版心同宽的分隔线。
+                                    val ruleY = yTop + lineBox / 2f
+                                    drawLine(
+                                        color = readerTextColor.copy(alpha = 0.35f),
+                                        start = Offset(contentLeft, ruleY),
+                                        end = Offset(contentLeft + contentWidth, ruleY),
+                                        strokeWidth = 1.dp.toPx(),
+                                    )
+                                    yTop += lineBox
+                                } else if (line.text.any { it == '\u0004' || it in '\u0006'..'\u0013' }) {
                                 // 行内 run：样式标记（粗/斜/下划线/删除线/等宽）+ 行内小图。
                                 paint.textAlign = Paint.Align.LEFT
                                 val richIndent = line.leftIndentEm * fontSizePx
@@ -1410,65 +1445,34 @@ internal fun NativeTextReaderContent(
                                     color = 0x73009688.toInt()
                                     pathEffect = DashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()), 0f)
                                 }
-                                var debugY = 0f
-                                var blockTop = 0f
-                                var blockOpen = false
+                                // 直接复用绘制端的 lineTops：图片/表格/段间距的推进与真实内容完全一致，
+                                // 否则虚线框会从第一个图片或表格之后开始整体偏移。
+                                val debugTops = lineTops(pageLines)
+                                var blockTop = debugTops.firstOrNull() ?: yTop
                                 pageLines.forEachIndexed { blockIndex, blockLine ->
-                                    val gap = blockLine.gapEm * fontSizePx
-                                    val startsBlock = blockIndex == 0 || gap > 0f ||
-                                        (blockLine.tableCols > 0 && blockLine.tableCol == 0)
-                                    if (startsBlock && blockOpen) {
+                                    val startsBlock = blockIndex > 0 && (
+                                        blockLine.gapEm > 0f ||
+                                            (blockLine.tableCols > 0 && blockLine.tableCol == 0)
+                                        )
+                                    if (startsBlock) {
+                                        val top = debugTops.getOrNull(blockIndex) ?: yTop
+                                        val bottom = top - blockLine.gapEm * fontSizePx
                                         drawIntoCanvas {
                                             it.nativeCanvas.drawRect(
                                                 contentLeft, blockTop,
-                                                contentLeft + contentWidth, debugY,
+                                                contentLeft + contentWidth, bottom,
                                                 dashPaint,
                                             )
                                         }
-                                        blockOpen = false
+                                        blockTop = top
                                     }
-                                    debugY += gap
-                                    if (!blockOpen) {
-                                        blockTop = debugY
-                                        blockOpen = true
-                                    }
-                                    val advance = when {
-                                        blockLine.imageId >= 0 -> {
-                                            val aspect = (pageSet?.imageAspects?.getOrNull(blockLine.imageId) ?: 1.5f)
-                                                .coerceAtLeast(0.05f)
-                                            if (settings.readerMode == ReaderMode.VERTICAL && imageFullWidthEffective) {
-                                                size.width / aspect
-                                            } else {
-                                                minOf(
-                                                    (if (imageFullWidthEffective) {
-                                                        (leftPadPx + contentWidth + rightPadPx)
-                                                    } else {
-                                                        contentWidth
-                                                    }) / aspect,
-                                                    geometryHeight * 0.92f,
-                                                )
-                                            }
-                                        }
-
-                                        blockLine.tableCols > 0 ->
-                                            if (blockLine.tableCol == blockLine.tableCols - 1) {
-                                                fontSizePx * blockLine.lineHeightRatio * blockLine.sizeRatio
-                                            } else {
-                                                0f
-                                            }
-
-                                        else -> fontSizePx * blockLine.lineHeightRatio * blockLine.sizeRatio
-                                    }
-                                    debugY += advance
                                 }
-                                if (blockOpen) {
-                                    drawIntoCanvas {
-                                        it.nativeCanvas.drawRect(
-                                            contentLeft, blockTop,
-                                            contentLeft + contentWidth, debugY,
-                                            dashPaint,
-                                        )
-                                    }
+                                drawIntoCanvas {
+                                    it.nativeCanvas.drawRect(
+                                        contentLeft, blockTop,
+                                        contentLeft + contentWidth, yTop,
+                                        dashPaint,
+                                    )
                                 }
                             }
                             if (settings.debugMode && topInset == 0f && offsetX == 0f) {

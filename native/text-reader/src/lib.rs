@@ -305,6 +305,60 @@ fn default_style_for_tag(tag: &str) -> Option<Style> {
             style.space_before = 0.6;
             style.space_after = 0.6;
         }
+        // 结构性容器：WebView 的 UA 样式没有首行缩进。
+        "main" | "nav" | "aside" | "header" | "footer" => {
+            style.first_indent = 0.0;
+            style.space_after = 0.2;
+        }
+        "address" => {
+            style.italic = true;
+            style.first_indent = 0.0;
+            style.space_before = 0.6;
+            style.space_after = 0.6;
+        }
+        "details" | "form" | "fieldset" | "dialog" => {
+            style.first_indent = 0.0;
+            style.space_before = 0.5;
+            style.space_after = 0.5;
+        }
+        "summary" => {
+            style.bold = true;
+            style.first_indent = 0.0;
+            style.space_after = 0.4;
+        }
+        "legend" => {
+            style.bold = true;
+            style.first_indent = 0.0;
+            style.space_before = 0.4;
+            style.space_after = 0.2;
+        }
+        "figure" => {
+            style.align = 1;
+            style.first_indent = 0.0;
+            style.space_before = 0.8;
+            style.space_after = 0.4;
+        }
+        "figcaption" => {
+            style.align = 1;
+            style.size = 0.85;
+            style.first_indent = 0.0;
+            style.space_after = 0.8;
+        }
+        "dl" => {
+            style.first_indent = 0.0;
+            style.space_after = 0.2;
+        }
+        "dt" => {
+            style.bold = true;
+            style.first_indent = 0.0;
+            style.space_before = 0.3;
+            style.space_after = 0.1;
+        }
+        "dd" => {
+            style.left_indent = 2.0;
+            style.first_indent = 0.0;
+            style.space_after = 0.3;
+        }
         "li" => {
             style.left_indent = 1.5;
             style.first_indent = 0.0;
@@ -455,6 +509,8 @@ fn is_block_tag(tag: &str) -> bool {
         tag,
         "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "blockquote" | "li" | "pre" | "div"
             | "section" | "article" | "header" | "footer" | "aside" | "figure" | "figcaption"
+            | "main" | "nav" | "address" | "details" | "summary" | "form" | "fieldset" | "legend"
+            | "dialog"
             | "ul" | "ol" | "dl" | "dt" | "dd" | "table" | "tbody" | "thead" | "tr" | "td" | "th"
             | "br" | "hr" | "body" | "html"
     )
@@ -478,7 +534,8 @@ struct InlineState {
 
 fn normalize_block_text(text: &str, preserve: bool) -> String {
     if preserve {
-        return text.trim_matches('\n').to_string();
+        // WebView 默认 tab-size: 8；Canvas 不能直接画制表符，先展开成空格。
+        return text.trim_matches('\n').replace('\t', "        ");
     }
     let mut out = String::with_capacity(text.len());
     let mut last_space = false;
@@ -570,7 +627,8 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                 continue;
             }
             let mut parts = body.splitn(2, char::is_whitespace);
-            let tag = parts.next().unwrap_or("").to_lowercase();
+            // XHTML 常见的自闭合写法 <hr/> / <br/>：标签名后可能直接跟 '/'。
+            let tag = parts.next().unwrap_or("").trim_end_matches('/').to_lowercase();
             if let Some(waiting) = &skip_until {
                 if tag == *waiting {
                     skip_until = None;
@@ -633,13 +691,15 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
 
             if !closing && tag == "hr" {
                 flush_block(&mut blocks, &mut text, current_style, preserve, base_after);
+                // 私有标记行：Kotlin 绘制端识别后画一条与版心同宽的 1px 分隔线。
                 let mut separator = current_style;
-                separator.align = 1;
+                separator.align = 0;
+                separator.left_indent = 0.0;
                 separator.first_indent = 0.0;
-                separator.space_before = 0.6;
-                separator.space_after = 0.6;
+                separator.space_before = 0.8;
+                separator.space_after = 0.8;
                 blocks.push(Block {
-                    text: "———".to_string(),
+                    text: "\u{0014}".to_string(),
                     style: separator,
                     table: None,
                     image: None,
@@ -770,10 +830,6 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                     text.push('\n');
                     continue;
                 }
-                "hr" => {
-                    flush_block(&mut blocks, &mut text, current_style, preserve, base_after);
-                    continue;
-                }
                 "img" => {
                     let classes = attr_value(attributes, "class").unwrap_or_default();
                     let inline_style = attr_value(attributes, "style").unwrap_or_default();
@@ -829,6 +885,10 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                 tag_stack.push(tag.clone());
                 let class_attr = attr_value(attributes, "class");
                 let mut style = default_style_for_tag(&tag).unwrap_or_default();
+                // <ol> 的 li 已经写入 "1. " 前缀，不能再叠加 "•"。
+                if tag == "li" && !ol_stack.is_empty() {
+                    style.bullet = false;
+                }
                 current_style = style;
                 apply_stack_css(&mut current_style, &tag_stack, css_rules, &tag_rules);
                 if let Some(classes) = &class_attr {
@@ -1059,8 +1119,8 @@ fn flush_block(blocks: &mut Vec<Block>, text: &mut String, style: Style, preserv
         return;
     }
     let stored = if preserve {
-        // <pre>: 保留首行缩进、空行与连续空格。
-        normalized.to_string()
+        // <pre>: 保留首行缩进、空行与连续空格；制表符按 WebView 的 tab-size: 8 展开。
+        normalized.replace('\t', "        ")
     } else {
         normalized.trim().to_string()
     };
@@ -2402,5 +2462,50 @@ mod heading_style_tests {
         assert!((heading.style.space_before - 0.35).abs() < 0.001, "space_before={}", heading.style.space_before);
         assert!((heading.style.space_after - 1.15).abs() < 0.001, "space_after={}", heading.style.space_after);
         assert!((heading.style.size - 1.4).abs() < 0.001, "size={}", heading.style.size);
+    }
+}
+
+#[cfg(test)]
+mod html5_structure_tests {
+    use super::*;
+
+    fn blocks(html: &str) -> Vec<Block> {
+        let mut after = 0.0;
+        parse_html_blocks(html, &[], &mut after)
+    }
+
+    #[test]
+    fn unknown_structural_tags_get_their_own_block_style() {
+        let parsed = blocks(
+            "<h3>x</h3><address>地址</address><nav>导航</nav><main>主内容</main>",
+        );
+        let address = parsed.iter().find(|b| b.text.contains("地址")).expect("address block");
+        assert!((address.style.size - 1.0).abs() < 0.001, "address must not inherit the heading size");
+        assert!(address.style.italic, "address is italic in the UA stylesheet");
+        assert_eq!(address.style.align, 0);
+        assert!((address.style.first_indent - 0.0).abs() < 0.001);
+        let nav = parsed.iter().find(|b| b.text.contains("导航")).expect("nav block");
+        assert!((nav.style.first_indent - 0.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn pre_expands_tabs_like_web_view() {
+        let parsed = blocks("<pre>a\tb</pre>");
+        assert!(parsed[0].text.contains("a        b"), "text={:?}", parsed[0].text);
+    }
+
+    #[test]
+    fn hr_becomes_a_rule_marker_block() {
+        let parsed = blocks("<p>上</p><hr/><p>下</p>");
+        assert!(parsed.iter().any(|b| b.text == "\u{0014}"), "blocks={:?}", parsed.iter().map(|b| &b.text).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn ordered_list_items_do_not_add_a_bullet() {
+        let parsed = blocks("<ol><li>一</li><li>二</li></ol>");
+        for block in &parsed {
+            assert!(!block.style.bullet, "ol li must not render a bullet: {:?}", block.text);
+            assert!(block.text.starts_with("1. ") || block.text.starts_with("2. "), "text={:?}", block.text);
+        }
     }
 }
