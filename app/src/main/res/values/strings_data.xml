@@ -13,8 +13,8 @@
     <string name="data_error_folder_read_failed">Cannot read this folder</string>
     <string name="data_error_scan_failed">Scan failed</string>
     <string name="data_error_refresh_failed">Refresh failed</string>
-    <string name="data_error_permission_not_persisted">Could not keep access to this folder. Add it again after restarting.</string>
-    <string name="data_error_index_save_failed">Index updated, but saving the library failed</string>
+    <string name="data_error_permission_not_persisted">Folder access lost. Re-add it after restart.</string>
+    <string name="data_error_index_save_failed">Index updated, but saving the shelf failed</string>
     <string name="data_error_save_failed">Saving the library failed</string>
     <string name="data_error_no_supported_books">No CBZ, ZIP, PDF, EPUB, MOBI or image folders found</string>
     <string name="data_error_no_refreshable_roots">There are no folders to refresh yet</string>

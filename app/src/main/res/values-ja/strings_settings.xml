@@ -17,7 +17,7 @@
     <string name="settings_appearance_theme_mode">テーマモード</string>
     <string name="settings_appearance_section_color">カラー</string>
     <string name="settings_appearance_dynamic_color">ダイナミックカラー</string>
-    <string name="settings_appearance_dynamic_color_supporting">システムの壁紙に合わせて配色（Android 12+ のみ）</string>
+    <string name="settings_appearance_dynamic_color_supporting">壁紙に合わせた配色（A12+）</string>
     <string name="settings_appearance_amoled">純黒モード</string>
     <string name="settings_appearance_amoled_supporting">ダークモードで AMOLED の純黒を使用</string>
 
@@ -84,7 +84,7 @@
     <string name="settings_storage_section_folders">フォルダ</string>
     <string name="settings_storage_add_folder">フォルダを追加</string>
     <string name="settings_storage_no_folders">フォルダがまだ追加されていません</string>
-    <string name="settings_storage_remove_hint">ここで削除した索引フォルダは端末から削除されません。</string>
+    <string name="settings_storage_remove_hint">索引からのみ削除されます。端末のファイルは残ります。</string>
     <string name="settings_storage_section_cache">キャッシュ</string>
     <string name="settings_storage_clear_cache">キャッシュを削除</string>
     <string name="settings_storage_clearing">削除中…</string>
@@ -143,12 +143,12 @@
     <string name="settings_reader_font_mode">リーダーフォント</string>
     <string name="settings_reader_native_reader">ネイティブリーダー</string>
     <string name="settings_reader_native_reader_desc">Rust 製。不具合時はオフに。</string>
-    <string name="settings_reader_native_reader_unavailable">ネイティブライブラリを読み込めないため、WebView に切り替えます。</string>
+    <string name="settings_reader_native_reader_unavailable">ネイティブライブラリが使えず、WebView を使用します。</string>
     <string name="settings_appearance_section_debug">Debug</string>
     <string name="settings_appearance_debug_mode">デバッグモード</string>
-    <string name="settings_appearance_debug_mode_supporting">レイアウト枠・パラメータ・WebView 切替を表示。</string>
+    <string name="settings_appearance_debug_mode_supporting">レイアウト枠とパラメータパネルを表示</string>
     <string name="settings_reader_image_full_width">画像を全幅表示</string>
-    <string name="settings_reader_image_full_width_supporting">余白を無視して画像をページ幅いっぱいに表示します。</string>
+    <string name="settings_reader_image_full_width_supporting">画像をページ幅いっぱいに表示</string>
     <string name="settings_reader_live_update">読書の進捗通知</string>
-    <string name="settings_reader_live_update_supporting">リーダーを離れると進捗を通知します。Android 16 以降。</string>
+    <string name="settings_reader_live_update_supporting">読書の進捗を通知に表示（A16+）</string>
 </resources>

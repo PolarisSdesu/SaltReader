@@ -6,9 +6,9 @@
     <string name="reader_unavailable_title">開けません</string>
     <string name="reader_unavailable_message">この本はライブラリにありません。</string>
     <string name="reader_empty_title">表示できるページがありません</string>
-    <string name="reader_empty_message">この本には対応する画像やページが見つかりませんでした。</string>
+    <string name="reader_empty_message">対応する画像やページが見つかりません。</string>
     <string name="reader_failed_title">この本を開けません</string>
-    <string name="reader_failed_message">ファイルが破損しているか、対応していない形式の可能性があります。</string>
+    <string name="reader_failed_message">ファイルが破損しているか、未対応の形式です。</string>
     <string name="reader_error_details">エラーの詳細</string>
     <string name="reader_copy_error_log">エラーログをコピー</string>
     <string name="reader_error_log_copied">エラーログをコピーしました</string>
@@ -63,7 +63,7 @@
     <string name="reader_volume_keys">音量キーでページ送り</string>
     <string name="reader_grayscale">グレースケール</string>
     <string name="reader_invert_colors">色を反転</string>
-    <string name="reader_text_filters_note">本文リーダーはテーマと背景色に従います。グレースケール/色反転は画像の本にのみ適用されます。</string>
+    <string name="reader_text_filters_note">グレースケール/色反転は画像の本のみ有効です。</string>
     <!-- リーダーバー / 目次 / 組版 -->
     <string name="reader_close">閉じる</string>
     <string name="reader_toc_title">目次</string>
@@ -126,8 +126,8 @@
     <string name="reader_font_picker_search">フォントを検索</string>
     <string name="reader_font_picker_empty">フォントが見つかりません</string>
     <string name="reader_font_value_none">未設定</string>
-    <string name="reader_font_picker_no_directory">フォントフォルダーが未設定です。フォント設定で選択してください。</string>
-    <string name="reader_font_ttc_notice">WebView の制限により、カスタムフォントは .ttc フォントファイルに未対応です。</string>
+    <string name="reader_font_picker_no_directory">フォント設定でフォルダーを選択してください。</string>
+    <string name="reader_font_ttc_notice">カスタムフォントは .ttc ファイルに未対応です。</string>
     <string name="reader_font_section_custom_defaults">カスタム既定フォント</string>
 
     <!-- 回退字体 -->
@@ -135,7 +135,7 @@
     <string name="reader_font_fallback_1">1 番目のフォント</string>
     <string name="reader_font_fallback_2">2 番目のフォント</string>
     <string name="reader_font_fallback_3">3 番目のフォント</string>
-    <string name="reader_font_fallback_hint">フォントは上から順に使われ、文字がない場合は次のフォントで表示されます。英字と CJK フォントを自由に組み合わせられます。</string>
+    <string name="reader_font_fallback_hint">フォントは順番に試され、字形がない場合は次のフォントで表示されます。英字と CJK フォントは自由に組み合わせられます。</string>
     <string name="reader_font_fallback_menu">フォント操作</string>
     <string name="reader_font_pick_fallback">%1$sを選択</string>
     <string name="reader_font_choose">フォントを選択</string>
@@ -143,10 +143,10 @@
     <string name="reader_font_reorder">ドラッグで並べ替え</string>
     <string name="reader_font_section_custom_fallback">フォントチェーン</string>
     <string name="reader_font_chain_add">フォントを追加</string>
-    <string name="reader_font_chain_empty">フォントがまだありません。追加するとフォントチェーンを作れます。</string>
+    <string name="reader_font_chain_empty">フォントを追加するとフォントチェーンを作れます。</string>
     <string name="reader_font_remove">フォントを削除</string>
     <string name="reader_render_failed_title">リーダーの表示に失敗しました</string>
-    <string name="reader_render_failed_hint">WebView がページを表示できませんでした。再試行してください。</string>
+    <string name="reader_render_failed_hint">ページを表示できません。再試行してください。</string>
     <string name="reader_selection_selected">選択中</string>
     <string name="reader_action_copy">コピー</string>
     <string name="reader_action_share">共有</string>

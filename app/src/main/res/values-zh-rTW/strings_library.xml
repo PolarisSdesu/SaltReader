@@ -11,9 +11,9 @@
     <string name="library_sort_descending">降冪</string>
 
     <string name="library_empty_title">書櫃還是空的</string>
-    <string name="library_empty_body">選擇一個存放漫畫的資料夾，應用程式只會建立索引，不會複製或移動你的檔案。</string>
+    <string name="library_empty_body">選擇一個漫畫資料夾，應用程式只建立索引，不會複製檔案。</string>
     <string name="library_add_folder">新增資料夾</string>
-    <string name="library_empty_hint">之後可在「設定 → 儲存空間」中管理或移除目錄。</string>
+    <string name="library_empty_hint">之後可在「設定 → 儲存空間」中管理目錄。</string>
     <string name="library_no_results_title">沒有找到漫畫</string>
     <string name="library_no_results_search">換個關鍵字試試。</string>
     <string name="library_no_results_filter">這個篩選下暫時沒有內容。</string>
@@ -33,7 +33,7 @@
     <string name="library_layout_columns_custom">自訂 · %1$d 欄</string>
     <string name="library_layout_title_size">書名字型大小  %1$dsp</string>
     <string name="library_layout_meta_visible">顯示標籤</string>
-    <string name="library_layout_meta_visible_supporting">書卡下方的格式 / 大小 / 頁數 / 進度 / 最近閱讀</string>
+    <string name="library_layout_meta_visible_supporting">格式 / 大小 / 頁數 / 進度 / 最近閱讀</string>
     <string name="library_layout_meta_size">標籤字型大小  %1$dsp</string>
     <string name="library_layout_meta_fields">標籤內容</string>
 
@@ -54,7 +54,7 @@
     <string name="library_save">儲存</string>
     <string name="library_cancel">取消</string>
     <string name="library_remove_title">移出書櫃？</string>
-    <string name="library_remove_body">只會移除書櫃索引和封面快取，不會刪除你的原始檔案。</string>
+    <string name="library_remove_body">只會移除書櫃索引與封面快取，不會刪除原始檔案。</string>
     <string name="library_remove_confirm">移出</string>
 
     <string name="library_deleted">《%1$s》已移出書櫃</string>
@@ -79,7 +79,7 @@
     <string name="search_empty_title">書櫃還是空的</string>
     <string name="search_empty_body">回到書櫃，先新增一個漫畫資料夾。</string>
     <string name="search_no_results_title">沒有找到「%1$s」</string>
-    <string name="search_no_results_body">換個關鍵字試試，或清除搜尋查看全部藏書。</string>
+    <string name="search_no_results_body">換個關鍵字，或清除搜尋查看全部。</string>
 
     <plurals name="library_result_count">
         <item quantity="other">找到 %1$d 本</item>

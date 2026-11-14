@@ -11,9 +11,9 @@
     <string name="library_sort_descending">降順</string>
 
     <string name="library_empty_title">本棚は空です</string>
-    <string name="library_empty_body">コミックの入ったフォルダを選択してください。アプリは索引を作成するだけで、ファイルのコピーや移動は行いません。</string>
+    <string name="library_empty_body">コミックフォルダーを選択してください。索引のみ作成し、ファイルはコピーしません。</string>
     <string name="library_add_folder">フォルダを追加</string>
-    <string name="library_empty_hint">追加したフォルダは「設定 → ストレージ」で管理・削除できます。</string>
+    <string name="library_empty_hint">フォルダは「設定 → ストレージ」で管理できます。</string>
     <string name="library_no_results_title">コミックが見つかりません</string>
     <string name="library_no_results_search">別のキーワードを試してください。</string>
     <string name="library_no_results_filter">この絞り込みには該当する本がありません。</string>
@@ -33,7 +33,7 @@
     <string name="library_layout_columns_custom">カスタム · %1$d 列</string>
     <string name="library_layout_title_size">タイトルサイズ  %1$dsp</string>
     <string name="library_layout_meta_visible">ラベルを表示</string>
-    <string name="library_layout_meta_visible_supporting">表紙の下に形式 / サイズ / ページ数 / 進捗 / 最終閲覧を表示</string>
+    <string name="library_layout_meta_visible_supporting">形式 / サイズ / ページ数 / 進捗 / 最終閲覧</string>
     <string name="library_layout_meta_size">ラベルサイズ  %1$dsp</string>
     <string name="library_layout_meta_fields">ラベルの項目</string>
 
@@ -54,7 +54,7 @@
     <string name="library_save">保存</string>
     <string name="library_cancel">キャンセル</string>
     <string name="library_remove_title">本棚から削除しますか？</string>
-    <string name="library_remove_body">本棚の索引と表紙キャッシュのみを削除します。元のファイルは削除されません。</string>
+    <string name="library_remove_body">本棚の索引と表紙キャッシュのみ削除します。元のファイルは残ります。</string>
     <string name="library_remove_confirm">削除</string>
 
     <string name="library_deleted">%1$s を本棚から削除しました</string>
@@ -77,9 +77,9 @@
     <string name="search_hint_title">本棚を検索</string>
     <string name="search_hint_body">%1$d 冊の蔵書から検索…</string>
     <string name="search_empty_title">本棚は空です</string>
-    <string name="search_empty_body">本棚に戻って、コミックのフォルダを追加してください。</string>
+    <string name="search_empty_body">本棚でコミックフォルダーを追加してください。</string>
     <string name="search_no_results_title">「%1$s」は見つかりません</string>
-    <string name="search_no_results_body">別のキーワードを試すか、検索をクリアしてすべての本を表示してください。</string>
+    <string name="search_no_results_body">キーワードを変えるか、検索をクリアしてください。</string>
 
     <plurals name="library_result_count">
         <item quantity="other">%1$d 冊見つかりました</item>

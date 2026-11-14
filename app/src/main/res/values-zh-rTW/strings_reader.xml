@@ -6,9 +6,9 @@
     <string name="reader_unavailable_title">無法開啟</string>
     <string name="reader_unavailable_message">這本書已經不在書櫃上。</string>
     <string name="reader_empty_title">沒有可讀的頁面</string>
-    <string name="reader_empty_message">在這本書中找不到支援的圖片或頁面。</string>
+    <string name="reader_empty_message">找不到支援的圖片或頁面。</string>
     <string name="reader_failed_title">無法開啟這本書</string>
-    <string name="reader_failed_message">檔案可能已損壞或格式不受支援。</string>
+    <string name="reader_failed_message">檔案可能已損壞或不受支援。</string>
     <string name="reader_error_details">錯誤詳細資料</string>
     <string name="reader_copy_error_log">複製錯誤記錄</string>
     <string name="reader_error_log_copied">已複製錯誤記錄</string>
@@ -63,7 +63,7 @@
     <string name="reader_volume_keys">音量鍵翻頁</string>
     <string name="reader_grayscale">灰階模式</string>
     <string name="reader_invert_colors">反色</string>
-    <string name="reader_text_filters_note">文字閱讀器使用主題與背景配色，灰階/反色僅對圖片書生效。</string>
+    <string name="reader_text_filters_note">灰階與反色僅對圖片書生效。</string>
     <!-- 閱讀器底欄 / 目錄 / 排版 -->
     <string name="reader_close">關閉</string>
     <string name="reader_toc_title">目錄</string>
@@ -126,8 +126,8 @@
     <string name="reader_font_picker_search">搜尋字型</string>
     <string name="reader_font_picker_empty">找不到字型</string>
     <string name="reader_font_value_none">未選擇</string>
-    <string name="reader_font_picker_no_directory">尚未加入字型資料夾，請在字型設定中選擇。</string>
-    <string name="reader_font_ttc_notice">由於 WebView 限制，自訂字型暫不支援 .ttc 字型檔。</string>
+    <string name="reader_font_picker_no_directory">請先在字型設定中選擇字型資料夾。</string>
+    <string name="reader_font_ttc_notice">自訂字型暫不支援 .ttc 檔案。</string>
     <string name="reader_font_section_custom_defaults">自訂預設字型</string>
 
     <!-- 回退字体 -->
@@ -135,7 +135,7 @@
     <string name="reader_font_fallback_1">第一字型</string>
     <string name="reader_font_fallback_2">第二字型</string>
     <string name="reader_font_fallback_3">第三字型</string>
-    <string name="reader_font_fallback_hint">字型依序回退：前面的字型缺少某個字時，會用後面的字型顯示。可以自由組合西文與中日韓字型。</string>
+    <string name="reader_font_fallback_hint">字型依序回退：目前字型缺少字形時，會改用下一個字型。混合文字可自由組合西文與中日韓字型。</string>
     <string name="reader_font_fallback_menu">字型操作</string>
     <string name="reader_font_pick_fallback">選擇%1$s</string>
     <string name="reader_font_choose">選擇字型</string>
@@ -143,10 +143,10 @@
     <string name="reader_font_reorder">拖曳排序</string>
     <string name="reader_font_section_custom_fallback">字型鏈</string>
     <string name="reader_font_chain_add">加入字型</string>
-    <string name="reader_font_chain_empty">尚未加入字型，加入後即可組成字型鏈。</string>
+    <string name="reader_font_chain_empty">還沒有字型，加入後即可組成字型鏈。</string>
     <string name="reader_font_remove">移除字型</string>
     <string name="reader_render_failed_title">閱讀器渲染失敗</string>
-    <string name="reader_render_failed_hint">WebView 暫時無法顯示內容，請重試。</string>
+    <string name="reader_render_failed_hint">頁面渲染失敗，請重試。</string>
     <string name="reader_selection_selected">已選取段落</string>
     <string name="reader_action_copy">複製</string>
     <string name="reader_action_share">分享</string>

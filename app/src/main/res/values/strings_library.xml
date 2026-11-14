@@ -12,9 +12,9 @@
     <string name="library_sort_descending">Descending</string>
 
     <string name="library_empty_title">Your shelf is empty</string>
-    <string name="library_empty_body">Choose a folder with comics. The app only indexes it and never copies or moves your files.</string>
+    <string name="library_empty_body">Pick a comic folder. Files are only indexed, never copied.</string>
     <string name="library_add_folder">Add folder</string>
-    <string name="library_empty_hint">You can manage or remove folders later in Settings → Storage.</string>
+    <string name="library_empty_hint">Manage folders later in Settings → Storage.</string>
     <string name="library_no_results_title">No comics found</string>
     <string name="library_no_results_search">Try a different keyword.</string>
     <string name="library_no_results_filter">Nothing matches this filter.</string>
@@ -23,7 +23,7 @@
     <string name="library_import_scanning">Scanning folder…</string>
     <string name="library_import_failed_one">Import failed: %1$s</string>
     <string name="library_import_done_failed">Indexed %1$d books; %2$d failed: %3$s</string>
-    <string name="library_import_done">Indexed %1$d books. EPUB/MOBI/AZW3 can be read directly.</string>
+    <string name="library_import_done">Indexed %1$d books. EPUB/MOBI/AZW3 supported.</string>
     <string name="library_import_empty">No readable comics found.</string>
     <string name="library_import_progress_percent">%1$d%%</string>
 
@@ -34,7 +34,7 @@
     <string name="library_layout_columns_custom">Custom · %1$d columns</string>
     <string name="library_layout_title_size">Title size  %1$dsp</string>
     <string name="library_layout_meta_visible">Show labels</string>
-    <string name="library_layout_meta_visible_supporting">Format / size / pages / progress / last read under each cover</string>
+    <string name="library_layout_meta_visible_supporting">Format / size / pages / progress / last read</string>
     <string name="library_layout_meta_size">Label size  %1$dsp</string>
     <string name="library_layout_meta_fields">Label fields</string>
 
@@ -55,7 +55,7 @@
     <string name="library_save">Save</string>
     <string name="library_cancel">Cancel</string>
     <string name="library_remove_title">Remove from shelf?</string>
-    <string name="library_remove_body">Only the shelf index and cover cache are removed. Your original files stay untouched.</string>
+    <string name="library_remove_body">Only the shelf index and cover cache are removed. Your files stay.</string>
     <string name="library_remove_confirm">Remove</string>
 
     <string name="library_deleted">%1$s removed from shelf</string>
@@ -78,9 +78,9 @@
     <string name="search_hint_title">Search your shelf</string>
     <string name="search_hint_body">Search in %1$d books…</string>
     <string name="search_empty_title">Your shelf is empty</string>
-    <string name="search_empty_body">Go back to the shelf and add a comic folder first.</string>
+    <string name="search_empty_body">Add a comic folder in the shelf first.</string>
     <string name="search_no_results_title">No results for “%1$s”</string>
-    <string name="search_no_results_body">Try another keyword, or clear the search to see all books.</string>
+    <string name="search_no_results_body">Try another keyword or clear the search.</string>
 
     <plurals name="library_result_count">
         <item quantity="one">%1$d book found</item>

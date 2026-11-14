@@ -12,8 +12,8 @@
     <string name="data_error_folder_read_failed">このフォルダを読み込めません</string>
     <string name="data_error_scan_failed">スキャンに失敗しました</string>
     <string name="data_error_refresh_failed">更新に失敗しました</string>
-    <string name="data_error_permission_not_persisted">このフォルダへのアクセス権を保存できません。再起動後に再度追加してください。</string>
-    <string name="data_error_index_save_failed">インデックスは更新されましたが、ライブラリの保存に失敗しました</string>
+    <string name="data_error_permission_not_persisted">アクセス権を保存できませんでした。再起動後に再追加してください。</string>
+    <string name="data_error_index_save_failed">インデックスは更新されましたが、本棚の保存に失敗しました</string>
     <string name="data_error_save_failed">ライブラリの保存に失敗しました</string>
     <string name="data_error_no_supported_books">CBZ、ZIP、PDF、EPUB、MOBI、画像フォルダが見つかりません</string>
     <string name="data_error_no_refreshable_roots">更新できるフォルダがまだありません</string>

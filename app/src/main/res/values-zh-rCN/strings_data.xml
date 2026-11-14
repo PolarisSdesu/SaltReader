@@ -12,8 +12,8 @@
     <string name="data_error_folder_read_failed">无法读取该文件夹</string>
     <string name="data_error_scan_failed">扫描失败</string>
     <string name="data_error_refresh_failed">刷新失败</string>
-    <string name="data_error_permission_not_persisted">无法持久保存该目录的访问权限，重启后需要重新添加</string>
-    <string name="data_error_index_save_failed">索引已更新，但保存书架失败</string>
+    <string name="data_error_permission_not_persisted">无法保存目录访问权限，重启后需重新添加</string>
+    <string name="data_error_index_save_failed">索引已更新，但书架保存失败</string>
     <string name="data_error_save_failed">保存书架失败</string>
     <string name="data_error_no_supported_books">没有找到 CBZ、ZIP、PDF、EPUB、MOBI 或图片文件夹</string>
     <string name="data_error_no_refreshable_roots">还没有可刷新的漫画目录</string>

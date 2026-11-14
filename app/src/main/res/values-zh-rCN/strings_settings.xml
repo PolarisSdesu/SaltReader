@@ -17,7 +17,7 @@
     <string name="settings_appearance_theme_mode">主题模式</string>
     <string name="settings_appearance_section_color">颜色</string>
     <string name="settings_appearance_dynamic_color">动态取色</string>
-    <string name="settings_appearance_dynamic_color_supporting">跟随系统壁纸配色（仅 Android 12+）</string>
+    <string name="settings_appearance_dynamic_color_supporting">跟随壁纸配色（A12+）</string>
     <string name="settings_appearance_amoled">纯黑模式</string>
     <string name="settings_appearance_amoled_supporting">深色下使用 AMOLED 纯黑</string>
 
@@ -84,7 +84,7 @@
     <string name="settings_storage_section_folders">文件夹</string>
     <string name="settings_storage_add_folder">添加文件夹</string>
     <string name="settings_storage_no_folders">还没有添加文件夹</string>
-    <string name="settings_storage_remove_hint">在此删除的索引目录不会在设备上删除。</string>
+    <string name="settings_storage_remove_hint">只会从索引中移除，不会删除设备上的文件。</string>
     <string name="settings_storage_section_cache">缓存</string>
     <string name="settings_storage_clear_cache">清理缓存</string>
     <string name="settings_storage_clearing">正在清理…</string>
@@ -138,7 +138,7 @@
     <string name="settings_reader_page_info">页码显示</string>
     <string name="settings_reader_page_indicator_size">页码文字大小</string>
     <string name="settings_reader_battery_indicator">显示电量</string>
-    <string name="settings_reader_battery_indicator_supporting">阅读时在左下角显示电池图标与百分比</string>
+    <string name="settings_reader_battery_indicator_supporting">阅读时在左下角显示电量</string>
     <string name="settings_fonts">字体</string>
     <string name="settings_reader_font_mode">阅读器字体</string>
     <string name="settings_reader_native_reader">原生阅读器</string>
@@ -146,9 +146,9 @@
     <string name="settings_reader_native_reader_unavailable">当前设备未能加载原生库，自动回退到 WebView。</string>
     <string name="settings_appearance_section_debug">Debug</string>
     <string name="settings_appearance_debug_mode">调试模式</string>
-    <string name="settings_appearance_debug_mode_supporting">显示版心锚点、参数面板与原生/WebView 切换。</string>
+    <string name="settings_appearance_debug_mode_supporting">显示版心锚点和参数面板</string>
     <string name="settings_reader_image_full_width">图片全宽显示</string>
-    <string name="settings_reader_image_full_width_supporting">忽略页边距，让图片铺满页面宽度。</string>
+    <string name="settings_reader_image_full_width_supporting">让图片铺满页面宽度。</string>
     <string name="settings_reader_live_update">阅读进度实时通知</string>
-    <string name="settings_reader_live_update_supporting">离开阅读器后在通知栏显示进度。Android 16+。</string>
+    <string name="settings_reader_live_update_supporting">在通知栏显示阅读进度（A16+）</string>
 </resources>

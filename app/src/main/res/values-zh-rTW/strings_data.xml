@@ -12,8 +12,8 @@
     <string name="data_error_folder_read_failed">無法讀取此資料夾</string>
     <string name="data_error_scan_failed">掃描失敗</string>
     <string name="data_error_refresh_failed">重新整理失敗</string>
-    <string name="data_error_permission_not_persisted">無法持續保存此資料夾的存取權限，重新啟動後需要重新加入</string>
-    <string name="data_error_index_save_failed">索引已更新，但儲存書櫃失敗</string>
+    <string name="data_error_permission_not_persisted">無法保存資料夾存取權限，重新啟動後需重新加入</string>
+    <string name="data_error_index_save_failed">索引已更新，但書櫃儲存失敗</string>
     <string name="data_error_save_failed">儲存書櫃失敗</string>
     <string name="data_error_no_supported_books">沒有找到 CBZ、ZIP、PDF、EPUB、MOBI 或圖片資料夾</string>
     <string name="data_error_no_refreshable_roots">還沒有可重新整理的漫畫資料夾</string>

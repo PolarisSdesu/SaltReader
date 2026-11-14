@@ -6,9 +6,9 @@
     <string name="reader_unavailable_title">Cannot open</string>
     <string name="reader_unavailable_message">This book is no longer in your library.</string>
     <string name="reader_empty_title">No readable pages</string>
-    <string name="reader_empty_message">No supported images or pages were found in this book.</string>
+    <string name="reader_empty_message">No supported images or pages found.</string>
     <string name="reader_failed_title">Cannot open this book</string>
-    <string name="reader_failed_message">The file may be corrupt or in an unsupported format.</string>
+    <string name="reader_failed_message">The file may be corrupt or unsupported.</string>
     <string name="reader_error_details">Error details</string>
     <string name="reader_copy_error_log">Copy error log</string>
     <string name="reader_error_log_copied">Error log copied</string>
@@ -63,7 +63,7 @@
     <string name="reader_volume_keys">Volume keys turn pages</string>
     <string name="reader_grayscale">Grayscale</string>
     <string name="reader_invert_colors">Invert colours</string>
-    <string name="reader_text_filters_note">The text reader follows the theme and background colour; grayscale and invert only apply to image books.</string>
+    <string name="reader_text_filters_note">Grayscale and invert only affect image books.</string>
     <!-- Reader chrome / contents / typography (WeChat-Reading-style toolbar) -->
     <string name="reader_close">Close</string>
     <string name="reader_toc_title">Contents</string>
@@ -126,8 +126,8 @@
     <string name="reader_font_picker_search">Search fonts</string>
     <string name="reader_font_picker_empty">No fonts found</string>
     <string name="reader_font_value_none">Not set</string>
-    <string name="reader_font_picker_no_directory">No font folder set. Choose one in Font settings.</string>
-    <string name="reader_font_ttc_notice">Due to a WebView limitation, custom fonts do not support .ttc font files yet.</string>
+    <string name="reader_font_picker_no_directory">Set a font folder in Font settings.</string>
+    <string name="reader_font_ttc_notice">Custom fonts do not support .ttc files yet.</string>
     <string name="reader_font_section_custom_defaults">Custom default fonts</string>
 
     <!-- 回退字体 -->
@@ -135,7 +135,7 @@
     <string name="reader_font_fallback_1">First font</string>
     <string name="reader_font_fallback_2">Second font</string>
     <string name="reader_font_fallback_3">Third font</string>
-    <string name="reader_font_fallback_hint">Fonts are tried in order: when the current font lacks a glyph, the next one is used. Combine Latin and CJK fonts freely for mixed text.</string>
+    <string name="reader_font_fallback_hint">Fonts are tried in order: if the current font lacks a glyph, the next font is used. For mixed text, combine Latin and CJK fonts freely.</string>
     <string name="reader_font_fallback_menu">Font actions</string>
     <string name="reader_font_pick_fallback">Choose %1$s</string>
     <string name="reader_font_choose">Choose font</string>
@@ -143,10 +143,10 @@
     <string name="reader_font_reorder">Drag to reorder</string>
     <string name="reader_font_section_custom_fallback">Font chain</string>
     <string name="reader_font_chain_add">Add font</string>
-    <string name="reader_font_chain_empty">No fonts added yet. Add one to build the font chain.</string>
+    <string name="reader_font_chain_empty">No fonts yet. Add one to build the chain.</string>
     <string name="reader_font_remove">Remove font</string>
     <string name="reader_render_failed_title">Reader failed to render</string>
-    <string name="reader_render_failed_hint">The WebView could not display this page. Please try again.</string>
+    <string name="reader_render_failed_hint">Page rendering failed. Please try again.</string>
     <string name="reader_selection_selected">Selection</string>
     <string name="reader_action_copy">Copy</string>
     <string name="reader_action_share">Share</string>
