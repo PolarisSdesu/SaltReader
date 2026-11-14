@@ -225,16 +225,10 @@ internal fun NativeTextReaderContent(
     val chromeContentColor = chromeColors.content
     val pageIndicatorColor = chromeColors.indicator
 
-    // 与 WebView 阅读器一致：进度按"可见字符数"计。
+    // 与 WebView 阅读器使用同一口径（chapterHtmlCost），否则同一 progressOffset
+    // 除出来的比例不同，重开书会从第一页开始并覆盖已保存进度。
     val chapterChars = remember(chapters) {
-        LongArray(chapters.size) { index ->
-            val chapter = chapters[index]
-            when {
-                chapter.charCount > 0 -> chapter.charCount.toLong()
-                chapter.imageOnly -> 0L
-                else -> chapter.html.length.toLong()
-            }.coerceAtLeast(1L)
-        }
+        LongArray(chapters.size) { index -> chapterHtmlCost(chapters[index].html) }
     }
     val chapterPrefix = remember(chapterChars) {
         val prefix = LongArray(chapterChars.size + 1)

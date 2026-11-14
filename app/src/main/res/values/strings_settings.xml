@@ -152,7 +152,7 @@
     <string name="settings_appearance_debug_mode">Debug mode</string>
     <string name="settings_appearance_debug_mode_supporting">Show layout anchors and debug panel</string>
     <string name="settings_reader_image_full_width">Full-width images</string>
-    <string name="settings_reader_image_full_width_supporting">Images span the full page width.</string>
+    <string name="settings_reader_image_full_width_supporting">Images span the full page width</string>
     <string name="settings_reader_live_update">Reading progress Live Update</string>
     <string name="settings_reader_live_update_supporting">Reading progress in notifications (A16+)</string>
 </resources>

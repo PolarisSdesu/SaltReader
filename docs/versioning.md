@@ -13,6 +13,16 @@
 - `versionCode`：单调递增整数，每次 bump 自动 +1，永不回退（Android/Play 覆盖升级要求）。
 - 当前值：见 `version.properties`（`python3 scripts/bump_version.py show` 可查看）。
 
+## 命名格式（tag / Release / APK）
+
+所有对外版本标识都使用**纯版本号** `MAJOR.MINOR.PATCH-stage.N`，例如 `1.0.0-alpha.18`：
+
+- git tag：`1.0.0-alpha.18`（不加 `v` 前缀）
+- GitHub Release 标题：`1.0.0-alpha.18`
+- Release 附件名：`1.0.0-alpha.18.apk`
+
+beta 版本同样遵守该格式（如 `1.0.0-beta.1`）。
+
 ## alpha / beta 节奏
 
 - 每连续发布 **6 个 alpha** 后，第 7 个版本升为 **beta**（beta 序号 +1），随后继续 alpha 编号。
@@ -56,6 +66,6 @@ python3 scripts/bump_version.py set 1.2.0-beta.1
 
 1. `python3 scripts/bump_version.py alpha`（或对应阶段）
 2. `./gradlew :app:assembleRelease`
-3. 安装验证后提交，并打 tag：`git tag v$(python3 scripts/bump_version.py show | head -1 | cut -d= -f2 | xargs)`
+3. 安装验证后提交，并打 tag：`git tag $(python3 scripts/bump_version.py show | head -1 | cut -d= -f2 | xargs)`
    （脚本执行完也会打印建议的 tag）
 4. 上架 Play 时使用 AAB，`versionCode` 已由脚本保证递增。

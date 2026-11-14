@@ -7,9 +7,11 @@ import android.content.IntentFilter
 import android.os.BatteryManager
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.material3.Icon
+import androidx.compose.ui.draw.clip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -21,6 +23,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
@@ -71,11 +75,16 @@ internal fun BatteryIndicator(
     // so 1.33x the text size keeps the same visible glyph height as before, at roughly cap height.
     val iconSize = with(LocalDensity.current) { (textSizeSp.sp * 1.33f).toDp() }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        Icon(
+        // Material Symbols 的电池字形本身是宽扁的（约 800x540 / 960），用方形 Box 会显得偏窄。
+        // 高度按文字大小等比，宽度放大到 1.25 倍，让电池看起来更接近真实比例。
+        Image(
             painter = painterResource(icon),
             contentDescription = null,
-            tint = color,
-            modifier = Modifier.size(iconSize),
+            colorFilter = ColorFilter.tint(color),
+            contentScale = ContentScale.FillBounds,
+            modifier = Modifier
+                .width(iconSize * 1.25f)
+                .height(iconSize),
         )
         Spacer(Modifier.width(3.dp))
         Text(

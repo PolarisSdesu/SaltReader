@@ -114,7 +114,7 @@ def main(argv: list[str]) -> int:
 
     save(d)
     show(d)
-    print("Remember to tag the commit after building, e.g.: git tag v" + version_name(d))
+    print("Remember to tag the commit after building, e.g.: git tag " + version_name(d))
     return 0
 
 

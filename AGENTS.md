@@ -68,7 +68,7 @@ Version lives only in `version.properties`; never hard-code it.
 python3 scripts/bump_version.py alpha     # 1.0.0-alpha.N -> alpha.N+1, versionCode +1
 ./gradlew :app:assembleRelease            # verify the release build
 git commit -am "release: <versionName> (versionCode <n>)"
-git tag v<versionName> && git push origin main --tags
+git tag <versionName> && git push origin main --tags
 ```
 
 See `docs/versioning.md`. Reported bugs from alpha users should get a version bump only when a

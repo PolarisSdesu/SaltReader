@@ -148,7 +148,7 @@
     <string name="settings_appearance_debug_mode">调试模式</string>
     <string name="settings_appearance_debug_mode_supporting">显示版心锚点和参数面板</string>
     <string name="settings_reader_image_full_width">图片全宽显示</string>
-    <string name="settings_reader_image_full_width_supporting">让图片铺满页面宽度。</string>
+    <string name="settings_reader_image_full_width_supporting">让图片铺满页面宽度</string>
     <string name="settings_reader_live_update">阅读进度实时通知</string>
     <string name="settings_reader_live_update_supporting">在通知栏显示阅读进度（A16+）</string>
 </resources>

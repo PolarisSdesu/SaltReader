@@ -1872,18 +1872,6 @@ private fun downscaleInlineImage(bytes: ByteArray, mime: String, maxWidthPx: Int
  * 本地短 URL，真正交给 WebView 解析的只有文本和短 URL，因此预算要按这个成本算，
  * 否则图片章会被误判成超大章节而被排除出窗口。
  */
-private fun chapterHtmlCost(html: String): Long {
-    var cost = html.length.toLong()
-    var index = html.indexOf("data:image")
-    while (index >= 0) {
-        val quote = html.indexOf('"', index)
-        if (quote < 0) break
-        cost -= (quote - index).toLong()
-        index = html.indexOf("data:image", quote)
-    }
-    return cost.coerceAtLeast(1L)
-}
-
 /** 单本书拼出的 HTML 总量上限（约 24M 字符，正常文字书在 1M 量级）。 */
 private const val MAX_TOTAL_HTML_CHARS = 24 * 1024 * 1024
 

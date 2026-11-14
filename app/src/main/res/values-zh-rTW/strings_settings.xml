@@ -148,7 +148,7 @@
     <string name="settings_appearance_debug_mode">偵錯模式</string>
     <string name="settings_appearance_debug_mode_supporting">顯示版心錨點和參數面板</string>
     <string name="settings_reader_image_full_width">圖片全寬顯示</string>
-    <string name="settings_reader_image_full_width_supporting">讓圖片鋪滿頁面寬度。</string>
+    <string name="settings_reader_image_full_width_supporting">讓圖片鋪滿頁面寬度</string>
     <string name="settings_reader_live_update">閱讀進度即時通知</string>
     <string name="settings_reader_live_update_supporting">在通知列顯示閱讀進度（A16+）</string>
 </resources>
