@@ -52,23 +52,24 @@ internal fun BatteryIndicator(
         onDispose { runCatching { context.unregisterReceiver(receiver) } }
     }
 
-    // Material Symbols: battery_android_frame_1..6 / battery_android_full / battery_android_bolt。
-    // 充电中显示 bolt；满电（100%）显示实心 full；其余按六档显示 1..6。
+    // Material Symbols: battery_android_0..6 / battery_android_full / battery_android_bolt。
+    // 充电中显示 bolt；满电（100%）显示实心 full；0% 显示空电池；其余按六档显示 1..6。
     val icon = when {
-        status.charging -> R.drawable.battery_android_frame_bolt
-        status.percent >= 100 -> R.drawable.battery_android_frame_full
+        status.charging -> R.drawable.battery_android_bolt
+        status.percent >= 100 -> R.drawable.battery_android_full
+        status.percent <= 0 -> R.drawable.battery_android_0
         else -> when (status.percent) {
-            in 0..16 -> R.drawable.battery_android_frame_1
-            in 17..33 -> R.drawable.battery_android_frame_2
-            in 34..50 -> R.drawable.battery_android_frame_3
-            in 51..66 -> R.drawable.battery_android_frame_4
-            in 67..83 -> R.drawable.battery_android_frame_5
-            else -> R.drawable.battery_android_frame_6
+            in 1..16 -> R.drawable.battery_android_1
+            in 17..33 -> R.drawable.battery_android_2
+            in 34..50 -> R.drawable.battery_android_3
+            in 51..66 -> R.drawable.battery_android_4
+            in 67..83 -> R.drawable.battery_android_5
+            else -> R.drawable.battery_android_6
         }
     }
-    // Material Symbols keep the battery silhouette inside roughly half of their 24dp viewport.
-    // Scale the viewport to 1.5x the text size so the visible glyph matches the digits' cap height.
-    val iconSize = with(LocalDensity.current) { (textSizeSp.sp * 1.5f).toDp() }
+    // The battery glyph fills 0.5625 of the 960-unit viewport height (the old frame set used 0.5),
+    // so 1.33x the text size keeps the same visible glyph height as before, at roughly cap height.
+    val iconSize = with(LocalDensity.current) { (textSizeSp.sp * 1.33f).toDp() }
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
         Icon(
             painter = painterResource(icon),

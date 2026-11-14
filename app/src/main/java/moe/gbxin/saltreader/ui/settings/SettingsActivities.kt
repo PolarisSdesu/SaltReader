@@ -51,7 +51,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.outlined.AspectRatio
-import androidx.compose.material.icons.outlined.BatteryFull
 import androidx.compose.material.icons.outlined.BugReport
 import androidx.compose.material.icons.outlined.Contrast
 import androidx.compose.material.icons.outlined.DarkMode
@@ -117,6 +116,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.res.vectorResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -627,7 +627,7 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                     checked = settings.readerImageFullWidth,
                 ) { app.settings.update { it.copy(readerImageFullWidth = it.readerImageFullWidth.not()) } }
                 SettingsSwitchRow(
-                    icon = Icons.Outlined.BatteryFull,
+                    icon = ImageVector.vectorResource(R.drawable.battery_android_full),
                     title = stringResource(R.string.settings_reader_battery_indicator),
                     supporting = stringResource(R.string.settings_reader_battery_indicator_supporting),
                     checked = settings.readerBatteryIndicator,
