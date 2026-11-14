@@ -287,7 +287,10 @@ internal fun NativeTextReaderContent(
     val pagePadBottomDp = if (verticalPads) {
         maxOf(92f, safeBottomDp + 8f)
     } else {
-        (maxOf(22f, safeBottomDp + 8f) - pagedShrinkDp).coerceAtLeast(6f)
+        // 底部常驻的页码/电池角标会压在正文上：分页高度必须为它预留安全区，
+        // 再在此基础上应用 7px 收缩，只影响正文可排区域，不让最后一行撞角标。
+        val shrunk = (maxOf(22f, safeBottomDp + 8f) - pagedShrinkDp).coerceAtLeast(6f)
+        maxOf(shrunk, safeBottomDp + 34f)
     }
     val pageMarginLeftDp = maxOf(settings.readerPageMarginDp.toFloat(), safeLeftDp + 8f)
     val pageMarginRightDp = maxOf(settings.readerPageMarginDp.toFloat(), safeRightDp + 8f)
