@@ -79,5 +79,7 @@
   - 图片提取为 0 的原因已确认：EpubIndexer 会丢弃源码里直接写死的 `data:` 图片，只内联相对路径
     图片；已修正 `tools/make_html5_tags_epub.py` 改为打包 `images/sample.png` 并相对引用，
     现在 native 日志为 `images extracted=2`。
-  待办：`mark` 高亮（需要背景色协议）、`q` 引号、`small` 字号、表格 colspan/rowspan；
+  - `q` 自动加弯引号；`ruby` 注音回退为「基字（读音）」；`<rp>` 回退括号与 `skip_until`
+    文本泄漏一并修掉。
+  待办：`mark` 高亮（需要背景色协议）、`small` 字号、表格 colspan/rowspan；
   forms/media 按设计不渲染交互控件。

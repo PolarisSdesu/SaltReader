@@ -484,6 +484,10 @@ fn inline_marker(tag: &str, closing: bool) -> Option<char> {
     if tag == "wbr" {
         return if closing { None } else { Some('\u{200B}') };
     }
+    // <q> 在浏览器里由 UA 样式自动加弯引号。
+    if tag == "q" {
+        return Some(if closing { '”' } else { '“' });
+    }
     let pair = match tag {
         "b" | "strong" => ('\u{E000}', '\u{E001}'),
         // cite / var 在浏览器里默认斜体。
@@ -644,8 +648,14 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
                 }
                 continue;
             }
-            if !closing && (tag == "rt" || tag == "rp") {
-                skip_until = Some(tag.clone());
+            // <rp> 是给不支持 ruby 的浏览器看的回退括号，直接跳过；
+            // <rt> 是注音，原生端暂不支持逐字注音排版，回退为「基字（读音）」。
+            if !closing && tag == "rp" {
+                skip_until = Some("rp".to_string());
+                continue;
+            }
+            if tag == "rt" {
+                text.push(if closing { '）' } else { '（' });
                 continue;
             }
             if !closing && (tag == "script" || tag == "head") {
@@ -966,6 +976,10 @@ fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &mut f32) ->
         }
         let decoded = decode_entities(chunk);
         if hidden.is_some() {
+            continue;
+        }
+        // skip_until 之前只拦标签，文本节点仍会漏进来（<rp> 的回退括号、<script> 内容等）。
+        if skip_until.is_some() {
             continue;
         }
         if in_table {
@@ -2530,6 +2544,14 @@ mod html5_structure_tests {
     fn hr_becomes_a_rule_marker_block() {
         let parsed = blocks("<p>上</p><hr/><p>下</p>");
         assert!(parsed.iter().any(|b| b.text == "\u{0014}"), "blocks={:?}", parsed.iter().map(|b| &b.text).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn q_quotes_and_ruby_reading_are_readable() {
+        let parsed = blocks("<p><q>引用</q><ruby>漢字<rp>(</rp><rt>かんじ</rt><rp>)</rp></ruby></p>");
+        let text = &parsed[0].text;
+        assert!(text.contains("“引用”"), "text={text:?}");
+        assert!(text.contains("漢字（かんじ）"), "text={text:?}");
     }
 
     #[test]
