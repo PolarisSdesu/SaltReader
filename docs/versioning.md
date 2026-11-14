@@ -13,6 +13,14 @@
 - `versionCode`：单调递增整数，每次 bump 自动 +1，永不回退（Android/Play 覆盖升级要求）。
 - 当前值：见 `version.properties`（`python3 scripts/bump_version.py show` 可查看）。
 
+## alpha / beta 节奏
+
+- 每连续发布 **6 个 alpha** 后，第 7 个版本升为 **beta**（beta 序号 +1），随后继续 alpha 编号。
+- alpha 序号**不重置**，保证 versionName 单调可比较；beta 序号独立递增。
+- 每次发版 `versionCode` 都 +1。
+- 例：`alpha.48 … alpha.53`（6 个）→ `beta.2` → `alpha.54 … alpha.59` → `beta.3`。
+- 当前已进入 beta 阶段：`1.0.0-beta.1`（对应 alpha.47 之后）。
+
 ## 命令
 
 ```bash

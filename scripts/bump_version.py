@@ -9,6 +9,9 @@ Usage:
   python3 scripts/bump_version.py set 1.2.3-alpha.1  # set an explicit version name
 
 Every non-show command increments versionCode by one, so APKs always upgrade in place.
+
+Release cadence (see docs/versioning.md): publish six `alpha` bumps, then one `beta`
+(the seventh release); keep incrementing the alpha counter afterwards.
 """
 from __future__ import annotations
 
