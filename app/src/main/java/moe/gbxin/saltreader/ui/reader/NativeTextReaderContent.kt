@@ -8,7 +8,6 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.DashPathEffect
-import android.graphics.Rect
 import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Build
@@ -57,6 +56,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.padding
@@ -85,6 +85,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
@@ -591,6 +592,8 @@ internal fun NativeTextReaderContent(
     var selectionAnchorChar by remember { mutableIntStateOf(0) }
     var selectionFocusLine by remember { mutableIntStateOf(-1) }
     var selectionFocusChar by remember { mutableIntStateOf(0) }
+    // 系统 floating 复制菜单；applySelectionLines 变化时用 invalidateContentRect 重新定位。
+    var copyActionMode by remember { mutableStateOf<ActionMode?>(null) }
 
     // 纵向模式的“外部跳转”目标（进度条/目录/音量键），避免滚动回写与目标互相打断。
     var verticalJumpTarget by remember { mutableIntStateOf(-1) }
@@ -890,6 +893,8 @@ internal fun NativeTextReaderContent(
         val second = if (first === anchor) focus else anchor
         selectionStartLine = first.first
         selectionEndLine = second.first
+        // 选区变化后让系统 floating 菜单重新按 onGetContentRect 定位。
+        copyActionMode?.invalidateContentRect()
     }
 
     fun clearSelection() {
@@ -902,8 +907,9 @@ internal fun NativeTextReaderContent(
         selectionFocusChar = 0
     }
 
-    fun copySelection(page: List<NativeLine>) {
-        if (selectionPage < 0 || selectionAnchorLine < 0 || selectionFocusLine < 0) return
+    /** 当前选中的纯文本（跨段落时按段落拼接，与复制规则一致）；无有效选区返回 null。 */
+    fun selectionText(page: List<NativeLine>): String? {
+        if (selectionPage < 0 || selectionAnchorLine < 0 || selectionFocusLine < 0) return null
         val a = selectionAnchorLine to selectionAnchorChar
         val b = selectionFocusLine to selectionFocusChar
         val first = if (a.first < b.first || (a.first == b.first && a.second <= b.second)) a else b
@@ -932,10 +938,23 @@ internal fun NativeTextReaderContent(
                 lastLine = line
             }
         }
-        if (builder.isEmpty()) return
+        return builder.toString().takeIf { it.isNotEmpty() }
+    }
+
+    fun copySelection(page: List<NativeLine>) {
+        val text = selectionText(page) ?: return
         val clipboard = context.getSystemService(ClipboardManager::class.java)
-        clipboard?.setPrimaryClip(ClipData.newPlainText("Salt Reader", builder.toString()))
+        clipboard?.setPrimaryClip(ClipData.newPlainText("Salt Reader", text))
         clearSelection()
+    }
+
+    fun shareSelection(page: List<NativeLine>) {
+        val text = selectionText(page) ?: return
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_TEXT, text)
+        }
+        runCatching { context.startActivity(Intent.createChooser(send, null)) }
     }
 
     /**
@@ -980,11 +999,21 @@ internal fun NativeTextReaderContent(
         return y.coerceAtLeast(fontSizePx)
     }
 
-    fun handleReaderLongPress(offset: Offset) {
-        val page = pageSet?.pages?.getOrNull(safePageIndex) ?: return
-        val range = paragraphRangeAt(page, offset.y) ?: return
-        selectionPage = safePageIndex
-        val endPlain = page.getOrNull(range.second)?.let { plainLineText(it).length } ?: 0
+    /**
+     * 命中测试必须使用被点中的那一页：纵向模式下 LazyColumn 的"当前页"跟随第一个可见 item，
+     * 滚动半页后它与手指所在 item 不同；坐标 y 是相对 item 的，用全局页码会选中上一页的内容。
+     */
+    fun handleReaderLongPress(offset: Offset, page: Int) {
+        val pageLines = pageSet?.pages?.getOrNull(page) ?: return
+        val range = paragraphRangeAt(pageLines, offset.y) ?: return
+        // 图片/表格段落没有可复制的文本，不触发选择（否则会出现"隐形选区"和空菜单）。
+        val selectable = (range.first..range.second).any { index ->
+            val line = pageLines.getOrNull(index) ?: return@any false
+            line.imageId < 0 && line.tableCols == 0 && line.text.isNotBlank()
+        }
+        if (!selectable) return
+        selectionPage = page
+        val endPlain = pageLines.getOrNull(range.second)?.let { plainLineText(it).length } ?: 0
         selectionAnchorLine = range.first
         selectionAnchorChar = 0
         selectionFocusLine = range.second
@@ -992,21 +1021,36 @@ internal fun NativeTextReaderContent(
         applySelectionLines()
     }
 
-    fun handleReaderTap(offset: Offset, width: Float) {
+    fun handleReaderTap(offset: Offset, width: Float, page: Int) {
+        val pageLines = pageSet?.pages?.getOrNull(page)
         if (selectionPage >= 0) {
-            val page = pageSet?.pages?.getOrNull(safePageIndex)
-            if (page != null) {
+            if (pageLines != null) {
                 // 点已选中的段落 = 取消选择；点其他段落 = 扩展/切换选区。
-                val tappedRange = paragraphRangeAt(page, offset.y)
+                val tappedRange = paragraphRangeAt(pageLines, offset.y)
                 val startLine = minOf(selectionAnchorLine, selectionFocusLine)
                 val endLine = maxOf(selectionAnchorLine, selectionFocusLine)
                 if (tappedRange != null &&
-                    tappedRange.first >= startLine && tappedRange.second <= endLine
+                    tappedRange.first >= startLine && tappedRange.second <= endLine &&
+                    page == selectionPage
                 ) {
                     clearSelection()
                     return
                 }
-                val hit = hitTestChar(page, offset.x, offset.y)
+                if (page != selectionPage) {
+                    // 行号只在单页内有意义：点按落在选区所在页之外的页时，无法跨页延伸，
+                    // 改为在该页重新选中被点的段落，否则两页的行号混在一起会错位。
+                    if (tappedRange != null) {
+                        selectionPage = page
+                        selectionAnchorLine = tappedRange.first
+                        selectionAnchorChar = 0
+                        selectionFocusLine = tappedRange.second
+                        selectionFocusChar =
+                            pageLines.getOrNull(tappedRange.second)?.let { plainLineText(it).length } ?: 0
+                        applySelectionLines()
+                    }
+                    return
+                }
+                val hit = hitTestChar(pageLines, offset.x, offset.y)
                 if (hit != null) {
                     selectionFocusLine = hit.first
                     selectionFocusChar = hit.second
@@ -1017,6 +1061,15 @@ internal fun NativeTextReaderContent(
         }
         if (activePanel != ReaderChromePanel.NONE) {
             activePanel = ReaderChromePanel.NONE
+            return
+        }
+        if (settings.readerMode == ReaderMode.VERTICAL) {
+            // 纵向模式与 WebView 阅读器一致：左右边缘点按不做任何事（连续滚动没有"页"的
+            // 概念），只有中间三分之一切换 chrome，避免误触导致整页跳滚。
+            val third = width / 3f
+            if (offset.x >= third && offset.x <= width - third) {
+                chromeVisible = !chromeVisible
+            }
             return
         }
         when {
@@ -1642,43 +1695,89 @@ internal fun NativeTextReaderContent(
                         }
                     }
                 }
-            // Android 原生复制菜单（floating ActionMode）。
-            var copyActionMode by remember { mutableStateOf<ActionMode?>(null) }
-            fun selectionContentRect(outRect: Rect) {
-                val page = pageSet?.pages?.getOrNull(selectionPage)
-                val tops = if (page != null) lineTops(page) else emptyList()
-                val startTop = tops.getOrNull(selectionStartLine) ?: topPadPx
+            // 系统 floating 选择菜单：样式与项目（复制/分享/朗读等）完全交给系统。
+            // 关键是 onGetContentRect 必须给"视图坐标"——纵向模式下页内坐标要加上
+            // 被选 item 在屏幕上的偏移，否则菜单会错位到正文中间。
+            fun selectionLocalRect(): Rect? {
+                val page = pageSet?.pages?.getOrNull(selectionPage) ?: return null
+                val tops = lineTops(page)
+                val startTop = tops.getOrNull(selectionStartLine) ?: return null
                 val endTop = tops.getOrNull(selectionEndLine) ?: startTop
                 val lineHeight = fontSizePx * 1.8f
                 val geometry = pageSet
                 val left = geometry?.contentLeftPx ?: leftPadPx
                 val width = geometry?.contentWidthPx ?: (pageArea.width - leftPadPx - rightPadPx)
-                outRect.set(left.roundToInt(), startTop.roundToInt(), (left + width).roundToInt(), (endTop + lineHeight).roundToInt())
+                return Rect(left, startTop, left + width, endTop + lineHeight)
             }
 
-            fun startCopyActionMode(): ActionMode? = view.startActionMode(
-                object : ActionMode.Callback2() {
-                    override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
-                        menu.add(0, 1, 0, context.getString(R.string.reader_action_copy))
-                        return true
+            fun selectionWindowRect(): Rect? {
+                val local = selectionLocalRect() ?: return null
+                var top = local.top
+                var bottom = local.bottom
+                if (settings.readerMode == ReaderMode.VERTICAL) {
+                    val layout = verticalListState.layoutInfo
+                    val item = layout.visibleItemsInfo.firstOrNull { it.index == selectionPage }
+                    if (item != null) {
+                        // item.offset 相对视口起点（含 contentPadding 的负偏移），换算成列表视图坐标。
+                        val itemTop = item.offset - layout.viewportStartOffset
+                        top += itemTop
+                        bottom += itemTop
                     }
-                    override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
-                    override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
-                        if (item.itemId != 1) return false
-                        pageSet?.pages?.getOrNull(selectionPage)?.let { copySelection(it) }
-                        mode.finish()
-                        return true
-                    }
-                    override fun onDestroyActionMode(mode: ActionMode) {
-                        copyActionMode = null
-                        clearSelection()
-                    }
-                    override fun onGetContentRect(mode: ActionMode, target: android.view.View, outRect: Rect) {
-                        selectionContentRect(outRect)
-                    }
-                },
-                ActionMode.TYPE_FLOATING,
-            )
+                }
+                return Rect(local.left, top, local.right, bottom)
+            }
+
+            fun startCopyActionMode(): ActionMode? {
+                val mode = view.startActionMode(
+                    object : ActionMode.Callback2() {
+                        override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
+                            // floating 模式的菜单项由调用方提供，样式由系统渲染。
+                            menu.add(Menu.NONE, android.R.id.copy, 0, context.getString(R.string.reader_action_copy))
+                                ?.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+                            menu.add(Menu.NONE, android.R.id.shareText, 1, context.getString(R.string.reader_action_share))
+                                ?.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+                            return true
+                        }
+                        override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false
+                        override fun onActionItemClicked(mode: ActionMode, item: MenuItem): Boolean {
+                            val page = pageSet?.pages?.getOrNull(selectionPage)
+                            return when (item.itemId) {
+                                // Canvas 自绘文本没有 TextView 的默认复制行为，复制/分享自己实现。
+                                android.R.id.copy -> {
+                                    if (page != null) copySelection(page)
+                                    mode.finish()
+                                    true
+                                }
+                                android.R.id.shareText -> {
+                                    if (page != null) shareSelection(page)
+                                    mode.finish()
+                                    true
+                                }
+                                else -> false
+                            }
+                        }
+                        override fun onDestroyActionMode(mode: ActionMode) {
+                            copyActionMode = null
+                            clearSelection()
+                        }
+                        override fun onGetContentRect(mode: ActionMode, target: android.view.View, outRect: android.graphics.Rect) {
+                            val rect = selectionWindowRect()
+                            if (rect != null) {
+                                outRect.set(
+                                    rect.left.roundToInt(),
+                                    rect.top.roundToInt(),
+                                    rect.right.roundToInt(),
+                                    rect.bottom.roundToInt(),
+                                )
+                            } else {
+                                outRect.set(0, 0, 0, 0)
+                            }
+                        }
+                    },
+                    ActionMode.TYPE_FLOATING,
+                )
+                return mode
+            }
 
             LaunchedEffect(selectionPage) {
                 if (selectionPage >= 0) {
@@ -1719,6 +1818,8 @@ internal fun NativeTextReaderContent(
                             if (index in 0 until totalPages && index != pageIndex) {
                                 pageIndex = index
                             }
+                            // 与系统 TextView 一致：滚动时取消选择并收起 floating 菜单。
+                            if (selectionPage >= 0) clearSelection()
                         }
                 }
 
@@ -1757,8 +1858,8 @@ internal fun NativeTextReaderContent(
                                 .combinedClickable(
                                     interactionSource = remember { MutableInteractionSource() },
                                     indication = null,
-                                    onClick = { handleReaderTap(lastTouch, view.width.toFloat()) },
-                                    onLongClick = { handleReaderLongPress(lastTouch) },
+                                    onClick = { handleReaderTap(lastTouch, view.width.toFloat(), index) },
+                                    onLongClick = { handleReaderLongPress(lastTouch, index) },
                                 ),
                         ) {
                             drawPage(pages[index], 0f, 0f, index == verticalState.firstVisibleItemIndex, index)
@@ -1789,8 +1890,8 @@ internal fun NativeTextReaderContent(
                             .combinedClickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null,
-                                onClick = { handleReaderTap(lastTouch, view.width.toFloat()) },
-                                onLongClick = { handleReaderLongPress(lastTouch) },
+                                onClick = { handleReaderTap(lastTouch, view.width.toFloat(), safePageIndex) },
+                                onLongClick = { handleReaderLongPress(lastTouch, safePageIndex) },
                             ),
                     ) {
                         drawPage(pageLines, 0f, Float.NaN, true, -1)

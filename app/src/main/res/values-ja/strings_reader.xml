@@ -149,6 +149,8 @@
     <string name="reader_render_failed_hint">WebView がページを表示できませんでした。再試行してください。</string>
     <string name="reader_selection_selected">選択中</string>
     <string name="reader_action_copy">コピー</string>
+    <string name="reader_action_share">共有</string>
+    <string name="reader_action_select_paragraph">すべて選択</string>
     <string name="reader_action_cancel">キャンセル</string>
     <string name="reader_empty_content">この本の内容を表示できません。</string>
     <string name="reader_action_retry">再試行</string>

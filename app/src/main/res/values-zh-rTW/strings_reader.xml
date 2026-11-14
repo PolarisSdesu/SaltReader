@@ -149,6 +149,8 @@
     <string name="reader_render_failed_hint">WebView 暫時無法顯示內容，請重試。</string>
     <string name="reader_selection_selected">已選取段落</string>
     <string name="reader_action_copy">複製</string>
+    <string name="reader_action_share">分享</string>
+    <string name="reader_action_select_paragraph">全選</string>
     <string name="reader_action_cancel">取消</string>
     <string name="reader_empty_content">無法顯示此書內容。</string>
     <string name="reader_action_retry">重試</string>

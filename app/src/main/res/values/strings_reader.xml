@@ -149,6 +149,8 @@
     <string name="reader_render_failed_hint">The WebView could not display this page. Please try again.</string>
     <string name="reader_selection_selected">Selection</string>
     <string name="reader_action_copy">Copy</string>
+    <string name="reader_action_share">Share</string>
+    <string name="reader_action_select_paragraph">Select all</string>
     <string name="reader_action_cancel">Cancel</string>
     <string name="reader_empty_content">No readable content in this book.</string>
     <string name="reader_action_retry">Retry</string>
