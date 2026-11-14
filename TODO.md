@@ -35,18 +35,16 @@
   `h2.chapter-heading`——Native 注入该 class，Rust 采用与 WebView 相同的 0.35em/1.15em 间距。
   `.pius*` 的字号/行高/间距/对齐已一致，仅 `.pius1` 的 0.7 透明度尚未实现（影响很小）。
 
-- [x] **4. WebView 阅读器：tunnel 图片页抽搐 / 跳页**
+- [ ] **4. WebView 阅读器：tunnel 图片页抽搐 / 跳页**
+  （2026-11-14）相关 WebView 翻页/重排改动已按用户要求整体回退；以下根因分析保留，后续重做时参考：
   阅读 tunnel 开头几张图片页时画面抖动/抽动、左右翻页会卡顿跳页。
-  已完成：
-  - 修复 `prependChapters` 的重复补偿：立即补偿与图片就绪补偿都用同一个 `oldSize` 基线，
+  - 曾定位并修复 `prependChapters` 的重复补偿：立即补偿与图片就绪补偿都用同一个 `oldSize` 基线，
     同一位移会被加两次；改为按「上次已补偿尺寸」计算增量。
-  - 修复 `updateViewportHeight` 在每次 `resize` 都无条件重排 CSS 分栏并重新吸附页码的问题：
-    视口尺寸未变时直接返回。
+  - 曾定位 `updateViewportHeight` 在每次 `resize` 都无条件重排并重新吸附页码（现已随回退移除）。
   - 跳页根因：scroll-snap 标记只有 1px 高，Chrome 会忽略 `scroll-snap-stop: always`，
     快速 fling 直接跨过多个页面。把每个 snap area 改成整页大小（宽=页宽、高=视口高）后，
     原生 fling 每次稳定停在一页；另保留按像素的落点校正和 trim 期间禁用校正作为兜底。
-  - 模拟器实测：连续 5 次快速滑动精确前进 5 页（22→23→24→25→26），无跨页。
-  - 保留原生 fling + scroll-snap 手感，未改成 JS 拖拽动画。
+  - 曾实测连续 5 次快滑精确前进 5 页；这些改动现已回退，待重新评估方案。
 
 - [x] **5. Native 阅读器：tunnel 第一章头图被拆成单独一页**
   现状：头图独自占一页，图片之后整页留白，正文从下一页才开始。
