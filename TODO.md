@@ -69,5 +69,10 @@
   - figure/figcaption、dl/dt/dd 的默认样式；pre 制表符按 tab-size 8 展开。
   - hr 输出为规则行，Kotlin 画 1px 分隔线；修复 `<hr/>`/`<br/>` 自闭合标签解析。
   - 有序列表不再同时出现「• 1.」；ol 的 li 关闭 bullet。
-  待办：table caption、blockquote 左侧竖线、mark/ins/var/time 等行内语义；该测试书在
-  native 路径 `images extracted=0`（图片被 `stripHeavyPayloads` 清掉），需单独排查。
+  - 行内语义：补齐 s/strike/del/ins/kbd/samp/tt/var/cite/time/abbr/bdi/bdo/ruby/wbr 等标签；
+    `wbr` 映射为零宽断行点，`ins` 下划线、`var/cite` 斜体、`kbd/samp` 等宽。
+  - **行内标记迁移到私用区 U+E000..U+E00D**：原先 `\u0006..\u0013` 里的 TAB/LF/VT/FF/CR
+    与文本换行、分页分隔符冲突（下划线开启标记 `\u000A` 会被当成换行拆页）。Rust 与 Kotlin
+    的测量、绘制、复制过滤全部同步更新。
+  待办：table caption、blockquote 左侧竖线；该测试书在 native 路径 `images extracted=0`
+  （图片被 `stripHeavyPayloads` 清掉），需单独排查。

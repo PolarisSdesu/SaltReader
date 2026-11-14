@@ -480,14 +480,19 @@ fn apply_known_class(style: &mut Style, class_name: &str) {
 
 /// 行内样式开/关标记：b/i/u/s/code 在排版文本里插入这些控制字符。
 fn inline_marker(tag: &str, closing: bool) -> Option<char> {
+    // <wbr> 是零宽断行机会：UAX #14 把它当成可行断点，但不占宽度。
+    if tag == "wbr" {
+        return if closing { None } else { Some('\u{200B}') };
+    }
     let pair = match tag {
-        "b" | "strong" => ('\u{0006}', '\u{0007}'),
-        "i" | "em" => ('\u{0008}', '\u{0009}'),
-        "u" => ('\u{000A}', '\u{000B}'),
-        "s" | "strike" | "del" => ('\u{000C}', '\u{000D}'),
-        "code" | "tt" | "kbd" | "samp" => ('\u{000E}', '\u{000F}'),
-        "sup" => ('\u{0010}', '\u{0011}'),
-        "sub" => ('\u{0012}', '\u{0013}'),
+        "b" | "strong" => ('\u{E000}', '\u{E001}'),
+        // cite / var 在浏览器里默认斜体。
+        "i" | "em" | "cite" | "var" => ('\u{E002}', '\u{E003}'),
+        "u" | "ins" => ('\u{E004}', '\u{E005}'),
+        "s" | "strike" | "del" => ('\u{E006}', '\u{E007}'),
+        "code" | "tt" | "kbd" | "samp" => ('\u{E008}', '\u{E009}'),
+        "sup" => ('\u{E00A}', '\u{E00B}'),
+        "sub" => ('\u{E00C}', '\u{E00D}'),
         _ => return None,
     };
     Some(if closing { pair.1 } else { pair.0 })
@@ -520,7 +525,9 @@ fn is_inline_tag(tag: &str) -> bool {
     matches!(
         tag,
         "b" | "strong" | "i" | "em" | "span" | "a" | "u" | "small" | "sup" | "sub" | "code"
-            | "font" | "big" | "mark" | "cite" | "q"
+            | "font" | "big" | "mark" | "cite" | "q" | "s" | "strike" | "del" | "ins"
+            | "kbd" | "samp" | "tt" | "var" | "time" | "abbr" | "bdi" | "bdo" | "ruby" | "wbr"
+            | "label" | "output" | "meter" | "progress"
     )
 }
 
@@ -1200,7 +1207,7 @@ impl WidthTable {
 
 fn char_width(ch: char, font_size: f32, scale: f32, advances: &WidthTable) -> f32 {
     // 行内样式标记（\u0006..\u000F）不占排版宽度。
-    if ('\u{0006}'..='\u{0013}').contains(&ch) {
+    if ('\u{E000}'..='\u{E00D}').contains(&ch) {
         return 0.0;
     }
     if let Some(w) = advances.get(ch as u32) {
@@ -1218,7 +1225,7 @@ fn char_width(ch: char, font_size: f32, scale: f32, advances: &WidthTable) -> f3
 /// 等宽字体的近似字宽：代码块的排版宽度与绘制用的 monospace 字体一致，
 /// 否则用正文比例字体估算会偏窄，长代码行会被裁切而不是折行。
 fn mono_char_width(ch: char, size_px: f32, mono_adv_em: f32) -> f32 {
-    if ('\u{0006}'..='\u{0013}').contains(&ch) {
+    if ('\u{E000}'..='\u{E00D}').contains(&ch) {
         return 0.0;
     }
     match UnicodeWidthChar::width(ch).unwrap_or(1) {
@@ -1309,26 +1316,26 @@ struct MarkerState {
 impl MarkerState {
     fn observe(&mut self, ch: char) {
         match ch {
-            '\u{0006}' => self.bold = true,
-            '\u{0007}' => self.bold = false,
-            '\u{0008}' => self.italic = true,
-            '\u{0009}' => self.italic = false,
-            '\u{000A}' => self.underline = true,
-            '\u{000B}' => self.underline = false,
-            '\u{000C}' => self.strike = true,
-            '\u{000D}' => self.strike = false,
-            '\u{000E}' => self.mono = true,
-            '\u{000F}' => self.mono = false,
-            '\u{0010}' => {
+            '\u{E000}' => self.bold = true,
+            '\u{E001}' => self.bold = false,
+            '\u{E002}' => self.italic = true,
+            '\u{E003}' => self.italic = false,
+            '\u{E004}' => self.underline = true,
+            '\u{E005}' => self.underline = false,
+            '\u{E006}' => self.strike = true,
+            '\u{E007}' => self.strike = false,
+            '\u{E008}' => self.mono = true,
+            '\u{E009}' => self.mono = false,
+            '\u{E00A}' => {
                 self.sup = true;
                 self.sub = false;
             }
-            '\u{0011}' => self.sup = false,
-            '\u{0012}' => {
+            '\u{E00B}' => self.sup = false,
+            '\u{E00C}' => {
                 self.sub = true;
                 self.sup = false;
             }
-            '\u{0013}' => self.sub = false,
+            '\u{E00D}' => self.sub = false,
             _ => {}
         }
     }
@@ -1337,24 +1344,24 @@ impl MarkerState {
     fn reopen(&self) -> String {
         let mut out = String::new();
         if self.bold {
-            out.push('\u{0006}');
+            out.push('\u{E000}');
         }
         if self.italic {
-            out.push('\u{0008}');
+            out.push('\u{E002}');
         }
         if self.underline {
-            out.push('\u{000A}');
+            out.push('\u{E004}');
         }
         if self.strike {
-            out.push('\u{000C}');
+            out.push('\u{E006}');
         }
         if self.mono {
-            out.push('\u{000E}');
+            out.push('\u{E008}');
         }
         if self.sup {
-            out.push('\u{0010}');
+            out.push('\u{E00A}');
         } else if self.sub {
-            out.push('\u{0012}');
+            out.push('\u{E00C}');
         }
         out
     }
@@ -1689,7 +1696,7 @@ fn layout_blocks(
             }
             // 记录行内样式标记，供折行后重新开启；\u000E 之后的字符按 0.92em 等宽估算。
             if let Some(ch) = grapheme.chars().next() {
-                if grapheme.len() == ch.len_utf8() && ('\u{0006}'..='\u{0013}').contains(&ch) {
+                if grapheme.len() == ch.len_utf8() && ('\u{E000}'..='\u{E00D}').contains(&ch) {
                     markers.observe(ch);
                 }
             }
@@ -2213,7 +2220,7 @@ mod gap_tests {
         let plain = |html: &str| -> String {
             norm(html)
                 .chars()
-                .filter(|ch| !('\u{0006}'..='\u{0013}').contains(ch))
+                .filter(|ch| !('\u{E000}'..='\u{E00D}').contains(ch))
                 .collect::<String>()
                 .replace(' ', "")
         };
@@ -2406,9 +2413,9 @@ mod inline_code_break_tests {
         assert!(lines[0].contains("abcdefghij"), "first line should keep the code prefix: {lines:?}");
         assert!(!lines[0].contains("klmn"), "first line should break at the internal space: {lines:?}");
         // 折行落在 <code> 中间时，新行必须重新开启等宽标记，否则后半段会掉回正文字体。
-        assert!(lines[1].starts_with('\u{000E}'), "second line must re-open inline code: {lines:?}");
+        assert!(lines[1].starts_with('\u{E008}'), "second line must re-open inline code: {lines:?}");
         assert!(
-            lines[1].trim_start_matches('\u{000E}').starts_with("klmn"),
+            lines[1].trim_start_matches('\u{E008}').starts_with("klmn"),
             "second line should resume after the space: {lines:?}",
         );
     }
@@ -2422,7 +2429,7 @@ mod inline_code_break_tests {
         let lines: Vec<String> = pages.iter().flat_map(|page| page.iter()).map(|l| l.text.clone()).collect();
         assert!(lines.len() >= 3, "lines={}", lines.len());
         for line in &lines[1..lines.len() - 1] {
-            assert!(line.starts_with('\u{0006}'), "bold line must re-open its marker: {line:?}");
+            assert!(line.starts_with('\u{E000}'), "bold line must re-open its marker: {line:?}");
         }
     }
 
@@ -2498,6 +2505,15 @@ mod html5_structure_tests {
     fn hr_becomes_a_rule_marker_block() {
         let parsed = blocks("<p>上</p><hr/><p>下</p>");
         assert!(parsed.iter().any(|b| b.text == "\u{0014}"), "blocks={:?}", parsed.iter().map(|b| &b.text).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn inline_semantic_tags_emit_style_markers() {
+        let parsed = blocks("<p><del>a</del><ins>b</ins><kbd>c</kbd><var>d</var><wbr/>e</p>");
+        let text = &parsed[0].text;
+        for marker in ['\u{E006}', '\u{E004}', '\u{E008}', '\u{E002}', '\u{200B}'] {
+            assert!(text.contains(marker), "missing {:?} in {:?}", marker, text);
+        }
     }
 
     #[test]

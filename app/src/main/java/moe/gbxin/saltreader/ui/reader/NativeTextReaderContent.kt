@@ -816,7 +816,7 @@ internal fun NativeTextReaderContent(
                 position = if (end < 0) line.text.length else end + 1
                 continue
             }
-            if (ch.code in 0x0006..0x0014) {
+            if (ch.code in 0xE000..0xE00D || ch.code == 0x0014) {
                 position += 1
                 continue
             }
@@ -1064,7 +1064,7 @@ internal fun NativeTextReaderContent(
                                         strokeWidth = 1.dp.toPx(),
                                     )
                                     yTop += lineBox
-                                } else if (line.text.any { it == '\u0004' || it in '\u0006'..'\u0013' }) {
+                                } else if (line.text.any { it == '\u0004' || it in '\uE000'..'\uE00D' }) {
                                 // 行内 run：样式标记（粗/斜/下划线/删除线/等宽）+ 行内小图。
                                 paint.textAlign = Paint.Align.LEFT
                                 val richIndent = line.leftIndentEm * fontSizePx
@@ -1104,20 +1104,20 @@ internal fun NativeTextReaderContent(
                                                 tokenIndex = tokenEnd + 1
                                             }
 
-                                            tokenChar == '\u0006' -> { measureBold = true; tokenIndex += 1 }
-                                            tokenChar == '\u0007' -> { measureBold = false; tokenIndex += 1 }
-                                            tokenChar == '\u0008' -> { measureItalic = true; tokenIndex += 1 }
-                                            tokenChar == '\u0009' -> { measureItalic = false; tokenIndex += 1 }
-                                            tokenChar == '\u000A' -> { measureUnderline = true; tokenIndex += 1 }
-                                            tokenChar == '\u000B' -> { measureUnderline = false; tokenIndex += 1 }
-                                            tokenChar == '\u000C' -> { measureStrike = true; tokenIndex += 1 }
-                                            tokenChar == '\u000D' -> { measureStrike = false; tokenIndex += 1 }
-                                            tokenChar == '\u000E' -> { measureMono = true; tokenIndex += 1 }
-                                            tokenChar == '\u000F' -> { measureMono = false; tokenIndex += 1 }
-                                            tokenChar == '\u0010' -> { measureSup = true; measureSub = false; tokenIndex += 1 }
-                                            tokenChar == '\u0011' -> { measureSup = false; tokenIndex += 1 }
-                                            tokenChar == '\u0012' -> { measureSub = true; measureSup = false; tokenIndex += 1 }
-                                            tokenChar == '\u0013' -> { measureSub = false; tokenIndex += 1 }
+                                            tokenChar == '\uE000' -> { measureBold = true; tokenIndex += 1 }
+                                            tokenChar == '\uE001' -> { measureBold = false; tokenIndex += 1 }
+                                            tokenChar == '\uE002' -> { measureItalic = true; tokenIndex += 1 }
+                                            tokenChar == '\uE003' -> { measureItalic = false; tokenIndex += 1 }
+                                            tokenChar == '\uE004' -> { measureUnderline = true; tokenIndex += 1 }
+                                            tokenChar == '\uE005' -> { measureUnderline = false; tokenIndex += 1 }
+                                            tokenChar == '\uE006' -> { measureStrike = true; tokenIndex += 1 }
+                                            tokenChar == '\uE007' -> { measureStrike = false; tokenIndex += 1 }
+                                            tokenChar == '\uE008' -> { measureMono = true; tokenIndex += 1 }
+                                            tokenChar == '\uE009' -> { measureMono = false; tokenIndex += 1 }
+                                            tokenChar == '\uE00A' -> { measureSup = true; measureSub = false; tokenIndex += 1 }
+                                            tokenChar == '\uE00B' -> { measureSup = false; tokenIndex += 1 }
+                                            tokenChar == '\uE00C' -> { measureSub = true; measureSup = false; tokenIndex += 1 }
+                                            tokenChar == '\uE00D' -> { measureSub = false; tokenIndex += 1 }
 
                                             else -> {
                                                 val measurePaint = richPaintFor(
@@ -1222,20 +1222,20 @@ internal fun NativeTextReaderContent(
                                 while (richIndex < richText.length) {
                                     val ch = richText[richIndex]
                                     when (ch) {
-                                        '\u0006' -> { flushText(); richBold = true; richIndex++ }
-                                        '\u0007' -> { flushText(); richBold = false; richIndex++ }
-                                        '\u0008' -> { flushText(); richItalic = true; richIndex++ }
-                                        '\u0009' -> { flushText(); richItalic = false; richIndex++ }
-                                        '\u000A' -> { flushText(); richUnderline = true; richIndex++ }
-                                        '\u000B' -> { flushText(); richUnderline = false; richIndex++ }
-                                        '\u000C' -> { flushText(); richStrike = true; richIndex++ }
-                                        '\u000D' -> { flushText(); richStrike = false; richIndex++ }
-                                        '\u000E' -> { flushText(); richMono = true; richIndex++ }
-                                        '\u000F' -> { flushText(); richMono = false; richIndex++ }
-                                        '\u0010' -> { flushText(); richSup = true; richSub = false; richIndex++ }
-                                        '\u0011' -> { flushText(); richSup = false; richIndex++ }
-                                        '\u0012' -> { flushText(); richSub = true; richSup = false; richIndex++ }
-                                        '\u0013' -> { flushText(); richSub = false; richIndex++ }
+                                        '\uE000' -> { flushText(); richBold = true; richIndex++ }
+                                        '\uE001' -> { flushText(); richBold = false; richIndex++ }
+                                        '\uE002' -> { flushText(); richItalic = true; richIndex++ }
+                                        '\uE003' -> { flushText(); richItalic = false; richIndex++ }
+                                        '\uE004' -> { flushText(); richUnderline = true; richIndex++ }
+                                        '\uE005' -> { flushText(); richUnderline = false; richIndex++ }
+                                        '\uE006' -> { flushText(); richStrike = true; richIndex++ }
+                                        '\uE007' -> { flushText(); richStrike = false; richIndex++ }
+                                        '\uE008' -> { flushText(); richMono = true; richIndex++ }
+                                        '\uE009' -> { flushText(); richMono = false; richIndex++ }
+                                        '\uE00A' -> { flushText(); richSup = true; richSub = false; richIndex++ }
+                                        '\uE00B' -> { flushText(); richSup = false; richIndex++ }
+                                        '\uE00C' -> { flushText(); richSub = true; richSup = false; richIndex++ }
+                                        '\uE00D' -> { flushText(); richSub = false; richIndex++ }
                                         '\u0004' -> {
                                             flushText()
                                             val tokenEnd = richText.indexOf('\u0005', richIndex)
@@ -1953,7 +1953,7 @@ internal fun NativeTextReaderContent(
 
 /** 行内字符是否完全不可见（样式标记、控制符、格式符、零宽字符、空白）。 */
 private fun isInvisibleNativeChar(ch: Char): Boolean {
-    if (ch.code in 0x0006..0x0013) return true
+    if (ch.code in 0xE000..0xE00D || ch.code == 0x0014) return true
     if (ch.code < 0x20 || ch.code == 0x7F) return true
     if (ch.isWhitespace() || Character.isSpaceChar(ch)) return true
     if (ch == '\uFEFF' || ch in '\u200B'..'\u200F' || ch in '\u2060'..'\u2064') return true
