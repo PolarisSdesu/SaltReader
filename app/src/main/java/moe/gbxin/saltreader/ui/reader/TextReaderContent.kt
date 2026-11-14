@@ -2151,7 +2151,12 @@ private val HTML_TAIL = """
       var marker = document.createElement('div');
       // `scroll-snap-stop: always` is what makes a swipe turn exactly one page: without it a fast
       // fling skips intermediate snap points and can land several pages away (Chrome >= 75).
-      marker.style.cssText = 'position:absolute;top:0;left:0;width:1px;height:1px;scroll-snap-align:start;scroll-snap-stop:always;pointer-events:none;';
+      // 宽度必须是一整页：1px 的 snap area 太窄，快速 fling 会直接跨过多个
+      // scroll-snap-stop: always 标记，导致一次滑动跳好几页。
+      // snap area 必须是整页大小：1px 高的标记可能被 Chrome 忽略，
+      // 导致 scroll-snap-stop: always 失效、快速 fling 跨页。
+      var snapHeight = Math.max(1, window.innerHeight || 0);
+      marker.style.cssText = 'position:absolute;top:0;left:0;width:' + w + 'px;height:' + snapHeight + 'px;scroll-snap-align:start;scroll-snap-stop:always;pointer-events:none;';
       marker.style.left = (snapLayer.childElementCount * w) + 'px';
       snapLayer.appendChild(marker);
     }
@@ -2159,6 +2164,7 @@ private val HTML_TAIL = """
       snapWidth = w;
       for (var i = 0; i < snapLayer.childElementCount; i++) {
         snapLayer.children[i].style.left = (i * w) + 'px';
+        snapLayer.children[i].style.width = w + 'px';
       }
     }
   }
@@ -2225,6 +2231,8 @@ private val HTML_TAIL = """
     var keepFrom = Math.max(0, firstVisible - 2);
     if (keepFrom <= 0) return;
     lastTrimAt = now;
+    trimming = true;
+    setTimeout(function () { trimming = false; }, 300);
     var removedHeight = 0;
     for (var j = 0; j < keepFrom; j++) {
       removedHeight += secs[j].offsetHeight;
@@ -2249,6 +2257,8 @@ private val HTML_TAIL = """
     var keepFrom = Math.max(0, firstVisible - 2);
     if (keepFrom <= 0) return;
     lastTrimAt = now;
+    trimming = true;
+    setTimeout(function () { trimming = false; }, 300);
     var removedWidth = 0;
     for (var j = 0; j < keepFrom; j++) {
       removedWidth += secs[j].offsetWidth;
@@ -2495,8 +2505,6 @@ private val HTML_TAIL = """
     refreshMetrics();
     var pages = pagedPages();
     var p = Math.min(pages - 1, Math.max(0, pagedPage() + delta));
-    // Native smooth scrolling + CSS scroll snap: the settle curve is the platform fling curve,
-    // which is what the image pager also uses, and it costs no per-frame JS.
     scroll.scrollTo({ left: p * viewportWidth(), behavior: 'smooth' });
     report();
   }
@@ -2549,34 +2557,11 @@ private val HTML_TAIL = """
   // below also covers a direct drag that crosses more than one page, and an accidental click after
   // a swipe (which would otherwise add a tap-turn on top of the snap).
   var touchStartX = 0, touchStartY = 0, touchStartLeft = 0, touchIntent = 0, touching = false;
-  var gesturePage = -1, dragDistance = 0, lastScrollAt = 0, gestureClampRaf = 0;
-  /**
-   * Clamp the landing page to at most one page away from where the gesture started. Runs after the
-   * scroller has come to rest, so it never fights the native fling: a fast flick lands on the next
-   * page instead of skipping three, exactly like the image pager.
-   */
-  function watchGestureClamp() {
-    if (gestureClampRaf) return;
-    function tick() {
-      gestureClampRaf = 0;
-      if (gesturePage < 0) return;
-      if (touching) {
-        gestureClampRaf = requestAnimationFrame(tick);
-        return;
-      }
-      if (performance.now() - lastScrollAt < 130) {
-        gestureClampRaf = requestAnimationFrame(tick);
-        return;
-      }
-      var delta = pagedPage() - gesturePage;
-      if (Math.abs(delta) > 1) {
-        scroll.scrollLeft = (gesturePage + (delta > 0 ? 1 : -1)) * viewportWidth();
-        report(true);
-      }
-      gesturePage = -1;
-    }
-    gestureClampRaf = requestAnimationFrame(tick);
-  }
+  var gesturePage = -1, dragDistance = 0, lastScrollAt = 0, lastTouchEndAt = 0;
+  // 原生 fling 越过一页的瞬间截停到目标页；-1 表示当前没有待截停的滑动。
+  var swipeTargetLeft = -1, swipeDir = 0, swipeGuardUntil = 0, trimming = false;
+  // 原生 fling + CSS scroll-snap 负责手感；JS 只做“最终落页校正”，
+  // 避免快速 flick 跨过多个 snap 点。
   scroll.addEventListener('touchstart', function (e) {
     if (mode !== 'paged' || e.touches.length !== 1) return;
     touching = true;
@@ -2585,6 +2570,7 @@ private val HTML_TAIL = """
     touchStartLeft = scroll.scrollLeft;
     touchIntent = 0;
     dragDistance = 0;
+    swipeTargetLeft = -1;
     gesturePage = pagedPage();
   }, { passive: true });
   scroll.addEventListener('touchmove', function (e) {
@@ -2594,33 +2580,63 @@ private val HTML_TAIL = """
     dragDistance = Math.max(dragDistance, Math.abs(dx) + Math.abs(dy));
     if (Math.abs(dx) > 24 && Math.abs(dx) > Math.abs(dy)) touchIntent = dx < 0 ? 1 : -1;
   }, { passive: true });
-  scroll.addEventListener('touchend', function () {
+  scroll.addEventListener('touchend', function (e) {
     if (!touching) return;
     touching = false;
-    watchGestureClamp();
+    lastTouchEndAt = performance.now();
+    var endX = e.changedTouches && e.changedTouches.length ? e.changedTouches[0].clientX : touchStartX;
+    var endY = e.changedTouches && e.changedTouches.length ? e.changedTouches[0].clientY : touchStartY;
+    dragDistance = Math.max(dragDistance, Math.abs(endX - touchStartX) + Math.abs(endY - touchStartY));
     var intent = touchIntent;
     touchIntent = 0;
-    if (intent === 0) return;
+    if (intent === 0) {
+      gesturePage = -1;
+      return;
+    }
     var w = viewportWidth();
     var startPage = gesturePage >= 0 ? gesturePage : Math.round(touchStartLeft / w);
-    setTimeout(function () {
-      var left = scroll.scrollLeft;
-      // Only step in when the native snap fell back to the starting page: a real drag already
-      // moved far enough and must be left alone.
-      if (Math.abs(left - startPage * w) > w * 0.2) return;
-      var pages = pagedPages();
-      var target = Math.min(pages - 1, Math.max(0, startPage + intent));
-      scroll.scrollTo({ left: target * w, behavior: 'smooth' });
-    }, 320);
+    gesturePage = -1;
+    var target = Math.min(pagedPages() - 1, Math.max(0, startPage + intent));
+    swipeTargetLeft = target * w;
+    swipeDir = intent;
+    swipeGuardUntil = performance.now() + 900;
+    var attempts = 0;
+    function checkLanding() {
+      if (trimming) {
+        swipeTargetLeft = -1;
+        return;
+      }
+      if (touching) { retry(); return; }
+      if (performance.now() - lastScrollAt < 150 && attempts < 12) { retry(); return; }
+      if (swipeTargetLeft >= 0) {
+        if (Math.abs(scroll.scrollLeft - swipeTargetLeft) > 1) {
+          scroll.scrollLeft = swipeTargetLeft;
+        }
+        swipeTargetLeft = -1;
+      }
+    }
+    function retry() {
+      attempts++;
+      setTimeout(checkLanding, 120);
+    }
+    checkLanding();
   }, { passive: true });
   scroll.addEventListener('touchcancel', function () {
     touching = false;
     touchIntent = 0;
-    watchGestureClamp();
+    gesturePage = -1;
   }, { passive: true });
 
   scroll.addEventListener('scroll', function () {
     lastScrollAt = performance.now();
+    if (swipeTargetLeft >= 0 && !trimming && performance.now() < swipeGuardUntil) {
+      if ((scroll.scrollLeft - swipeTargetLeft) * swipeDir >= 0) {
+        // 原生 fling 已越过目标页：立即停在目标页，保留到边界为止的原生惯性。
+        var landing = swipeTargetLeft;
+        swipeTargetLeft = -1;
+        scroll.scrollLeft = landing;
+      }
+    }
     if (restoring) return;
     // Throttle (not debounce): the page number and progress must keep updating while the page is
     // still moving, not only after the finger lifts.
@@ -2637,6 +2653,8 @@ private val HTML_TAIL = """
     if (anchor) { e.preventDefault(); }
     // A swipe that ends over the left/right tap zone must not also turn the page.
     if (dragDistance > 24) return;
+    // 快速滑动可能没有 touchmove 事件，补一层时间窗兜底。
+    if (performance.now() - lastTouchEndAt < 400) return;
     var x = e.clientX || 0;
     var w = window.innerWidth || 1;
     try {
