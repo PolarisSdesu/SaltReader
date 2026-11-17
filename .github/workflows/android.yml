@@ -37,10 +37,9 @@ jobs:
       - name: Assemble debug + release and run unit tests
         run: ./gradlew :app:assembleDebug :app:assembleRelease :app:testDebugUnitTest --no-daemon --stacktrace
 
-      # Lint is advisory for now: the rules are still being triaged, so a lint
-      # finding must not block code review. Remove `continue-on-error` once clean.
-      - name: Lint (advisory)
-        continue-on-error: true
+      # Lint is blocking now that the error debt is cleared: a new error should fail the PR
+      # instead of only showing up as an annotation.
+      - name: Lint
         run: ./gradlew :app:lintDebug --no-daemon --stacktrace
 
       - name: Upload test and lint reports

@@ -91,6 +91,7 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -355,6 +356,7 @@ private fun ReaderFailed(
     modifier: Modifier = Modifier,
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val foreground = if (background.luminance() < 0.5f) Color.White else Color.Black
     Box(
         modifier.fillMaxSize().background(background),
@@ -391,7 +393,7 @@ private fun ReaderFailed(
                         clipboard?.setPrimaryClip(ClipData.newPlainText("Salt Reader error log", errorLog))
                         android.widget.Toast.makeText(
                             context,
-                            context.getString(R.string.reader_error_log_copied),
+                            resources.getString(R.string.reader_error_log_copied),
                             android.widget.Toast.LENGTH_SHORT,
                         ).show()
                     }) {

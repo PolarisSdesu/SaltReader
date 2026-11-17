@@ -18,6 +18,7 @@ import android.view.MenuItem
 import android.view.WindowManager
 import android.text.Html
 import android.util.Base64
+import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -102,6 +103,7 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -207,6 +209,7 @@ internal fun NativeTextReaderContent(
     onDebugSwitch: ((Float) -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val density = LocalDensity.current
     val readerBackground = pageBackgroundColor(
         settings.readerBackground,
@@ -350,7 +353,7 @@ internal fun NativeTextReaderContent(
                 fullPageWidth = (leftPadPx + width + rightPadPx),
                 // 纵向模式没有分页：全宽图片不被页高封顶（允许 2×版心），保证宽度真正 100%。
                 imageMaxHeightRatio = if (settings.readerMode == ReaderMode.VERTICAL) 10f else 0.92f,
-                imagePlaceholder = context.getString(R.string.reader_image_placeholder),
+                imagePlaceholder = resources.getString(R.string.reader_image_placeholder),
                 imageDensity = density.density,
             )
             // 纵向：直接使用 Rust 分页结果（保证内容完整），页面按真实内容高度连续堆叠。
@@ -1726,9 +1729,9 @@ internal fun NativeTextReaderContent(
                     object : ActionMode.Callback2() {
                         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
                             // floating 模式的菜单项由调用方提供，样式由系统渲染。
-                            menu.add(Menu.NONE, android.R.id.copy, 0, context.getString(R.string.reader_action_copy))
+                            menu.add(Menu.NONE, android.R.id.copy, 0, resources.getString(R.string.reader_action_copy))
                                 ?.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
-                            menu.add(Menu.NONE, android.R.id.shareText, 1, context.getString(R.string.reader_action_share))
+                            menu.add(Menu.NONE, android.R.id.shareText, 1, resources.getString(R.string.reader_action_share))
                                 ?.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
                             return true
                         }
@@ -2656,6 +2659,9 @@ private fun customFontFile(context: Context, ref: ReaderFontRef?): java.io.File?
     return ReaderFonts.ensureCached(context, ref)
 }
 
+// Callers already gate this on Build.VERSION_CODES.Q; the annotation makes that contract
+// explicit because lint cannot see the guard across the function boundary.
+@RequiresApi(Build.VERSION_CODES.Q)
 private fun fontFamilyOf(file: java.io.File): android.graphics.fonts.FontFamily =
     android.graphics.fonts.FontFamily.Builder(android.graphics.fonts.Font.Builder(file).build()).build()
 

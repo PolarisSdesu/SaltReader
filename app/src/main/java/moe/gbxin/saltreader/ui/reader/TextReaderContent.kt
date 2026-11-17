@@ -203,6 +203,15 @@ private class WebViewHolder {
 }
 
 /**
+ * Holds the one JS bridge instance for a reading session. Kept behind a concrete property so the
+ * type is statically known at the `addJavascriptInterface` call site (lint otherwise resolves the
+ * remembered value to the generic type variable `T` and reports a false missing-annotation error).
+ */
+private class JsBridgeHolder(emit: (TextReaderEvent) -> Unit) {
+    val bridge = TextJavascriptBridge(emit)
+}
+
+/**
  * Mutable value holder read from event handlers / effects without becoming Compose state.
  * Writing these must not invalidate composition: page turns only recompose the chrome, whose
  * lambdas read [TextPageInfo] directly.
@@ -476,7 +485,7 @@ internal fun TextReaderContent(
     val events = remember { kotlinx.coroutines.channels.Channel<TextReaderEvent>(
         kotlinx.coroutines.channels.Channel.UNLIMITED,
     ) }
-    val bridge = remember { TextJavascriptBridge { event -> events.trySend(event) } }
+    val bridgeHolder = remember { JsBridgeHolder { event -> events.trySend(event) } }
     val holder = remember { WebViewHolder() }
     var pageFinishedToken by remember { mutableIntStateOf(0) }
     // WebView 渲染进程被系统回收后，这个 WebView 实例就不可用了，必须重建。
@@ -1095,7 +1104,7 @@ internal fun TextReaderContent(
                     isVerticalScrollBarEnabled = false
                     isHorizontalScrollBarEnabled = false
                     overScrollMode = View.OVER_SCROLL_NEVER
-                    addJavascriptInterface(bridge, BRIDGE_NAME)
+                    addJavascriptInterface(bridgeHolder.bridge, BRIDGE_NAME)
                     webChromeClient = object : WebChromeClient() {
                         override fun onConsoleMessage(message: ConsoleMessage): Boolean {
                             // 只记录错误/警告，正常页面脚本不刷日志。

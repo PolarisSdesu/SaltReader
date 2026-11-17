@@ -67,7 +67,6 @@ object ReadingLiveUpdate {
                         .setProgress(percent),
                 )
                 .setShortCriticalText("$percent%")
-                .setRequestPromotedOngoing(true)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setShowWhen(false)
@@ -80,6 +79,12 @@ object ReadingLiveUpdate {
                         contentIntent,
                     ).build(),
                 )
+            // Promoted ongoing (Live Update) is an Android 16 QPR1 (API 36.1) API. The early
+            // return above only guarantees 36.0, so gate the call on the full version to avoid a
+            // NoSuchMethodError on 36.0 devices.
+            if (Build.VERSION.SDK_INT_FULL >= Build.VERSION_CODES_FULL.BAKLAVA_1) {
+                builder.setRequestPromotedOngoing(true)
+            }
             if (cover != null) builder.setLargeIcon(cover)
             runCatching { manager.notify(NOTIFICATION_ID, builder.build()) }
         }

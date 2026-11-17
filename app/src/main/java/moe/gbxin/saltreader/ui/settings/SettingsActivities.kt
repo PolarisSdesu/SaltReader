@@ -114,6 +114,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.res.vectorResource
@@ -697,6 +698,7 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
 @Composable
 private fun StorageSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val app = context.applicationContext as SaltReaderApplication
     val scope = rememberCoroutineScope()
     val books by app.library.books.collectAsStateWithLifecycle()
@@ -728,7 +730,7 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
         val startedAt = System.currentTimeMillis()
         scanning = true
         scanProgress = 0f
-        scanLabel = context.getString(R.string.settings_storage_scanning)
+        scanLabel = resources.getString(R.string.settings_storage_scanning)
         scanMessage = null
         scanMessageIsError = false
         scope.launch {
@@ -745,15 +747,15 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                         report.count,
                     )
                     report.hasFailures -> report.failures.first().reason
-                    else -> context.getString(R.string.settings_storage_scan_no_comics)
+                    else -> resources.getString(R.string.settings_storage_scan_no_comics)
                 }
                 scanMessageIsError = report.count == 0 && report.hasFailures
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                scanMessage = context.getString(
+                scanMessage = resources.getString(
                     R.string.settings_storage_scan_failed,
-                    e.message ?: context.getString(R.string.settings_unknown_error),
+                    e.message ?: resources.getString(R.string.settings_unknown_error),
                 )
                 scanMessageIsError = true
             } finally {
@@ -775,14 +777,14 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
             try {
                 app.library.removeRoot(root.treeUri)
                 reloadStorage()
-                scanMessage = context.getString(R.string.settings_storage_root_removed, root.displayName)
+                scanMessage = resources.getString(R.string.settings_storage_root_removed, root.displayName)
                 scanMessageIsError = false
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                scanMessage = context.getString(
+                scanMessage = resources.getString(
                     R.string.settings_storage_root_remove_failed,
-                    e.message ?: context.getString(R.string.settings_unknown_error),
+                    e.message ?: resources.getString(R.string.settings_unknown_error),
                 )
                 scanMessageIsError = true
             }
@@ -799,18 +801,18 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                 reloadStorage()
                 snackbar.showSnackbar(
                     if (freed > 0) {
-                        context.getString(R.string.settings_storage_cache_cleared, formatBytes(freed))
+                        resources.getString(R.string.settings_storage_cache_cleared, formatBytes(freed))
                     } else {
-                        context.getString(R.string.settings_storage_cache_empty)
+                        resources.getString(R.string.settings_storage_cache_empty)
                     },
                 )
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 snackbar.showSnackbar(
-                    context.getString(
+                    resources.getString(
                         R.string.settings_storage_cache_clear_failed,
-                        e.message ?: context.getString(R.string.settings_unknown_error),
+                        e.message ?: resources.getString(R.string.settings_unknown_error),
                     ),
                 )
             } finally {
@@ -1128,6 +1130,7 @@ private const val REPO_URL = "https://github.com/PolarisSdesu/SaltReader"
 @Composable
 private fun AboutSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     val app = context.applicationContext as SaltReaderApplication
     val settings by app.settings.state.collectAsStateWithLifecycle()
     var showDebug by remember { mutableStateOf(false) }
@@ -1151,7 +1154,7 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
     val versionText = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})"
     val buildTimeText = remember(BuildConfig.GIT_COMMIT_TIME) {
         if (BuildConfig.GIT_COMMIT_TIME <= 0L) {
-            context.getString(R.string.about_unknown)
+            resources.getString(R.string.about_unknown)
         } else {
             SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault())
                 .format(Date(BuildConfig.GIT_COMMIT_TIME * 1000L))

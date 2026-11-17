@@ -106,6 +106,7 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -154,6 +155,7 @@ fun LibraryScreen(
     val state by vm.uiState.collectAsStateWithLifecycle()
     val refreshing by vm.refreshing.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val resources = LocalResources.current
     val app = context.applicationContext as SaltReaderApplication
     val repo = app.library
     // 按字段订阅设置：整体订阅 settings 会让主题/阅读器等无关偏好变更也重组整个书库。
@@ -223,15 +225,15 @@ fun LibraryScreen(
                     val report = event.report
                     // Every supported format is readable in place now; no conversion step remains.
                     val message = when {
-                        report.count > 0 && report.hasFailures -> context.getString(
+                        report.count > 0 && report.hasFailures -> resources.getString(
                             R.string.library_import_done_failed,
                             report.count,
                             report.failures.size,
                             report.failures.first().name,
                         )
-                        report.count > 0 -> context.getString(R.string.library_import_done, report.count)
-                        report.hasFailures -> context.getString(R.string.library_import_failed_one, report.failures.first().reason)
-                        else -> context.getString(R.string.library_import_empty)
+                        report.count > 0 -> resources.getString(R.string.library_import_done, report.count)
+                        report.hasFailures -> resources.getString(R.string.library_import_failed_one, report.failures.first().reason)
+                        else -> resources.getString(R.string.library_import_empty)
                     }
                     snackbar.showSnackbar(message)
                 }
@@ -424,7 +426,10 @@ private fun <T> rememberSettingField(
     selector: (AppSettings) -> T,
 ): State<T> {
     val fieldFlow = remember(settings) { settings.map(selector).distinctUntilChanged() }
-    return fieldFlow.collectAsStateWithLifecycle(settings.value.let(selector))
+    // The snapshot is only a one-shot seed for the first frame; every later value is delivered
+    // by collectAsStateWithLifecycle, so reading it once inside remember cannot go stale.
+    val initial = remember(settings) { settings.value.let(selector) }
+    return fieldFlow.collectAsStateWithLifecycle(initial)
 }
 
 @Composable
