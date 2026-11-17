@@ -2124,7 +2124,7 @@ fn push_line(
     let _ = content_width;
 }
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateHtml(
     mut env: JNIEnv,
     _this: JObject,
