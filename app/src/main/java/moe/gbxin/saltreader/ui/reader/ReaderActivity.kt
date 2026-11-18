@@ -9,13 +9,18 @@ import androidx.activity.viewModels
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -107,16 +112,29 @@ class ReaderActivity : LocalizedActivity() {
             SaltReaderTheme(themeMode = settings.themeMode, dynamicColor = settings.dynamicColor, amoledBlack = settings.amoledBlack) {
                 var visible by remember { mutableStateOf(false) }
                 LaunchedEffect(Unit) { visible = true }
-                AnimatedVisibility(
-                    visible = visible,
-                    enter = fadeIn(tween(durationMillis = 180)),
-                ) {
-                    ReaderScreen(
-                        vm = readerViewModel,
-                        onBack = { finish() },
-                        volumePageEvents = volumePageEvents,
-                        modifier = Modifier.fillMaxSize(),
-                    )
+                Box(Modifier.fillMaxSize()) {
+                    AnimatedVisibility(
+                        visible = visible,
+                        enter = fadeIn(tween(durationMillis = 180)),
+                    ) {
+                        ReaderScreen(
+                            vm = readerViewModel,
+                            onBack = { finish() },
+                            volumePageEvents = volumePageEvents,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    }
+                    if (settings.debugMode) {
+                        // 调试浮层覆盖在所有阅读器（图片 / WebView / 原生）之上；点一下折叠。
+                        val stats = rememberReaderDebugStats(enabled = true)
+                        ReaderDebugPanel(
+                            stats = stats,
+                            modifier = Modifier
+                                .align(Alignment.TopStart)
+                                .statusBarsPadding()
+                                .padding(start = 8.dp, top = 72.dp),
+                        )
+                    }
                 }
             }
         }
