@@ -13,7 +13,8 @@ data-layer contracts.
   storage or network permissions and never copies user files; app-private storage only holds
   derived data (covers, text/chapter caches, EPUB page-map caches).
 - Supported formats: CBZ/ZIP, PDF, image folders, image EPUB, reflowable text EPUB, MOBI/AZW3.
-- `minSdk 26`, `compileSdk 37`, `targetSdk 36`, JDK 21, Gradle 9.7.1, AGP 9.4, Kotlin 2.3.21.
+- `minSdk 26`, `compileSdk 37`, `targetSdk 36`, JDK 21 (CI) / JDK 25 (local), Gradle 9.9.1,
+  AGP 9.4, Kotlin 2.3.21.
 - Material 3 is pinned to `1.5.0-beta02` on purpose (Expressive components). Don't bump it
   casually; it is above the BOM version.
 
@@ -39,17 +40,29 @@ third_party/     vendored notices
 
 ## Build and test
 
-Use the Gradle wrapper; set `JAVA_HOME` to a JDK 21 if the shell default is older.
+Use the Gradle wrapper. CI runs on JDK 21; locally the only installed JDK is **JDK 25** (the
+JetBrains runtime bundled with Android Studio, linked at `/Library/Java/JavaVirtualMachines/jbr`
+and used by `java` on `PATH`). Both run the same Gradle/AGP tasks, so do not install another JDK.
+
+The inherited `JAVA_HOME` on this machine points at a removed Homebrew `openjdk@17`, which makes
+Gradle fail with `JAVA_HOME is set to an invalid directory`. Repair it once per shell instead of
+exporting the Android Studio path by hand:
+
+```bash
+export JAVA_HOME=$(/usr/libexec/java_home)     # -> .../jbr/Contents/Home (JDK 25)
+```
 
 ```bash
 ./gradlew :app:testDebugUnitTest              # JVM unit tests (fast, always run before handing off)
 ./gradlew :app:assembleDebug                  # debug APK
 ./gradlew :app:assembleRelease                # signed, R8-minified release APK
 ./gradlew :app:assembleRelease -PfastRelease  # local: no R8 / shrink / release lint (~5s warm)
-./gradlew :app:lintDebug                      # lint (advisory in CI)
+./gradlew :app:lintDebug                      # lint (blocking in CI: 0 errors, 0 warnings)
 ```
 
-- CI (`.github/workflows/android.yml`) runs debug + release + unit tests on every push to `main`.
+- CI (`.github/workflows/android.yml`) runs debug + release + unit tests + `lintDebug` (blocking)
+  on every push to `main`, plus the Rust `cargo test` job. Keep the lint report at zero; a new
+  finding fails the build.
 - Release R8 is the expensive step (~100s cold, mostly `material-icons-extended`, whose runtime
   jar is 83MB). Use `-PfastRelease` while iterating on device; never for shipping.
 - Gradle configuration cache is enabled (`gradle.properties`); fall back with
