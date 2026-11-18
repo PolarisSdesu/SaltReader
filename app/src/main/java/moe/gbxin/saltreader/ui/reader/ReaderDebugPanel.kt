@@ -86,6 +86,92 @@ internal data class ReaderDebugStats(
 private const val HISTORY = 60
 private const val SAMPLE_INTERVAL_MS = 500L
 private const val MB = 1024f * 1024f
+
+/** 面板内的固定文案：EN / 中文各一份，由面板右下角的 EN/中 开关切换。 */
+private data class DebugLabels(
+    val perf: String,
+    val layout: String,
+    val record: String,
+    val page: String,
+    val frame: String,
+    val java: String,
+    val native: String,
+    val pss: String,
+    val gcCount: String,
+    val gcTime: String,
+    val blocking: String,
+    val threads: String,
+    val screen: String,
+    val switchToNative: String,
+    val switchToWebview: String,
+    val nativeUnavailable: String,
+    val status: String,
+    val recording: String,
+    val idle: String,
+    val file: String,
+    val start: String,
+    val stop: String,
+    val hint: String,
+    val paged: String,
+    val vertical: String,
+)
+
+private val LABELS_EN = DebugLabels(
+    perf = "PERF",
+    layout = "LAYOUT",
+    record = "RECORD",
+    page = "PAGE",
+    frame = "FRAME",
+    java = "JAVA",
+    native = "NATIVE",
+    pss = "PSS",
+    gcCount = "GC COUNT",
+    gcTime = "GC TIME",
+    blocking = "blocking",
+    threads = "THREADS",
+    screen = "SCREEN",
+    switchToNative = "SWITCH → NATIVE",
+    switchToWebview = "SWITCH → WEBVIEW",
+    nativeUnavailable = "NATIVE UNAVAILABLE",
+    status = "STATUS",
+    recording = "REC %d rows",
+    idle = "IDLE",
+    file = "FILE",
+    start = "START RECORDING",
+    stop = "STOP RECORDING",
+    hint = "Android/data/<pkg>/files/debug/ · adb pull",
+    paged = "paged",
+    vertical = "vertical",
+)
+
+private val LABELS_ZH = DebugLabels(
+    perf = "性能",
+    layout = "布局",
+    record = "录制",
+    page = "页",
+    frame = "帧耗时",
+    java = "内存",
+    native = "原生",
+    pss = "总内存",
+    gcCount = "GC 次数",
+    gcTime = "GC 耗时",
+    blocking = "阻塞",
+    threads = "线程",
+    screen = "屏幕",
+    switchToNative = "切换 → 原生",
+    switchToWebview = "切换 → 网页",
+    nativeUnavailable = "原生阅读器不可用",
+    status = "状态",
+    recording = "录制中 · %d 行",
+    idle = "未录制",
+    file = "文件",
+    start = "开始录制",
+    stop = "停止录制",
+    hint = "Android/data/<pkg>/files/debug/ · adb pull",
+    paged = "分页",
+    vertical = "纵向",
+)
+
 private const val TAB_PERF = 0
 private const val TAB_LAYOUT = 1
 private const val TAB_RECORD = 2
@@ -173,6 +259,7 @@ internal fun rememberReaderDebugStats(enabled: Boolean): ReaderDebugStats {
 internal fun ReaderDebugPanel(
     stats: ReaderDebugStats,
     renderer: String,
+    mode: String,
     debugText: String,
     page: Int,
     pages: Int,
@@ -187,6 +274,9 @@ internal fun ReaderDebugPanel(
 ) {
     var expanded by rememberSaveable { mutableStateOf(true) }
     var tab by rememberSaveable { mutableIntStateOf(TAB_PERF) }
+    // 默认跟随系统语言，用户可以在面板里手动切换并保留到本次阅读结束。
+    var chinese by rememberSaveable { mutableStateOf(Locale.getDefault().language == "zh") }
+    val labels = if (chinese) LABELS_ZH else LABELS_EN
     // 位置是相对窗口左上角的绝对偏移（不含任何外层 padding），这样边界可以直接用窗口尺寸算。
     val density = LocalDensity.current
     val initialX = with(density) { 8.dp.roundToPx() }
@@ -226,7 +316,7 @@ internal fun ReaderDebugPanel(
                     dragY = (dragY + drag.y).coerceIn(0f, maxY)
                 }
             }
-            .width(if (expanded) 276.dp else 132.dp),
+            .width(if (expanded) 276.dp else 180.dp),
         shape = RoundedCornerShape(12.dp),
         color = colors.surfaceContainerHigh,
         contentColor = colors.onSurface,
@@ -239,11 +329,12 @@ internal fun ReaderDebugPanel(
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text(
-                    text = "DEBUG",
+                    text = "DEBUG PANEL",
                     color = colors.primary,
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
                 )
                 Text(
                     text = "${stats.fps.roundToInt()} fps",
@@ -251,33 +342,43 @@ internal fun ReaderDebugPanel(
                     fontSize = 11.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
                 )
             }
             if (!expanded) return@Column
-            Text(
-                text = renderer,
-                color = colors.onSurfaceVariant,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-            )
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = renderer + " · " + if (mode == "vertical") labels.vertical else labels.paged,
+                    color = colors.onSurfaceVariant,
+                    fontSize = 10.sp,
+                    fontFamily = FontFamily.Monospace,
+                    maxLines = 1,
+                    modifier = Modifier.weight(1f),
+                )
+                LangToggle(chinese = chinese, onChange = { chinese = it })
+            }
             SwitchRow(
-                nativeActive = renderer.startsWith("native"),
+                labels = labels,
+                nativeActive = renderer == "native",
                 enabled = nativeAvailable,
                 onSwitch = onSwitchRenderer,
             )
             when (tab) {
                 TAB_LAYOUT -> LayoutTab(debugText)
-                TAB_RECORD -> RecordTab(recording, recordRows, recordFileName, onToggleRecording)
-                else -> PerfTab(stats, windowSize, density.density, refreshRate, page, pages, ratio)
+                TAB_RECORD -> RecordTab(labels, recording, recordRows, recordFileName, onToggleRecording)
+                else -> PerfTab(labels, stats, windowSize, density.density, refreshRate, page, pages, ratio)
             }
-            DebugTabs(selected = tab, onSelect = { tab = it })
+            DebugTabs(labels, selected = tab, onSelect = { tab = it })
         }
     }
 }
 
 @Composable
 private fun PerfTab(
+    labels: DebugLabels,
     stats: ReaderDebugStats,
     windowSize: IntSize,
     densityValue: Float,
@@ -288,8 +389,8 @@ private fun PerfTab(
 ) {
     Column {
         val percent = (ratio.coerceIn(0f, 1f) * 100f).roundToInt()
-        DebugRow("页 PAGE", "$page / $pages · $percent%")
-        DebugRow("帧耗时 FRAME", "${oneDecimal(stats.frameMs)} ms · max ${oneDecimal(stats.worstFrameMs)}")
+        DebugRow(labels.page, "$page / $pages · $percent%")
+        DebugRow(labels.frame, "${oneDecimal(stats.frameMs)} ms · max ${oneDecimal(stats.worstFrameMs)}")
         Sparkline(
             values = stats.fpsHistory,
             // 60Hz 屏幕满格；高刷设备自动按观测到的峰值缩放，免得曲线一直贴顶。
@@ -303,7 +404,7 @@ private fun PerfTab(
             0
         }
         DebugRow(
-            "内存 JAVA",
+            labels.java,
             "${oneDecimal(stats.javaUsedMb)} / ${stats.javaMaxMb.roundToInt()} MB · $heapPercent%",
         )
         Sparkline(
@@ -312,13 +413,13 @@ private fun PerfTab(
             color = MaterialTheme.colorScheme.tertiary,
             modifier = Modifier.fillMaxWidth().height(26.dp).padding(vertical = 4.dp),
         )
-        DebugRow("原生 NATIVE", "${oneDecimal(stats.nativeMb)} MB")
-        DebugRow("总内存 PSS", "${stats.pssMb.roundToInt()} MB")
-        DebugRow("GC 次数", "${stats.gcCount} · 阻塞 ${stats.blockingGcCount}")
-        DebugRow("GC 耗时", "${stats.gcTimeMs} ms")
-        DebugRow("线程 THREADS", "${stats.threads}")
+        DebugRow(labels.native, "${oneDecimal(stats.nativeMb)} MB")
+        DebugRow(labels.pss, "${stats.pssMb.roundToInt()} MB")
+        DebugRow(labels.gcCount, "${stats.gcCount} · ${labels.blocking} ${stats.blockingGcCount}")
+        DebugRow(labels.gcTime, "${stats.gcTimeMs} ms")
+        DebugRow(labels.threads, "${stats.threads}")
         DebugRow(
-            "屏幕 SCREEN",
+            labels.screen,
             "${windowSize.width}×${windowSize.height} · ${oneDecimal(densityValue)}x · " +
                 "${refreshRate.roundToInt()}Hz",
         )
@@ -346,6 +447,7 @@ private fun LayoutTab(debugText: String) {
  */
 @Composable
 private fun RecordTab(
+    labels: DebugLabels,
     recording: Boolean,
     rows: Int,
     fileName: String,
@@ -353,10 +455,10 @@ private fun RecordTab(
 ) {
     val colors = MaterialTheme.colorScheme
     Column {
-        DebugRow("状态 STATUS", if (recording) "录制中 REC · $rows 行" else "未录制 IDLE")
-        DebugRow("文件 FILE", fileName.ifBlank { "—" })
+        DebugRow(labels.status, if (recording) labels.recording.format(rows) else labels.idle)
+        DebugRow(labels.file, fileName.ifBlank { "—" })
         Text(
-            text = if (recording) "停止录制 STOP" else "开始录制 START",
+            text = if (recording) labels.stop else labels.start,
             color = colors.primary,
             fontSize = 11.sp,
             fontWeight = FontWeight.Bold,
@@ -367,7 +469,7 @@ private fun RecordTab(
                 .clickable { onToggle() },
         )
         Text(
-            text = "Android/data/<pkg>/files/debug/ · adb pull",
+            text = labels.hint,
             color = colors.onSurfaceVariant,
             fontSize = 9.sp,
             fontFamily = FontFamily.Monospace,
@@ -378,11 +480,16 @@ private fun RecordTab(
 
 /** 渲染器切换：原本是阅读器右上角的浮动按钮，现在收进面板。 */
 @Composable
-private fun SwitchRow(nativeActive: Boolean, enabled: Boolean, onSwitch: () -> Unit) {
+private fun SwitchRow(
+    labels: DebugLabels,
+    nativeActive: Boolean,
+    enabled: Boolean,
+    onSwitch: () -> Unit,
+) {
     val colors = MaterialTheme.colorScheme
-    val label = if (nativeActive) "切换 SWITCH → 网页 WEBVIEW" else "切换 SWITCH → 原生 NATIVE"
+    val label = if (nativeActive) labels.switchToWebview else labels.switchToNative
     Text(
-        text = if (enabled) label else "原生阅读器不可用 NATIVE UNAVAILABLE",
+        text = if (enabled) label else labels.nativeUnavailable,
         color = when {
             !enabled -> colors.onSurfaceVariant.copy(alpha = 0.5f)
             else -> colors.primary
@@ -399,10 +506,10 @@ private fun SwitchRow(nativeActive: Boolean, enabled: Boolean, onSwitch: () -> U
 
 /** 底部 tab：选中项用主色 + 下划线，未选中用弱化的 onSurfaceVariant。 */
 @Composable
-private fun DebugTabs(selected: Int, onSelect: (Int) -> Unit) {
+private fun DebugTabs(labels: DebugLabels, selected: Int, onSelect: (Int) -> Unit) {
     val colors = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth()) {
-        listOf("性能 PERF", "布局 LAYOUT", "录制 RECORD").forEachIndexed { index, label ->
+        listOf(labels.perf, labels.layout, labels.record).forEachIndexed { index, label ->
             val active = index == selected
             Column(
                 modifier = Modifier
@@ -480,6 +587,38 @@ private fun Sparkline(
         }
         drawPath(path, color = color, style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round))
     }
+}
+
+/** 面板语言的 EN / 中 开关。 */
+@Composable
+private fun LangToggle(chinese: Boolean, onChange: (Boolean) -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        LangOption("EN", active = !chinese) { onChange(false) }
+        Text(
+            text = "|",
+            color = colors.outlineVariant,
+            fontSize = 10.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        )
+        LangOption("中", active = chinese) { onChange(true) }
+    }
+}
+
+@Composable
+private fun LangOption(text: String, active: Boolean, onClick: () -> Unit) {
+    val colors = MaterialTheme.colorScheme
+    Text(
+        text = text,
+        color = if (active) colors.primary else colors.onSurfaceVariant,
+        fontSize = 10.sp,
+        fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
+        fontFamily = FontFamily.Monospace,
+        modifier = Modifier
+            .clickable { onClick() }
+            .padding(horizontal = 2.dp),
+    )
 }
 
 private fun oneDecimal(value: Float): String = String.format(Locale.US, "%.1f", value)

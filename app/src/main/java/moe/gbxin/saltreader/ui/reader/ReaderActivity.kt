@@ -159,20 +159,27 @@ class ReaderActivity : LocalizedActivity() {
                         val book = readerViewModel.latestBook()
                         val mode = settings.readerMode.name.lowercase()
                         val renderer = if (book != null && book.reflowable) {
-                            if (settings.nativeReader) "native · $mode" else "webview · $mode"
+                            if (settings.nativeReader) "native" else "webview"
                         } else {
-                            "image · $mode"
+                            "image"
                         }
                         LaunchedEffect(stats, recording) {
                             if (!recording) return@LaunchedEffect
                             withContext(Dispatchers.IO + NonCancellable) {
-                                recorder.append(renderer, debugPage, debugPages, debugRatio, stats)
+                                recorder.append(
+                                    "$renderer · $mode",
+                                    debugPage,
+                                    debugPages,
+                                    debugRatio,
+                                    stats,
+                                )
                             }
                             recordRows = recorder.rows
                         }
                         ReaderDebugPanel(
                             stats = stats,
                             renderer = renderer,
+                            mode = mode,
                             debugText = debugText,
                             page = debugPage,
                             pages = debugPages,
