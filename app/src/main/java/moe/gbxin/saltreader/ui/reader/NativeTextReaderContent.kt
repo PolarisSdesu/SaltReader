@@ -2467,6 +2467,8 @@ private class JustifiedLayout(
     val boundaries: BooleanArray,
     val measured: Float,
     val gaps: Int,
+    /** 每个字都是可拉伸边界（纯 CJK 行）：可以用 letterSpacing 一次画完整行。 */
+    val uniform: Boolean,
 )
 
 /** 行文本 + 画笔特征 → 布局。key 碰撞时用 `source === text` 复核，不会错绘。 */
@@ -2521,6 +2523,7 @@ private fun justifiedLayout(text: String, paint: Paint): JustifiedLayout {
         boundaries = boundaries,
         measured = measured,
         gaps = gaps,
+        uniform = gaps == clusters.size - 1 && clusters.size >= 2,
     )
     justifiedLayouts.put(key, layout)
     return layout
@@ -2545,6 +2548,15 @@ private fun drawJustifiedLine(
         return
     }
     val extra = (targetWidth - measured) / layout.gaps
+    // 纯 CJK 行每个字后都要加同样的间距：用 Paint.letterSpacing 一次画完整行，
+    // 把每帧几十次 drawText 降到一次（拉丁/含空格的行仍走逐簇绘制）。
+    if (layout.uniform) {
+        val original = paint.letterSpacing
+        paint.letterSpacing = extra / paint.textSize
+        canvas.drawText(text, x, baseline, paint)
+        paint.letterSpacing = original
+        return
+    }
     var cursor = x
     layout.clusters.forEachIndexed { position, cluster ->
         canvas.drawText(cluster, cursor, baseline, paint)
