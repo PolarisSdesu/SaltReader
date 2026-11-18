@@ -26,9 +26,10 @@ androidx-compose-ui-tooling = { module = "androidx.compose.ui:ui-tooling" }
 androidx-compose-ui-preview-tooling = { module = "androidx.compose.ui:ui-tooling-preview" }
 androidx-compose-foundation = { module = "androidx.compose.foundation:foundation" }
 androidx-compose-material3 = { module = "androidx.compose.material3:material3", version.ref = "material3" }
-# Kept as a normal dependency: the generated icon classes are dead-code eliminated
-# by R8 in release builds, only the icons actually referenced survive.
-androidx-compose-material-icons-extended = { module = "androidx.compose.material:material-icons-extended" }
+# Icons: the ~35 glyphs actually used are vendored in ui/icons/SaltIcons.kt (extracted from
+# Material Icons, Apache-2.0), so the 11,400-class material-icons-extended artifact is gone.
+# Only material-icons-core (Icons + materialIcon helpers, pulled in by material3) is needed.
+androidx-compose-material-icons-core = { module = "androidx.compose.material:material-icons-core" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activityCompose" }
 androidx-core-ktx = { module = "androidx.core:core-ktx", version.ref = "coreKtx" }
 androidx-core-splashscreen = { module = "androidx.core:core-splashscreen", version.ref = "coreSplashscreen" }

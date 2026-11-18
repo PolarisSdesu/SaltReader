@@ -898,8 +898,7 @@ class LibraryRepository(private val context: Context) {
                 return cached
             }
         }
-        val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return emptyList()
-        val reader = RemoteZipReader.open(context, uri) ?: return emptyList()
+        val reader = openBookDocument(context, book) ?: return emptyList()
         val chapters = reader.use { opened ->
             val loaded = EpubIndexer.loadChapters(opened)
             // 复用刚打开的 reader 补封面：索引阶段已写封面的书不会重复解析 OPF。
@@ -933,8 +932,7 @@ class LibraryRepository(private val context: Context) {
         var reader = opened
         try {
             if (reader == null) {
-                val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return
-                reader = RemoteZipReader.open(context, uri) ?: return
+                reader = openBookDocument(context, book) ?: return
             }
             // 能打开文档才记为已尝试：临时权限/IO 失败下次打开还能重试。
             epubCoverAttempts.add(fingerprint)
@@ -1074,8 +1072,7 @@ class LibraryRepository(private val context: Context) {
     }
 
     private fun copyDocumentToTemp(book: ComicBook, temp: File): Boolean = try {
-        val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return false
-        context.contentResolver.openInputStream(uri)?.use { input ->
+        openBookInputStream(context, book)?.use { input ->
             temp.outputStream().use { output -> input.copyTo(output, 64 * 1024) }
         } != null
     } catch (e: Exception) {

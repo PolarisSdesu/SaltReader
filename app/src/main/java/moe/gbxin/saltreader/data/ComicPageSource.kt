@@ -412,14 +412,8 @@ private class SafPdfPageSource(
     private fun ensureOpen(): PdfRenderer? = synchronized(lock) {
         if (closed) return null
         renderer?.let { return it }
-        val opener: (Uri) -> android.os.ParcelFileDescriptor? = { uri ->
+        val fd = withBookDocumentUri(context, book) { uri ->
             runCatching { context.contentResolver.openFileDescriptor(uri, "r") }.getOrNull()
-        }
-        val fd = book.documentUri?.let { raw ->
-            runCatching { raw.toUri() }.getOrNull()?.let(opener)
-        } ?: run {
-            val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
-            opener(uri)
         } ?: return null
         val pdf = try {
             PdfRenderer(fd)
@@ -434,7 +428,11 @@ private class SafPdfPageSource(
 
     override fun loadBlocking(index: Int, targetWidth: Int): Bitmap? {
         val pdf = ensureOpen() ?: return null
-        return renderPdfPage(pdf, index, targetWidth)
+        // PdfRenderer 同一时刻只允许一个打开的 Page：解码并发上限是 2，这里必须串行化渲染，
+        // 否则预取和可见页会互相打断（表现为某页永久 Failed）。
+        return synchronized(lock) {
+            if (closed) null else renderPdfPage(pdf, index, targetWidth)
+        }
     }
 
     override fun close() {

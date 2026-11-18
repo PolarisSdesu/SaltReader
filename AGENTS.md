@@ -63,8 +63,9 @@ export JAVA_HOME=$(/usr/libexec/java_home)     # -> .../jbr/Contents/Home (JDK 2
 - CI (`.github/workflows/android.yml`) runs debug + release + unit tests + `lintDebug` (blocking)
   on every push to `main`, plus the Rust `cargo test` job. Keep the lint report at zero; a new
   finding fails the build.
-- Release R8 is the expensive step (~100s cold, mostly `material-icons-extended`, whose runtime
-  jar is 83MB). Use `-PfastRelease` while iterating on device; never for shipping.
+- Release R8 is still the expensive step (allow ~100s cold). Use `-PfastRelease` while iterating
+  on device; never for shipping. Icons are vendored in `ui/icons/SaltIcons.kt`, so the old
+  11,400-class `material-icons-extended` artifact is no longer on the classpath.
 - Gradle configuration cache is enabled (`gradle.properties`); fall back with
   `--no-configuration-cache` if a task misbehaves after an AGP upgrade.
 - Don't run `clean` between iterations — incremental Kotlin compilation and the build cache are
@@ -176,9 +177,10 @@ pagination; the behaviour is documented in `docs/native-text-reader.md`.
   implement it blind.
 - Some SAF providers don't support seek; `RemoteZipReader.open` returns null and indexing falls
   back to a slow streaming `ZipInputStream` pass. Keep that fallback.
-- `material-icons-extended` makes cold R8 very slow. If release build time becomes a problem and
-  someone is willing to vendor the ~30 icons actually used, removing the dependency is the single
-  biggest build-time win (and shrinks the debug APK too).
+- Icons: only the ~35 glyphs actually used are vendored in `ui/icons/SaltIcons.kt` (extracted
+  verbatim from material-icons-extended 1.7.8, Apache-2.0). Adding a new icon means copying its
+  builder into that file instead of re-adding the dependency — the extended artifact is 11,400
+  classes and dominated cold R8 / debug dex size.
 - On some OEM ROMs (e.g. ColorOS/Android 17), shell `simpleperf` and `run-as` are blocked by
   SELinux; use app-level timing logs or instrumentation instead of assuming they work.
 - Some WebView builds resolve `100vh` to 0 (blank/zero-height text pages). The text reader keeps a

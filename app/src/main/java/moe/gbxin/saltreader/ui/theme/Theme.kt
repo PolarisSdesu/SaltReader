@@ -13,6 +13,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.background
@@ -128,14 +129,20 @@ fun SaltReaderTheme(
         ThemeMode.DARK -> true
     }
     val context = LocalContext.current
-    val baseScheme = when {
-        dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
-            if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
-        dark -> saltDarkColorScheme()
-        else -> saltLightColorScheme()
+    // 配色只跟三个设置有关：dynamicColor 走系统 monet 查询、否则分配整套 Color，都不能在每次
+    // 重组时重算（书架/设置页任何状态刷新都会经过这里）。
+    val baseScheme = remember(dark, dynamicColor, context) {
+        when {
+            dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S ->
+                if (dark) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
+            dark -> saltDarkColorScheme()
+            else -> saltLightColorScheme()
+        }
     }
     // AMOLED mode: true black surfaces so dark pixels can be switched off on OLED panels.
-    val colorScheme = if (dark && amoledBlack) baseScheme.withAmoledBlack() else baseScheme
+    val colorScheme = remember(baseScheme, dark, amoledBlack) {
+        if (dark && amoledBlack) baseScheme.withAmoledBlack() else baseScheme
+    }
     val view = LocalView.current
     if (!view.isInEditMode) {
         SideEffect {

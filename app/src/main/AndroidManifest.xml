@@ -122,6 +122,20 @@
             tools:targetApi="33"
             android:parentActivityName=".ui.settings.SettingsActivity"
             android:theme="@style/Theme.SaltReader" />
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:ignore="MissingClass"
+            tools:node="merge">
+            <!-- emoji2 只是被传递依赖带进来的；应用没有用 EmojiCompat，这个 initializer 会在启动时
+                 去查 emoji 字体 provider（本应用无网络权限，查询注定失败）。移除它的启动项。
+                 androidx.startup 是 emoji2 的 runtime-only 传递依赖（不在 compile classpath 上），
+                 provider 本身由 manifest merger 与库里的声明合并，类在运行时存在。 -->
+            <meta-data
+                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+                tools:node="remove" />
+        </provider>
     </application>
 
 </manifest>

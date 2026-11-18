@@ -103,6 +103,11 @@ android {
             isMinifyEnabled = !fastRelease
             isShrinkResources = !fastRelease
             isDebuggable = false
+            // 发布包只保留 arm64-v8a：x86_64 的预编译原生库是给模拟器的，占下载体积 16%。
+            // debug 不做过滤，模拟器上两种 ABI 都可用。
+            ndk {
+                abiFilters += "arm64-v8a"
+            }
             // null on checkouts without signing material -> unsigned release APK.
             signingConfig = signingConfigs.findByName("release")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
@@ -122,6 +127,9 @@ android {
     lint {
         // `-PfastRelease` 只用于本地快速出包，跳过 release lint；CI 保持完整检查。
         checkReleaseBuilds = !fastRelease
+        // release 只打包 arm64-v8a 的预编译原生库（x86_64 是模拟器用的，占下载体积 16%）。
+        // ChromeOS 通过 ARM 二进制翻译运行 32/64 位 ARM 包，且原生文字排版本就是可选的。
+        disable += "ChromeOsAbiSupport"
     }
 
     // Dynamic per-app locales are applied at runtime; disabling the bundle language split
@@ -167,7 +175,7 @@ dependencies {
     // Expressive APIs (LargeFlexibleTopAppBar, ButtonGroup, wavy progress) used by
     // the settings/reader UI. Track the stable 1.5.x line once it ships.
     implementation(libs.androidx.compose.material3)
-    implementation(libs.androidx.compose.material.icons.extended)
+    implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)

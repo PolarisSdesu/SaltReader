@@ -51,32 +51,31 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.outlined.AspectRatio
-import androidx.compose.material.icons.outlined.BugReport
-import androidx.compose.material.icons.outlined.Contrast
-import androidx.compose.material.icons.outlined.DarkMode
-import androidx.compose.material.icons.outlined.Memory
+import moe.gbxin.saltreader.ui.icons.AspectRatio
+import moe.gbxin.saltreader.ui.icons.BugReport
+import moe.gbxin.saltreader.ui.icons.Contrast
+import moe.gbxin.saltreader.ui.icons.DarkMode
+import moe.gbxin.saltreader.ui.icons.Memory
 import androidx.compose.material.icons.outlined.Notifications
 import androidx.compose.material.icons.outlined.Delete
-import androidx.compose.material.icons.outlined.Description
-import androidx.compose.material.icons.outlined.FilterBAndW
-import androidx.compose.material.icons.outlined.FolderOpen
+import moe.gbxin.saltreader.ui.icons.Description
+import moe.gbxin.saltreader.ui.icons.FilterBAndW
+import moe.gbxin.saltreader.ui.icons.FolderOpen
 import androidx.compose.material.icons.outlined.Info
-import androidx.compose.material.icons.automirrored.outlined.FormatIndentIncrease
-import androidx.compose.material.icons.outlined.FormatLineSpacing
-import androidx.compose.material.icons.outlined.FormatSize
-import androidx.compose.material.icons.outlined.TextFields
-import androidx.compose.material.icons.outlined.LightMode
-import androidx.compose.material.icons.automirrored.outlined.MenuBook
-import androidx.compose.material.icons.outlined.Numbers
-import androidx.compose.material.icons.outlined.Palette
-import androidx.compose.material.icons.outlined.Speed
-import androidx.compose.material.icons.outlined.Storage
-import androidx.compose.material.icons.automirrored.outlined.VolumeUp
+import moe.gbxin.saltreader.ui.icons.FormatIndentIncrease
+import moe.gbxin.saltreader.ui.icons.FormatLineSpacing
+import moe.gbxin.saltreader.ui.icons.FormatSize
+import moe.gbxin.saltreader.ui.icons.TextFields
+import moe.gbxin.saltreader.ui.icons.LightMode
+import moe.gbxin.saltreader.ui.icons.MenuBook
+import moe.gbxin.saltreader.ui.icons.Numbers
+import moe.gbxin.saltreader.ui.icons.Palette
+import moe.gbxin.saltreader.ui.icons.Storage
+import moe.gbxin.saltreader.ui.icons.VolumeUp
 import androidx.compose.ui.res.painterResource
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.DropdownMenu
-import androidx.compose.material.icons.outlined.Language
+import moe.gbxin.saltreader.ui.icons.Language
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -103,7 +102,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -524,10 +522,10 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                 SettingsSliderRow(
                     icon = Icons.Outlined.FormatSize,
                     title = stringResource(R.string.settings_reader_font_size),
-                    valueText = stringResource(R.string.reader_font_size_value, settings.readerFontSizeSp),
                     value = settings.readerFontSizeSp.toFloat(),
                     valueRange = READER_FONT_SIZE_MIN_SP.toFloat()..READER_FONT_SIZE_MAX_SP.toFloat(),
                     steps = (READER_FONT_SIZE_MAX_SP - READER_FONT_SIZE_MIN_SP - 1).coerceAtLeast(0),
+                    valueText = { v -> stringResource(R.string.reader_font_size_value, v.roundToInt()) },
                 ) { value ->
                     app.settings.update {
                         it.copy(
@@ -539,10 +537,12 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                 SettingsSliderRow(
                     icon = Icons.Outlined.FormatLineSpacing,
                     title = stringResource(R.string.settings_reader_line_spacing),
-                    valueText = stringResource(R.string.reader_line_height_value, settings.readerLineHeight),
                     value = settings.readerLineHeight,
                     valueRange = READER_LINE_HEIGHT_MIN..READER_LINE_HEIGHT_MAX,
                     steps = ((READER_LINE_HEIGHT_MAX - READER_LINE_HEIGHT_MIN) * 10f).roundToInt() - 1,
+                    valueText = { v ->
+                        stringResource(R.string.reader_line_height_value, (v * 10f).roundToInt() / 10f)
+                    },
                 ) { value ->
                     val snapped = (value * 10f).roundToInt() / 10f
                     app.settings.update {
@@ -552,10 +552,10 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                 SettingsSliderRow(
                     icon = Icons.AutoMirrored.Outlined.FormatIndentIncrease,
                     title = stringResource(R.string.settings_reader_page_margin),
-                    valueText = stringResource(R.string.reader_page_margin_value, settings.readerPageMarginDp),
                     value = settings.readerPageMarginDp.toFloat(),
                     valueRange = READER_PAGE_MARGIN_MIN.toFloat()..READER_PAGE_MARGIN_MAX.toFloat(),
                     steps = (READER_PAGE_MARGIN_MAX - READER_PAGE_MARGIN_MIN - 1).coerceAtLeast(0),
+                    valueText = { v -> stringResource(R.string.reader_page_margin_value, v.roundToInt()) },
                 ) { value ->
                     app.settings.update {
                         it.copy(
@@ -567,10 +567,12 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                 SettingsSliderRow(
                     icon = Icons.AutoMirrored.Outlined.FormatIndentIncrease,
                     title = stringResource(R.string.settings_reader_progress_label_size),
-                    valueText = stringResource(R.string.reader_progress_label_size_value, settings.readerProgressLabelSizeSp),
                     value = settings.readerProgressLabelSizeSp.toFloat(),
                     valueRange = READER_PROGRESS_LABEL_SIZE_MIN_SP.toFloat()..READER_PROGRESS_LABEL_SIZE_MAX_SP.toFloat(),
                     steps = (READER_PROGRESS_LABEL_SIZE_MAX_SP - READER_PROGRESS_LABEL_SIZE_MIN_SP - 1).coerceAtLeast(0),
+                    valueText = { v ->
+                        stringResource(R.string.reader_progress_label_size_value, v.roundToInt())
+                    },
                 ) { value ->
                     app.settings.update {
                         it.copy(
@@ -611,10 +613,12 @@ private fun ReaderSettingsPage(onBack: () -> Unit) {
                 SettingsSliderRow(
                     icon = Icons.Outlined.FormatSize,
                     title = stringResource(R.string.settings_reader_page_indicator_size),
-                    valueText = stringResource(R.string.reader_page_indicator_size_value, settings.readerPageIndicatorSizeSp),
                     value = settings.readerPageIndicatorSizeSp.toFloat(),
                     valueRange = READER_PAGE_INDICATOR_SIZE_MIN_SP.toFloat()..READER_PAGE_INDICATOR_SIZE_MAX_SP.toFloat(),
                     steps = (READER_PAGE_INDICATOR_SIZE_MAX_SP - READER_PAGE_INDICATOR_SIZE_MIN_SP - 1).coerceAtLeast(0),
+                    valueText = { v ->
+                        stringResource(R.string.reader_page_indicator_size_value, v.roundToInt())
+                    },
                 ) { value ->
                     app.settings.update {
                         it.copy(
@@ -1530,31 +1534,49 @@ private fun SettingsInfoRow(label: String, value: String, onClick: (() -> Unit)?
     }
 }
 
-/** Slider row used for text-reader typography settings (font size / line spacing / margins). */
+/**
+ * Slider row used for text-reader typography settings (font size / line spacing / margins).
+ *
+ * 拖动期间只改本地草稿，松手（`onValueChangeFinished`）才写 [onValueChange]：否则每个像素都会
+ * 落一次 SharedPreferences、并让整页设置 + 主题重组一遍。标题右侧的数值读草稿，拖动时实时更新。
+ */
 @Composable
 private fun SettingsSliderRow(
     icon: ImageVector,
     title: String,
-    valueText: String,
     value: Float,
     valueRange: ClosedFloatingPointRange<Float>,
     steps: Int,
+    valueText: @Composable (Float) -> String,
     onValueChange: (Float) -> Unit,
 ) {
+    var draft by remember { mutableFloatStateOf(value.coerceIn(valueRange)) }
+    var dragging by remember { mutableStateOf(false) }
+    // 外部值（例如恢复默认值）变化时同步草稿；拖动中不打断手指位置。
+    LaunchedEffect(value, dragging) {
+        if (!dragging) draft = value.coerceIn(valueRange)
+    }
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             SettingsIcon(icon)
             Spacer(Modifier.width(16.dp))
             Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             Text(
-                valueText,
+                valueText(draft),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Slider(
-            value = value.coerceIn(valueRange),
-            onValueChange = onValueChange,
+            value = draft,
+            onValueChange = { dragged ->
+                dragging = true
+                draft = dragged.coerceIn(valueRange)
+            },
+            onValueChangeFinished = {
+                dragging = false
+                onValueChange(draft)
+            },
             valueRange = valueRange,
             steps = steps,
             modifier = Modifier.fillMaxWidth().padding(start = 40.dp),

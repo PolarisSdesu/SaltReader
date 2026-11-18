@@ -44,7 +44,7 @@ internal class SafTree(private val context: Context, val treeUri: Uri) {
         val cursor = resolver.query(uri, PROJECTION, null, null, null) ?: return@runCatching null
         cursor.use {
             if (!it.moveToFirst()) return@use null
-            parse(it, documentPath, uri)?.copy(documentPath = documentPath)
+            parse(it, Columns(it), documentPath, uri)?.copy(documentPath = documentPath)
         }
     }.getOrNull()
 
@@ -53,9 +53,10 @@ internal class SafTree(private val context: Context, val treeUri: Uri) {
         val childrenUri = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, parentDocumentId)
         val cursor = resolver.query(childrenUri, PROJECTION, null, null, null) ?: return@runCatching null
         cursor.use { cursor ->
+            val columns = Columns(cursor)
             val result = ArrayList<Entry>()
             while (cursor.moveToNext()) {
-                parse(cursor, parentPath, null)?.let(result::add)
+                parse(cursor, columns, parentPath, null)?.let(result::add)
             }
             result
         }
@@ -79,23 +80,32 @@ internal class SafTree(private val context: Context, val treeUri: Uri) {
 
     fun openInputStream(uri: Uri): InputStream? = runCatching { resolver.openInputStream(uri) }.getOrNull()
 
-    private fun parse(cursor: Cursor, parentPath: String, fixedUri: Uri?): Entry? {
-        val documentIdIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+    /** 游标列下标对同一个 cursor 恒定，一次解析后逐行复用，避免每行 5 次 getColumnIndex。 */
+    private class Columns(cursor: Cursor) {
+        val documentId = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+        val name = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+        val mime = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+        val size = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+        val modified = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+    }
+
+    private fun parse(cursor: Cursor, columns: Columns, parentPath: String, fixedUri: Uri?): Entry? {
+        val documentIdIndex = columns.documentId
         if (documentIdIndex < 0 || cursor.isNull(documentIdIndex)) return null
         val documentId = cursor.getString(documentIdIndex) ?: return null
 
-        val nameIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_DISPLAY_NAME)
+        val nameIndex = columns.name
         val name = if (nameIndex >= 0 && !cursor.isNull(nameIndex)) cursor.getString(nameIndex) else null
         if (name.isNullOrBlank()) return null
 
-        val mimeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_MIME_TYPE)
+        val mimeIndex = columns.mime
         val mime = if (mimeIndex >= 0 && !cursor.isNull(mimeIndex)) cursor.getString(mimeIndex) else null
         val isDirectory = mime == DocumentsContract.Document.MIME_TYPE_DIR
 
-        val sizeIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_SIZE)
+        val sizeIndex = columns.size
         val size = if (sizeIndex >= 0 && !cursor.isNull(sizeIndex)) cursor.getLong(sizeIndex) else 0L
 
-        val modifiedIndex = cursor.getColumnIndex(DocumentsContract.Document.COLUMN_LAST_MODIFIED)
+        val modifiedIndex = columns.modified
         val modified = if (modifiedIndex >= 0 && !cursor.isNull(modifiedIndex)) cursor.getLong(modifiedIndex) else 0L
 
         val documentPath = if (parentPath.isEmpty()) name else "$parentPath/$name"
@@ -133,3 +143,27 @@ internal fun resolveDocumentUri(context: Context, treeUri: String, documentPath:
     val tree = SafTree(context, treeUri.toUri())
     tree.find(documentPath)?.takeIf { !it.isDirectory }?.uri
 }.getOrNull()
+
+/**
+ * 优先使用索引阶段记录的 document URI（省掉逐级 SAF 目录枚举），
+ * 记录缺失或已失效（[open] 返回 null）时回退到按路径解析。
+ */
+internal inline fun <T : Any> withBookDocumentUri(
+    context: Context,
+    book: ComicBook,
+    open: (Uri) -> T?,
+): T? {
+    book.documentUri?.let { raw ->
+        runCatching { raw.toUri() }.getOrNull()?.let { uri ->
+            open(uri)?.let { return it }
+        }
+    }
+    val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
+    return open(uri)
+}
+
+/** 打开书籍文档的输入流；语义同 [withBookDocumentUri]。 */
+internal fun openBookInputStream(context: Context, book: ComicBook): InputStream? =
+    withBookDocumentUri(context, book) { uri ->
+        runCatching { context.contentResolver.openInputStream(uri) }.getOrNull()
+    }

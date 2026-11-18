@@ -33,6 +33,14 @@ distributed under the Apache License 2.0 unless noted otherwise.
 - Text reflow rendering uses the Android platform `WebView` (part of the OS, not a
   bundled third-party library).
 
+## Material Icons (vendored source)
+- Vendored source: `app/src/main/java/moe/gbxin/saltreader/ui/icons/SaltIcons.kt`
+- License: Apache License 2.0, Copyright 2025 The Android Open Source Project
+- Origin: `androidx.compose.material:material-icons-extended` 1.7.8 sources jar
+- Only the 35 icon builders actually referenced by the UI are kept, extracted verbatim
+  (the generated vector path data is unchanged). The dependency itself was dropped so the
+  11,400-icon artifact no longer ships or slows down R8.
+
 ## Material 3 design reference
 - `hamen/material-3-skill` — MIT
 - `ReadYouApp/ReadYou` — GPL-3.0 (used only as a visual/reference study for the settings page layout; no source copied)

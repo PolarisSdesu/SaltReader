@@ -39,19 +39,19 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDownward
-import androidx.compose.material.icons.filled.ArrowUpward
-import androidx.compose.material.icons.filled.AutoStories
+import moe.gbxin.saltreader.ui.icons.ArrowDownward
+import moe.gbxin.saltreader.ui.icons.ArrowUpward
+import moe.gbxin.saltreader.ui.icons.AutoStories
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
+import moe.gbxin.saltreader.ui.icons.FolderOpen
+import moe.gbxin.saltreader.ui.icons.GridView
+import moe.gbxin.saltreader.ui.icons.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.automirrored.filled.Sort
+import moe.gbxin.saltreader.ui.icons.Sort
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -198,7 +198,8 @@ fun LibraryScreen(
             else -> 2
         }
     }
-    // 按实际列宽算封面目标像素宽：2 倍列宽在缩放/高分屏下仍清晰，又比统一 640px 省内存。
+    // 按实际列宽算封面目标像素宽：containerSize 已是物理像素，封面又正好画满列宽，
+    // 再乘 2 只会让 LRU 容量缩成 1/4、书架一滚就重新解码；留 15% 余量抵消取整/缩放即可。
     // containerSize is the app window in pixels, so it follows split-screen / freeform changes.
     val windowWidthPx = LocalWindowInfo.current.containerSize.width
     val density = LocalDensity.current
@@ -210,7 +211,7 @@ fun LibraryScreen(
             val contentPx = (screenPx - 16.dp.roundToPx() * 2).coerceAtLeast(1)
             val gapPx = 12.dp.roundToPx() * (effectiveColumns - 1).coerceAtLeast(0)
             val columnPx = ((contentPx - gapPx) / effectiveColumns).coerceAtLeast(1)
-            (columnPx * 2).coerceIn(240, 1280)
+            (columnPx * 1.15f).roundToInt().coerceIn(240, 1280)
         }
     }
 
