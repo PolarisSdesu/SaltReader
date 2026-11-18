@@ -11,20 +11,20 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.roundToInt
 import kotlinx.coroutines.flow.MutableSharedFlow
 import moe.gbxin.saltreader.SaltReaderApplication
+import moe.gbxin.saltreader.data.NativeTextLayout
 import moe.gbxin.saltreader.ui.LocalizedActivity
 import moe.gbxin.saltreader.ui.theme.SaltReaderTheme
 
@@ -112,6 +112,12 @@ class ReaderActivity : LocalizedActivity() {
             SaltReaderTheme(themeMode = settings.themeMode, dynamicColor = settings.dynamicColor, amoledBlack = settings.amoledBlack) {
                 var visible by remember { mutableStateOf(false) }
                 LaunchedEffect(Unit) { visible = true }
+                // 调试面板的数据：LAYOUT tab 的文本、当前位置、以及切换渲染器时保留的阅读比例。
+                var debugText by remember { mutableStateOf("") }
+                var debugRatio by remember { mutableFloatStateOf(0f) }
+                var debugPage by remember { mutableIntStateOf(0) }
+                var debugPages by remember { mutableIntStateOf(0) }
+                var debugSwitchRatio by remember { mutableStateOf<Float?>(null) }
                 Box(Modifier.fillMaxSize()) {
                     AnimatedVisibility(
                         visible = visible,
@@ -119,20 +125,45 @@ class ReaderActivity : LocalizedActivity() {
                     ) {
                         ReaderScreen(
                             vm = readerViewModel,
-                            onBack = { finish() },
+                            onBack = {
+                                // 返回书架后清掉调试切换的临时比例，避免下次打开书被旧比例覆盖。
+                                debugSwitchRatio = null
+                                finish()
+                            },
                             volumePageEvents = volumePageEvents,
                             modifier = Modifier.fillMaxSize(),
+                            onDebugText = { debugText = it },
+                            onDebugProgress = { ratio, page, pages ->
+                                debugRatio = ratio
+                                debugPage = page
+                                debugPages = pages
+                            },
+                            initialRatioOverride = debugSwitchRatio,
                         )
                     }
                     if (settings.debugMode) {
                         // 调试浮层覆盖在所有阅读器（图片 / WebView / 原生）之上；点一下折叠。
                         val stats = rememberReaderDebugStats(enabled = true)
+                        val book = readerViewModel.latestBook()
+                        val mode = settings.readerMode.name.lowercase()
+                        val renderer = if (book != null && book.reflowable) {
+                            if (settings.nativeReader) "native · $mode" else "webview · $mode"
+                        } else {
+                            "image · $mode"
+                        }
                         ReaderDebugPanel(
                             stats = stats,
-                            modifier = Modifier
-                                .align(Alignment.TopStart)
-                                .statusBarsPadding()
-                                .padding(start = 8.dp, top = 72.dp),
+                            renderer = renderer,
+                            debugText = debugText,
+                            page = debugPage,
+                            pages = debugPages,
+                            ratio = debugRatio,
+                            nativeAvailable = NativeTextLayout.isAvailable,
+                            onSwitchRenderer = {
+                                debugSwitchRatio = debugRatio
+                                app.settings.update { it.copy(nativeReader = !it.nativeReader) }
+                            },
+                            modifier = Modifier.align(Alignment.TopStart),
                         )
                     }
                 }

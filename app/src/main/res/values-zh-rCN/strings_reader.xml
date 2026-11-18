@@ -126,8 +126,6 @@
     <string name="reader_action_retry">重试</string>
     <string name="reader_action_switch_webview">改用 WebView 阅读器</string>
     <string name="reader_image_placeholder">［图片］</string>
-    <string name="reader_debug_switch_to_webview">NATIVE → WEBVIEW（调试）</string>
-    <string name="reader_debug_switch_to_native">WEBVIEW → NATIVE（调试）</string>
     <string name="reader_live_update_channel">阅读进度</string>
     <string name="reader_live_update_continue">继续阅读</string>
     <string name="reader_live_update_progress">已读 %1$d%%</string>

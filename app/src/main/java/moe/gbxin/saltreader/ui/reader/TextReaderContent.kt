@@ -161,6 +161,9 @@ internal sealed interface TextReaderEvent {
 
     /** 纵向模式 DOM 裁掉了前面 [count] 个章节（释放图片内存），需要同步窗口起点。 */
     data class Trimmed(val count: Int) : TextReaderEvent
+
+    /** 调试面板的布局信息（视口、版心、段落行高），由页面里的调试脚本推送。 */
+    data class DebugInfo(val text: String) : TextReaderEvent
 }
 
 /**
@@ -197,6 +200,12 @@ internal class TextJavascriptBridge(private val emit: (TextReaderEvent) -> Unit)
     @JavascriptInterface
     fun onTrimmed(count: Int) {
         if (count > 0) emit(TextReaderEvent.Trimmed(count))
+    }
+
+    @Keep
+    @JavascriptInterface
+    fun onDebugInfo(text: String) {
+        emit(TextReaderEvent.DebugInfo(text))
     }
 }
 
@@ -249,7 +258,8 @@ internal fun TextReaderContent(
     modifier: Modifier = Modifier,
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
     initialRatioOverride: Float? = null,
-    onDebugSwitch: ((Float) -> Unit)? = null,
+    onDebugProgress: ((Float, Int, Int) -> Unit)? = null,
+    onDebugText: ((String) -> Unit)? = null,
 ) {
     val readerBackground = pageBackgroundColor(
         settings.readerBackground,
@@ -654,6 +664,15 @@ internal fun TextReaderContent(
         ceil(totalChars.toDouble() / estimatedCharsPerPage.toDouble()).toInt().coerceAtLeast(1)
     }
     val liveEstimatedTotalPages = rememberUpdatedState(estimatedTotalPages)
+    // 调试面板需要知道当前位置，才能把「切换渲染器」放到面板里（两边落在同一段内容）。
+    LaunchedEffect(settings.debugMode, pageInfo.page, pageInfo.pages, pageInfo.ratio) {
+        if (!settings.debugMode) return@LaunchedEffect
+        // pageInfo 是「窗口内」的页码，面板要的是全书页码：用全书比例 × 估算总页数换算。
+        val total = liveEstimatedTotalPages.value.coerceAtLeast(1)
+        val page = (liveRatio.value * total).roundToInt().coerceIn(1, total)
+        onDebugProgress?.invoke(liveRatio.value, page, total)
+    }
+
     // 初始页码只按“打开时的保存进度”算一次：不要在组合期读 pageInfo（每次 onState 都会全量重组）。
     val initialEstimatedPage = remember(book.id, estimatedTotalPages) {
         val ratio = (vm.latestProgressOffset().toFloat() / totalChars.toFloat()).coerceIn(0f, 1f)
@@ -886,6 +905,8 @@ internal fun TextReaderContent(
                     lastPageWindowStart = -1
                     Log.i(TAG_TEXT_PERF, "trimmed=${event.count} window=${windowStart}..${windowEnd}")
                 }
+
+                is TextReaderEvent.DebugInfo -> onDebugText?.invoke(event.text)
 
                 TextReaderEvent.NeedMore -> {
                     if (liveMode.value == ReaderMode.VERTICAL && windowEnd < chapters.size) {
@@ -1246,23 +1267,15 @@ internal fun TextReaderContent(
                             "'book px: L'+(r.left*dpr).toFixed(0)+' T'+(r.top*dpr).toFixed(0)+' R'+(r.right*dpr).toFixed(0)+' B'+(r.bottom*dpr).toFixed(0)," +
                             "'pageMargin='+pm.trim()+' lineHeight='+cs.lineHeight+' fontSize='+cs.fontSize," +
                             "'scroll='+s.clientWidth+'x'+s.clientHeight];" +
-                            "var el=document.getElementById('salt-debug');" +
-                            "if(!el){el=document.createElement('div');el.id='salt-debug';" +
-                            "el.style.cssText='position:fixed;left:0;top:0;z-index:99999;background:#ffffffe6;" +
-                            "color:#1565c0;font:10px/1.45 monospace;padding:4px;pointer-events:none;white-space:pre';" +
-                            "document.body.appendChild(el);}" +
-                            "el.textContent=lines.join('\\n');" +
                             "var kids=[].slice.call(b.children||[]);" +
                             "var rows=kids.slice(0,24).map(function(el,i){" +
                             "el.style.outline='1px dashed rgba(0,150,136,.45)';" +
                             "var c=getComputedStyle(el);" +
                             "return i+':'+el.tagName.toLowerCase()+' lh='+c.lineHeight+' mt='+c.marginTop+' mb='+c.marginBottom;});" +
-                            "var bel=document.getElementById('salt-debug-blocks');" +
-                            "if(!bel){bel=document.createElement('div');bel.id='salt-debug-blocks';" +
-                            "bel.style.cssText='position:fixed;left:0;top:96px;z-index:99999;background:#ffffffe6;" +
-                            "color:#00897b;font:9px/1.35 monospace;padding:4px;pointer-events:none;white-space:pre;max-height:55%;overflow:hidden';" +
-                            "document.body.appendChild(bel);}" +
-                            "bel.textContent=rows.join('\\n');}" +
+                            // 调试文字不再画在页面上（会盖住正文），改为推送给 Compose 面板的 LAYOUT tab。
+                            "var br=window['$BRIDGE_NAME'];" +
+                            "if(br&&br.onDebugInfo){br.onDebugInfo(lines.concat(rows).join('\\n'));}" +
+                            "}" +
                             "window.addEventListener('load',function(){setTimeout(show,300);setTimeout(show,900);});" +
                             "window.addEventListener('resize',show);" +
                             "})();</script></head>",
@@ -1594,34 +1607,6 @@ internal fun TextReaderContent(
             )
         }
 
-        // Debug：一键切换回原生阅读器，方便对比两边锚点。
-        if (settings.debugMode) {
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 96.dp, end = 8.dp),
-                color = Color(0xE6FFFFFF),
-                shape = RoundedCornerShape(8.dp),
-                shadowElevation = 2.dp,
-            ) {
-                Text(
-                    stringResource(R.string.reader_debug_switch_to_native),
-                    modifier = Modifier
-                        .clickable {
-                            if (onDebugSwitch != null) {
-                                onDebugSwitch(pageInfo.ratio)
-                            } else {
-                                onSettingsChange { it.copy(nativeReader = true) }
-                            }
-                        }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                    ),
-                    color = Color(0xFF1565C0),
-                )
-            }
-        }
     }
 
     if (showCustomBackground) {

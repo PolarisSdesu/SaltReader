@@ -214,7 +214,8 @@ internal fun NativeTextReaderContent(
     modifier: Modifier = Modifier,
     onSettingsChange: ((AppSettings) -> AppSettings) -> Unit,
     initialRatioOverride: Float? = null,
-    onDebugSwitch: ((Float) -> Unit)? = null,
+    onDebugProgress: ((Float, Int, Int) -> Unit)? = null,
+    onDebugText: ((String) -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val resources = LocalResources.current
@@ -1097,6 +1098,15 @@ internal fun NativeTextReaderContent(
         requestVerticalJump(pageIndex)
     }
 
+    // 调试面板需要当前位置，才能把「切换渲染器」放到面板里。
+    LaunchedEffect(settings.debugMode, pageIndex, pageSet) {
+        if (!settings.debugMode) return@LaunchedEffect
+        val total = pageSet?.pages?.size ?: return@LaunchedEffect
+        if (total <= 0) return@LaunchedEffect
+        val ratio = if (total > 1) pageIndex.toFloat() / (total - 1) else 0f
+        onDebugProgress?.invoke(ratio, (pageIndex + 1).coerceAtMost(total), total)
+    }
+
     Box(modifier = modifier.fillMaxSize().background(readerBackground)) {
         // 页面：Rust 已断行，Canvas 逐行绘制；点按左右翻页、中间收起/展开 chrome。
         Box(
@@ -1952,40 +1962,29 @@ internal fun NativeTextReaderContent(
             }
         }
 
-        // Debug 参数面板：样式与 WebView 的 #salt-debug 完全一致（左上角、半透明白底、蓝色等宽小字、单实例）。
+        // Debug 参数：不再画在页面左上角（会盖住正文），推给调试面板的 LAYOUT tab。
         if (settings.debugMode) {
             val debugPageLines = pageSet?.pages?.getOrNull(
                 if (isVerticalMode) verticalListState.firstVisibleItemIndex else safePageIndex,
             )
             val pageHeight = debugPageLines?.let { pageContentHeightPx(it) } ?: 0f
-            val debugText = listOf(
-                "NATIVE dpr=${density.density * density.fontScale}",
-                "top=${topPadPx.roundToInt()} bottom=${bottomPadPx.roundToInt()} " +
-                    "left=${leftPadPx.roundToInt()} right=${rightPadPx.roundToInt()}px",
-                "font=${fontSizePx.roundToInt()}px line=${lineHeightPx.roundToInt()}px " +
-                    "lineH=${settings.readerLineHeight}",
-                "content=${(pageArea.width - leftPadPx - rightPadPx).roundToInt()}x" +
-                    "${(pageArea.height - topPadPx - bottomPadPx).roundToInt()}px",
-                "PAGE_PAD_TOP=$pagePadTopDp BOTTOM=$pagePadBottomDp " +
-                    "MARGIN_L=$pageMarginLeftDp R=$pageMarginRightDp dp",
-                "imgFull=$imageFullWidthEffective vertical=$verticalPads pageH=${pageHeight.roundToInt()}",
-            ).joinToString("\n")
-            androidx.compose.material3.Surface(
-                modifier = Modifier
-                    // 与 WebView 同位置（左上角）；声明在顶栏之前，让顶栏绘制在其上层。
-                    .align(Alignment.TopStart)
-                    .padding(0.dp),
-                color = Color(0xE6FFFFFF),
-                contentColor = Color(0xFF1565C0),
-                shape = androidx.compose.foundation.shape.RoundedCornerShape(0.dp),
-            ) {
-                Text(
-                    text = debugText,
-                    modifier = Modifier.padding(4.dp),
-                    color = Color(0xFF1565C0),
-                    fontSize = 10.sp,
-                    lineHeight = 14.5.sp,
-                    fontFamily = FontFamily.Monospace,
+            LaunchedEffect(debugPageLines, pageHeight) {
+                onDebugText?.invoke(
+                    listOf(
+                        "NATIVE dpr=${density.density * density.fontScale}",
+                        "chapters=${chapters.size} pages=${pageSet?.pages?.size ?: 0} " +
+                            "page=${safePageIndex + 1}",
+                        "top=${topPadPx.roundToInt()} bottom=${bottomPadPx.roundToInt()} " +
+                            "left=${leftPadPx.roundToInt()} right=${rightPadPx.roundToInt()}px",
+                        "font=${fontSizePx.roundToInt()}px line=${lineHeightPx.roundToInt()}px " +
+                            "lineH=${settings.readerLineHeight}",
+                        "content=${(pageArea.width - leftPadPx - rightPadPx).roundToInt()}x" +
+                            "${(pageArea.height - topPadPx - bottomPadPx).roundToInt()}px",
+                        "PAGE_PAD_TOP=$pagePadTopDp BOTTOM=$pagePadBottomDp " +
+                            "MARGIN_L=$pageMarginLeftDp R=$pageMarginRightDp dp",
+                        "imgFull=$imageFullWidthEffective vertical=$verticalPads " +
+                            "pageH=${pageHeight.roundToInt()}",
+                    ).joinToString("\n"),
                 )
             }
         }
@@ -2177,35 +2176,6 @@ internal fun NativeTextReaderContent(
 
 
 
-        // Debug：一键切换回 WebView 阅读器，方便对比两边锚点。
-        if (settings.debugMode) {
-            Surface(
-                modifier = Modifier
-                    .align(Alignment.TopEnd)
-                    .padding(top = 96.dp, end = 8.dp),
-                color = Color(0xE6FFFFFF),
-                shape = RoundedCornerShape(8.dp),
-                shadowElevation = 2.dp,
-            ) {
-                Text(
-                    stringResource(R.string.reader_debug_switch_to_webview),
-                    modifier = Modifier
-                        .clickable {
-                            val ratio = if (totalPages > 1) safePageIndex.toFloat() / (totalPages - 1) else 0f
-                            if (onDebugSwitch != null) {
-                                onDebugSwitch(ratio)
-                            } else {
-                                onSettingsChange { it.copy(nativeReader = false) }
-                            }
-                        }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontFamily = FontFamily.Monospace,
-                    ),
-                    color = Color(0xFFB00020),
-                )
-            }
-        }
 
         if (showCustomBackground) {
             CustomColorPickerDialog(
