@@ -189,6 +189,9 @@ pagination; the behaviour is documented in `docs/native-text-reader.md`.
   classes and dominated cold R8 / debug dex size.
 - On some OEM ROMs (e.g. ColorOS/Android 17), shell `simpleperf` and `run-as` are blocked by
   SELinux; use app-level timing logs or instrumentation instead of assuming they work.
+- `#scroll` uses `scroll-snap-type: x mandatory`. Any programmatic `scrollLeft` write after a DOM
+  change (append/prepend/trim) must be wrapped in `beginNoSnap()`/`endNoSnap()` and land on a page
+  boundary, otherwise Chrome snaps to the nearest old marker and the page visibly jumps.
 - Some WebView builds resolve `100vh` to 0 (blank/zero-height text pages). The text reader keeps a
   JS-maintained `--app-vh` custom property instead of relying on `vh`; keep it that way when
   touching `TextReaderContent.kt`/its CSS.

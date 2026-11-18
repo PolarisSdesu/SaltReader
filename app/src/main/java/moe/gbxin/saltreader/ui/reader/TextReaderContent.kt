@@ -664,21 +664,20 @@ internal fun TextReaderContent(
         ceil(totalChars.toDouble() / estimatedCharsPerPage.toDouble()).toInt().coerceAtLeast(1)
     }
     val liveEstimatedTotalPages = rememberUpdatedState(estimatedTotalPages)
-    // 调试面板需要知道当前位置，才能把「切换渲染器」放到面板里（两边落在同一段内容）。
-    LaunchedEffect(settings.debugMode, pageInfo.page, pageInfo.pages, pageInfo.ratio) {
-        if (!settings.debugMode) return@LaunchedEffect
-        // pageInfo 是「窗口内」的页码，面板要的是全书页码：用全书比例 × 估算总页数换算。
-        val total = liveEstimatedTotalPages.value.coerceAtLeast(1)
-        val page = (liveRatio.value * total).roundToInt().coerceIn(1, total)
-        onDebugProgress?.invoke(liveRatio.value, page, total)
-    }
-
     // 初始页码只按“打开时的保存进度”算一次：不要在组合期读 pageInfo（每次 onState 都会全量重组）。
     val initialEstimatedPage = remember(book.id, estimatedTotalPages) {
         val ratio = (vm.latestProgressOffset().toFloat() / totalChars.toFloat()).coerceIn(0f, 1f)
         (ratio * estimatedTotalPages.toFloat()).roundToInt().coerceIn(1, estimatedTotalPages)
     }
     var pageBase by remember(book.id) { mutableIntStateOf(initialEstimatedPage - 1) }
+
+    // 调试面板的页码要和底部指示器一致：同一个 pageBase + 窗口内页码，而不是按比例估算。
+    LaunchedEffect(settings.debugMode, pageInfo.page, pageInfo.pages) {
+        if (!settings.debugMode) return@LaunchedEffect
+        val total = liveEstimatedTotalPages.value.coerceAtLeast(1)
+        val page = (pageBase + pageInfo.page + 1).coerceIn(1, total)
+        onDebugProgress?.invoke(liveRatio.value, page, total)
+    }
     var pendingJumpPage by remember { mutableStateOf<Int?>(null) }
     var lastPageWindowStart by remember(book.id) { mutableIntStateOf(-1) }
 
@@ -760,7 +759,10 @@ internal fun TextReaderContent(
         val now = SystemClock.elapsedRealtime()
         if (now - lastChapterLoadAt < CHAPTER_LOAD_THROTTLE_MS) return
         val append = ratio >= PREFETCH_RATIO && windowEnd < chapters.size
-        val prepend = !append && ratio <= 1f - PREFETCH_RATIO && windowStart > 0
+        // 向后补章节用很小的阈值：trim 会主动把窗口头部裁掉、只留 2 章，此时窗口内比例
+        // 天然很低（几页 / 几十页）。用 20% 会让 trim → prepend → 再 trim 无限循环，
+        // 每次重新锚定 scrollLeft 都表现为跳页。真正到窗口第一页（ratio≈0）才需要补。
+        val prepend = !append && ratio <= BACKWARD_PREFETCH_RATIO && windowStart > 0
         if (!append && !prepend) return
         val startBefore = windowStart
         val endBefore = windowEnd
@@ -871,7 +873,7 @@ internal fun TextReaderContent(
                         // both window bounds so each scroll boundary can load another chapter batch.
                         val edge = when {
                             event.ratio >= PREFETCH_RATIO && windowEnd < chapters.size -> 1L
-                            event.ratio <= 1f - PREFETCH_RATIO && windowStart > 0 -> -1L
+                            event.ratio <= BACKWARD_PREFETCH_RATIO && windowStart > 0 -> -1L
                             else -> 0L
                         }
                         if (edge == 0L) {
@@ -1905,6 +1907,9 @@ private const val CHAPTER_START_LEAD = 1
 /** 距离已加载窗口边界多少比例时开始追加/前插。 */
 private const val PREFETCH_RATIO = 0.8f
 
+/** 向后补章节的阈值：只在实际位于窗口开头时触发，避免与 trim 反复拉锯。 */
+private const val BACKWARD_PREFETCH_RATIO = 0.02f
+
 /** 追加/前插的最小间隔，避免一次滚动连续注入多批。 */
 private const val CHAPTER_LOAD_THROTTLE_MS = 300L
 
@@ -2279,13 +2284,14 @@ private val HTML_TAIL = """
     var removedWidth = lastRect.right - firstRect.left;
     trimming = true;
     setTimeout(function () { trimming = false; }, 300);
+    beginNoSnap();
     for (var j = 0; j < keepFrom; j++) {
       secs[j].parentNode.removeChild(secs[j]);
     }
-    var w = Math.max(1, scroll.clientWidth || window.innerWidth);
-    scroll.scrollLeft = Math.max(0, Math.round((sl - removedWidth) / w) * w);
+    setPagedPage(Math.round((sl - removedWidth) / pageWidthPx()));
     refreshSnapPoints();
     report(true);
+    endNoSnap();
     console.log('JSPERF trim-pages removed=' + keepFrom + ' rw=' + Math.round(removedWidth) +
       ' sw=' + scroll.scrollWidth + ' sl=' + scroll.scrollLeft);
     if (window['$BRIDGE_NAME'] && window['$BRIDGE_NAME'].onTrimmed) {
@@ -2725,45 +2731,79 @@ private val HTML_TAIL = """
       }
     } catch (err) {}
   }, { passive: false });
+  // 分页模式下 #scroll 是 scroll-snap-type: x mandatory。DOM 变更后如果直接写 scrollLeft，
+  // 目标位置还没有对应的 snap 点，浏览器会把位置弹回最近的旧标记 —— 表现为前插/裁剪章节后
+  // 页面整体后退一两页（用户看到的"跳页"）。变更窗口期间临时关掉 snapping，写入整页位置，
+  // 等标记重建完再恢复。
+  var noSnapDepth = 0;
+  function beginNoSnap() {
+    if (mode !== 'paged') return;
+    if (noSnapDepth === 0) scroll.style.scrollSnapType = 'none';
+    noSnapDepth++;
+  }
+  function endNoSnap() {
+    if (mode !== 'paged') return;
+    noSnapDepth = Math.max(0, noSnapDepth - 1);
+    if (noSnapDepth === 0) {
+      requestAnimationFrame(function () {
+        if (noSnapDepth === 0) scroll.style.scrollSnapType = '';
+      });
+    }
+  }
+  function pageWidthPx() { return Math.max(1, scroll.clientWidth || window.innerWidth); }
+  function setPagedPage(page) {
+    scroll.scrollLeft = Math.max(0, Math.round(page)) * pageWidthPx();
+  }
+
   function appendChapters(html) {
     if (!html) return;
+    var paged = mode === 'paged';
+    var page = paged ? Math.round(scroll.scrollLeft / pageWidthPx()) : 0;
+    beginNoSnap();
     book.insertAdjacentHTML('beforeend', html);
     refreshSnapPoints();
+    if (paged) setPagedPage(page);
     report(true);
     // Inline illustrations decode asynchronously and add columns: the snap markers must follow,
     // otherwise a later fling has no snap target for the new pages and can run past them.
     whenImagesReady(function () {
       refreshSnapPoints();
+      if (paged) setPagedPage(page);
       report(true);
-      console.log('JSPERF append nodes=' + book.querySelectorAll('*').length +
-        ' imgs=' + book.querySelectorAll('img').length +
-        ' sh=' + scroll.scrollHeight + ' st=' + scroll.scrollTop);
+      endNoSnap();
     });
   }
   function prependChapters(html) {
     if (!html) return;
     var paged = mode === 'paged';
+    var w = pageWidthPx();
+    var page = paged ? Math.round(scroll.scrollLeft / w) : 0;
     var oldSize = paged ? scroll.scrollWidth : scroll.scrollHeight;
+    beginNoSnap();
     book.insertAdjacentHTML('afterbegin', html);
     // 保持当前阅读位置：前插的内容（尤其内联插图）会同步/异步地增加文档尺寸，按增量补偿滚动偏移。
     // 用"当前滚动位置 + 增量"而不是固定锚点：锚点写法会把插入期间用户的惯性位移抹掉，
     // 与二次补偿叠加时表现为进度条/页面瞬移。增量以 compensatedSize 为基线，天然幂等。
-    var compensatedSize = oldSize;
     function compensate() {
       var size = paged ? scroll.scrollWidth : scroll.scrollHeight;
-      var added = size - compensatedSize;
-      if (added > 0) {
+      if (paged) {
+        // 目标始终是「原页 + 总共新增的页数」，重复调用不会叠加；并且落在整页边界上。
+        setPagedPage(page + Math.round((size - oldSize) / w));
+      } else if (size > compensatedSize) {
+        scroll.scrollTop += size - compensatedSize;
         compensatedSize = size;
-        if (paged) scroll.scrollLeft += added;
-        else scroll.scrollTop += added;
       }
       // Late image loads change the page count: keep the snap targets in sync with the new DOM.
       refreshSnapPoints();
       report(true);
     }
+    var compensatedSize = oldSize;
     refreshSnapPoints();
     compensate();
-    whenImagesReady(compensate);
+    whenImagesReady(function () {
+      compensate();
+      endNoSnap();
+    });
   }
   window.__reader = {
     apply: apply,
