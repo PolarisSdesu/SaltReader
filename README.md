@@ -1,7 +1,6 @@
 <p align="center">
   <img src="readme/logo.png" width="96" alt="" />
 </p>
-
 <h1 align="center">Salt Reader</h1>
 
 <p align="center">A local-first comic and ebook reader for Android.</p>
