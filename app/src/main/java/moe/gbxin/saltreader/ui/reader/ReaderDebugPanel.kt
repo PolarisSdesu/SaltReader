@@ -106,6 +106,7 @@ private data class DebugLabels(
     val blocking: String,
     val threads: String,
     val screen: String,
+    val renderer: String,
     val switchToNative: String,
     val switchToWebview: String,
     val nativeUnavailable: String,
@@ -141,8 +142,9 @@ private val LABELS_EN = DebugLabels(
     blocking = "blocking",
     threads = "THREADS",
     screen = "SCREEN",
-    switchToNative = "SWITCH → NATIVE",
-    switchToWebview = "SWITCH → WEBVIEW",
+    renderer = "RENDERER",
+    switchToNative = "SWITCH TO NATIVE RENDERER",
+    switchToWebview = "SWITCH TO WEBVIEW RENDERER",
     nativeUnavailable = "NATIVE UNAVAILABLE",
     status = "STATUS",
     recording = "REC %d rows",
@@ -176,8 +178,9 @@ private val LABELS_ZH = DebugLabels(
     blocking = "阻塞",
     threads = "线程",
     screen = "屏幕",
-    switchToNative = "切换 → 原生",
-    switchToWebview = "切换 → 网页",
+    renderer = "当前阅读器",
+    switchToNative = "切换为原生阅读器",
+    switchToWebview = "切换为网页阅读器",
     nativeUnavailable = "原生阅读器不可用",
     status = "状态",
     recording = "录制中 · %d 行",
@@ -314,6 +317,11 @@ internal fun ReaderDebugPanel(
     // 默认跟随系统语言，用户可以在面板里手动切换并保留到本次阅读结束。
     var chinese by rememberSaveable { mutableStateOf(Locale.getDefault().language == "zh") }
     val labels = if (chinese) LABELS_ZH else LABELS_EN
+    val rendererName = when (renderer) {
+        "native" -> "Native"
+        "webview" -> "WebView"
+        else -> "Image"
+    }
     // 位置是相对窗口左上角的绝对偏移（不含任何外层 padding），这样边界可以直接用窗口尺寸算。
     val density = LocalDensity.current
     val initialX = with(density) { 8.dp.roundToPx() }
@@ -384,7 +392,8 @@ internal fun ReaderDebugPanel(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
-                    text = renderer + " · " + if (mode == "vertical") labels.vertical else labels.paged,
+                    text = labels.renderer + " " + rendererName + " · " +
+                        if (mode == "vertical") labels.vertical else labels.paged,
                     color = colors.onSurfaceVariant,
                     fontSize = 10.sp,
                     fontFamily = FontFamily.Monospace,
