@@ -7,6 +7,7 @@ import android.database.Cursor
 import android.net.Uri
 import android.provider.DocumentsContract
 import java.io.InputStream
+import androidx.core.net.toUri
 
 /**
  * 一层很薄的 SAF 封装：把「持久化 tree URI + 相对路径」翻译成 Document URI，
@@ -129,6 +130,6 @@ internal fun takePersistableReadPermission(context: Context, uri: Uri): Boolean 
 
 /** 把「treeUri + 相对路径」解析成可打开的文件 Document URI；失败/目录返回 null。 */
 internal fun resolveDocumentUri(context: Context, treeUri: String, documentPath: String): Uri? = runCatching {
-    val tree = SafTree(context, Uri.parse(treeUri))
+    val tree = SafTree(context, treeUri.toUri())
     tree.find(documentPath)?.takeIf { !it.isDirectory }?.uri
 }.getOrNull()

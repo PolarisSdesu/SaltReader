@@ -72,9 +72,9 @@ class MobiUtils {
 
 	static int getTextContentStartIndex(MobiContentHeader mobiHeader) {
 		int firstContentIndex = mobiHeader.getFirstContentRecordIndex();
-  	if(firstContentIndex <= 0) {
-  		firstContentIndex = 1; // text starts usually with at index 1
-  	}
+		if(firstContentIndex <= 0) {
+			firstContentIndex = 1; // text starts usually with at index 1
+		}
 		return firstContentIndex;
 	}
   

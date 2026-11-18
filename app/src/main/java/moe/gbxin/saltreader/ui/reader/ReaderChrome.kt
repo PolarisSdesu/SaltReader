@@ -5,6 +5,7 @@
 
 package moe.gbxin.saltreader.ui.reader
 
+import android.annotation.SuppressLint
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
@@ -201,6 +202,7 @@ internal fun ReaderBottomBar(
     label: @Composable () -> String,
     onJump: (Float) -> Unit,
     /** 分页模式下的总页数；>1 时进度条按页吸附，否则按连续百分比。 */
+    modifier: Modifier = Modifier,
     snapPages: Int = 0,
     progressLabelSizeSp: Int = 12,
     accentColor: Color = MaterialTheme.colorScheme.primary,
@@ -214,7 +216,6 @@ internal fun ReaderBottomBar(
     modeToggleEnabled: Boolean = true,
     readerMode: ReaderMode,
     onReaderModeToggle: () -> Unit,
-    modifier: Modifier = Modifier,
     containerColor: Color = MaterialTheme.colorScheme.surface,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
@@ -859,6 +860,9 @@ private fun List<ReaderTocEntry>.highlightedEntry(currentChapter: Int): ReaderTo
  * Chapter list sheet (WeChat Reading "目录"). Selecting an entry jumps to that chapter; the entry
  * covering the current reading position is highlighted.
  */
+// The slim scrollbar intentionally reads LazyListState while composing the chapter list; the
+// reads only recompose this panel, which is the point of a live scrollbar.
+@SuppressLint("FrequentlyChangingValue")
 @Composable
 internal fun ReaderTocPanel(
     chapters: List<EbookChapter>,

@@ -81,11 +81,13 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.net.toUri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -443,7 +445,7 @@ private fun ReaderFontSettingsPage(onBack: () -> Unit) {
             }
             if (directoryUri != null) {
                 Text(
-                    stringResource(R.string.reader_font_directory_count, directoryFonts.size),
+                    pluralStringResource(R.plurals.reader_font_directory_count, directoryFonts.size, directoryFonts.size),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 12.dp),
@@ -477,7 +479,7 @@ private fun ReaderFontSettingsPage(onBack: () -> Unit) {
                     icon = Icons.Outlined.Sort,
                     title = stringResource(R.string.reader_font_fallback_title),
                     value = fallbackCount.takeIf { it > 0 }?.let {
-                        stringResource(R.string.reader_font_directory_count, it)
+                        pluralStringResource(R.plurals.reader_font_directory_count, it, it)
                     },
                 ) {
                     context.startActivity(Intent(context, ReaderFontFallbackActivity::class.java))
@@ -871,7 +873,7 @@ private fun rememberFontTypeface(ref: ReaderFontRef?): Typeface? {
                     when (ref.source) {
                         ReaderFontSource.SYSTEM -> Typeface.create(ref.key, Typeface.NORMAL)
                         ReaderFontSource.DOCUMENT -> {
-                            context.contentResolver.openFileDescriptor(Uri.parse(ref.key), "r")
+                            context.contentResolver.openFileDescriptor(ref.key.toUri(), "r")
                                 ?.use { descriptor -> Typeface.Builder(descriptor.fileDescriptor).build() }
                         }
                     }

@@ -102,11 +102,12 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.nestedscroll.nestedScroll
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -198,13 +199,14 @@ fun LibraryScreen(
         }
     }
     // 按实际列宽算封面目标像素宽：2 倍列宽在缩放/高分屏下仍清晰，又比统一 640px 省内存。
-    val configuration = LocalConfiguration.current
+    // containerSize is the app window in pixels, so it follows split-screen / freeform changes.
+    val windowWidthPx = LocalWindowInfo.current.containerSize.width
     val density = LocalDensity.current
-    val coverTargetWidthPx = remember(configuration.screenWidthDp, density, effectiveColumns, listMode) {
+    val coverTargetWidthPx = remember(windowWidthPx, density, effectiveColumns, listMode) {
         if (listMode) {
             LIST_COVER_TARGET_WIDTH_PX
         } else with(density) {
-            val screenPx = configuration.screenWidthDp.dp.roundToPx()
+            val screenPx = windowWidthPx
             val contentPx = (screenPx - 16.dp.roundToPx() * 2).coerceAtLeast(1)
             val gapPx = 12.dp.roundToPx() * (effectiveColumns - 1).coerceAtLeast(0)
             val columnPx = ((contentPx - gapPx) / effectiveColumns).coerceAtLeast(1)
@@ -225,13 +227,18 @@ fun LibraryScreen(
                     val report = event.report
                     // Every supported format is readable in place now; no conversion step remains.
                     val message = when {
-                        report.count > 0 && report.hasFailures -> resources.getString(
-                            R.string.library_import_done_failed,
+                        report.count > 0 && report.hasFailures -> resources.getQuantityString(
+                            R.plurals.library_import_done_failed,
+                            report.count,
                             report.count,
                             report.failures.size,
                             report.failures.first().name,
                         )
-                        report.count > 0 -> resources.getString(R.string.library_import_done, report.count)
+                        report.count > 0 -> resources.getQuantityString(
+                            R.plurals.library_import_done,
+                            report.count,
+                            report.count,
+                        )
                         report.hasFailures -> resources.getString(R.string.library_import_failed_one, report.failures.first().reason)
                         else -> resources.getString(R.string.library_import_empty)
                     }
@@ -762,7 +769,7 @@ private fun LayoutSheet(
 private fun columnLabel(columns: Int): String = if (columns <= 0) {
     stringResource(R.string.library_layout_columns_auto)
 } else {
-    stringResource(R.string.library_layout_columns_custom, columns)
+    pluralStringResource(R.plurals.library_layout_columns_custom, columns, columns)
 }
 
 @Composable
@@ -911,8 +918,9 @@ private fun BookActionsSheet(
                                 formatBytes(book.sizeBytes),
                             )
                         } else {
-                            stringResource(
-                                R.string.library_book_meta_pages,
+                            pluralStringResource(
+                                R.plurals.library_book_meta_pages,
+                                book.pageCount,
                                 book.pageCount,
                                 formatBytes(book.sizeBytes),
                                 bookFormatLabel(book),

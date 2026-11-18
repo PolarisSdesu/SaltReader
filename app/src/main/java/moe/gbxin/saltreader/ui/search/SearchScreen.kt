@@ -166,7 +166,7 @@ fun SearchScreen(onOpenBook: (ComicBook) -> Unit, onBack: () -> Unit) {
                     }
                     state.query.isBlank() -> when {
                         state.total == 0 -> SearchEmpty(message = stringResource(R.string.search_empty_body))
-                        else -> SearchEmpty(message = stringResource(R.string.search_hint_body, state.total))
+                        else -> SearchEmpty(message = pluralStringResource(R.plurals.search_hint_body, state.total, state.total))
                     }
                     state.books.isEmpty() -> SearchEmpty(message = stringResource(R.string.search_no_results_body))
                     else -> LazyColumn(

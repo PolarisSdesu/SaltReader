@@ -16,6 +16,7 @@ import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
 import android.view.WindowManager
+import android.annotation.SuppressLint
 import android.text.Html
 import android.util.Base64
 import androidx.annotation.RequiresApi
@@ -115,6 +116,7 @@ import java.util.concurrent.atomic.AtomicInteger
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.graphics.withClip
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import kotlinx.coroutines.flow.Flow
@@ -196,6 +198,9 @@ private val nativeParserToken = AtomicInteger(0)
  * 当前支持横向翻页、页内点按/滑动翻页、按页进度条、目录、纸张颜色、字号/行距/页边距与设置入口。
  */
 @Composable
+// The progress label intentionally tracks LazyListState scroll positions; reading them in
+// composition only recomposes this reader's chrome, which is the desired behaviour.
+@SuppressLint("FrequentlyChangingValue")
 internal fun NativeTextReaderContent(
     vm: ReaderViewModel,
     book: ComicBook,
@@ -1585,11 +1590,15 @@ internal fun NativeTextReaderContent(
                                         }
                                     }
                                     val native = canvas.nativeCanvas
-                                    val saved = native.save()
-                                    native.clipRect(cellLeft + pad, yTop, cellLeft + columnWidth - pad, yTop + lineBox)
-                                    paint.textAlign = Paint.Align.LEFT
-                                    native.drawText(line.text, cellLeft + pad, baseline, paint)
-                                    native.restoreToCount(saved)
+                                    native.withClip(
+                                        cellLeft + pad,
+                                        yTop,
+                                        cellLeft + columnWidth - pad,
+                                        yTop + lineBox,
+                                    ) {
+                                        paint.textAlign = Paint.Align.LEFT
+                                        native.drawText(line.text, cellLeft + pad, baseline, paint)
+                                    }
                                     if (line.tableCol == line.tableCols - 1) {
                                         yTop += lineBox
                                     }
@@ -1730,9 +1739,9 @@ internal fun NativeTextReaderContent(
                         override fun onCreateActionMode(mode: ActionMode, menu: Menu): Boolean {
                             // floating 模式的菜单项由调用方提供，样式由系统渲染。
                             menu.add(Menu.NONE, android.R.id.copy, 0, resources.getString(R.string.reader_action_copy))
-                                ?.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+                                ?.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
                             menu.add(Menu.NONE, android.R.id.shareText, 1, resources.getString(R.string.reader_action_share))
-                                ?.setShowAsAction(MenuItem.SHOW_AS_ACTION_ALWAYS)
+                                ?.setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
                             return true
                         }
                         override fun onPrepareActionMode(mode: ActionMode, menu: Menu): Boolean = false

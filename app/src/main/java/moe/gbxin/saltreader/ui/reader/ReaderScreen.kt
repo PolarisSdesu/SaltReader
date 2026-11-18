@@ -88,11 +88,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
@@ -147,8 +148,8 @@ import moe.gbxin.saltreader.ui.theme.readerForegroundColor
 fun ReaderScreen(
     vm: ReaderViewModel,
     onBack: () -> Unit,
-    volumePageEvents: Flow<Int>? = null,
     modifier: Modifier = Modifier,
+    volumePageEvents: Flow<Int>? = null,
 ) {
     val app = LocalContext.current.applicationContext as SaltReaderApplication
     val settings by app.settings.state.collectAsStateWithLifecycle()
@@ -433,8 +434,7 @@ private fun ReaderContent(
     val view = LocalView.current
     val context = LocalContext.current
     val density = LocalDensity.current
-    val configuration = LocalConfiguration.current
-    val screenWidthPx = with(density) { configuration.screenWidthDp.dp.toPx() }
+    val screenWidthPx = LocalWindowInfo.current.containerSize.width.toFloat()
     // Use one decode width for both reading modes so switching modes hits the bitmap cache.
     val pageTarget = (screenWidthPx * 1.25f).toInt().coerceIn(720, 1800)
 
@@ -1250,7 +1250,7 @@ private fun PagePlaceholder(index: Int) {
 private fun PageError(index: Int) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         Text(
-            stringResource(R.string.reader_page_failed, index + 1),
+            pluralStringResource(R.plurals.reader_page_failed, index + 1, index + 1),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.error,
         )

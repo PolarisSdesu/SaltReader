@@ -7,6 +7,7 @@ import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
 import androidx.annotation.StringRes
+import androidx.core.net.toUri
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -241,7 +242,7 @@ class LibraryRepository(private val context: Context) {
             val start = index * span
             onProgress(start, context.getString(R.string.data_progress_refreshing, rootInfo.displayName))
 
-            val uri = runCatching { Uri.parse(rootInfo.treeUri) }.getOrNull()
+            val uri = runCatching { rootInfo.treeUri.toUri() }.getOrNull()
             if (uri == null || !DocumentsContract.isTreeUri(uri)) {
                 failures += failure(rootInfo.displayName, DataMessage.INVALID_ROOT)
                 continue
@@ -690,7 +691,7 @@ class LibraryRepository(private val context: Context) {
         if (removed.isNotEmpty()) deleteTextCaches(removed.map { it.id })
         runCatching { rootsStore.remove(treeUri) }
             .onFailure { Log.e(TAG, "写入 roots.json 失败", it) }
-        runCatching { Uri.parse(treeUri) }.getOrNull()?.let { uri ->
+        runCatching { treeUri.toUri() }.getOrNull()?.let { uri ->
             runCatching {
                 context.contentResolver.releasePersistableUriPermission(
                     uri,

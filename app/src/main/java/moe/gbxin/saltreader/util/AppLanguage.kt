@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.LocaleList
 import java.util.Locale
 import moe.gbxin.saltreader.MainActivity
+import androidx.core.content.edit
 
 /**
  * In-app language selection.
@@ -50,9 +51,7 @@ fun currentAppLanguage(context: Context): String {
 fun setAppLanguage(context: Context, tag: String) {
     val normalized = normalizeAppLanguage(tag)
     context.getSharedPreferences(SETTINGS_PREFS, Context.MODE_PRIVATE)
-        .edit()
-        .putString(KEY_APP_LANGUAGE, normalized)
-        .apply()
+        .edit { putString(KEY_APP_LANGUAGE, normalized) }
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
         val manager = context.getSystemService(LocaleManager::class.java) ?: return
         manager.applicationLocales = if (normalized == LANGUAGE_SYSTEM) {

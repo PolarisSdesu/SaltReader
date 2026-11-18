@@ -1,6 +1,7 @@
 package moe.gbxin.saltreader.data
 
 import android.content.Context
+import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -177,97 +178,97 @@ class SettingsRepository(context: Context) {
         if (next == old) return
         _state.value = next
 
-        val editor = prefs.edit()
-        if (next.themeMode != old.themeMode) editor.putString("theme_mode", next.themeMode.name)
-        if (next.dynamicColor != old.dynamicColor) editor.putBoolean("dynamic_color", next.dynamicColor)
-        if (next.amoledBlack != old.amoledBlack) editor.putBoolean("amoled_black", next.amoledBlack)
-        if (next.readerMode != old.readerMode) editor.putString("reader_mode", next.readerMode.name)
-        if (next.readingDirection != old.readingDirection) editor.putString("reading_direction", next.readingDirection.name)
-        if (next.readerBackground != old.readerBackground) editor.putString("reader_background", next.readerBackground.name)
-        if (next.customBackgroundColor != old.customBackgroundColor) {
-            editor.putLong("custom_background_color", next.customBackgroundColor)
+        prefs.edit {
+            if (next.themeMode != old.themeMode) putString("theme_mode", next.themeMode.name)
+            if (next.dynamicColor != old.dynamicColor) putBoolean("dynamic_color", next.dynamicColor)
+            if (next.amoledBlack != old.amoledBlack) putBoolean("amoled_black", next.amoledBlack)
+            if (next.readerMode != old.readerMode) putString("reader_mode", next.readerMode.name)
+            if (next.readingDirection != old.readingDirection) putString("reading_direction", next.readingDirection.name)
+            if (next.readerBackground != old.readerBackground) putString("reader_background", next.readerBackground.name)
+            if (next.customBackgroundColor != old.customBackgroundColor) {
+                putLong("custom_background_color", next.customBackgroundColor)
+            }
+            if (next.keepScreenOn != old.keepScreenOn) putBoolean("keep_screen_on", next.keepScreenOn)
+            if (next.debugMode != old.debugMode) putBoolean("debug_mode", next.debugMode)
+            if (next.debugUnlocked != old.debugUnlocked) {
+                putBoolean("debug_unlocked", next.debugUnlocked)
+            }
+            if (next.nativeReader != old.nativeReader) putBoolean("native_reader_enabled", next.nativeReader)
+            if (next.readerPageInfo != old.readerPageInfo) putString("reader_page_info", next.readerPageInfo.name)
+            if (next.volumeKeyPaging != old.volumeKeyPaging) putBoolean("volume_key_paging", next.volumeKeyPaging)
+            if (next.readerLiveUpdate != old.readerLiveUpdate) {
+                putBoolean("reader_live_update", next.readerLiveUpdate)
+            }
+            if (next.grayscale != old.grayscale) putBoolean("reader_grayscale", next.grayscale)
+            if (next.invertColors != old.invertColors) putBoolean("reader_invert", next.invertColors)
+            if (next.readerFontSizeSp != old.readerFontSizeSp) {
+                putInt("reader_font_size", next.readerFontSizeSp)
+            }
+            if (next.readerLineHeight != old.readerLineHeight) {
+                putFloat("reader_line_height", next.readerLineHeight)
+            }
+            if (next.readerPageMarginDp != old.readerPageMarginDp) {
+                putInt("reader_page_margin", next.readerPageMarginDp)
+            }
+            if (next.readerImageFullWidth != old.readerImageFullWidth) {
+                putBoolean("reader_image_full_width", next.readerImageFullWidth)
+            }
+            if (next.readerFontFamily != old.readerFontFamily) {
+                putString("reader_font_family", next.readerFontFamily.name)
+            }
+            if (next.readerCustomFont != old.readerCustomFont) {
+                putString("reader_font_custom", ReaderFontCodec.encode(next.readerCustomFont))
+            }
+            if (next.readerFontHei != old.readerFontHei) {
+                putString("reader_font_hei", ReaderFontCodec.encode(next.readerFontHei))
+            }
+            if (next.readerFontSong != old.readerFontSong) {
+                putString("reader_font_song", ReaderFontCodec.encode(next.readerFontSong))
+            }
+            if (next.readerFontMono != old.readerFontMono) {
+                putString("reader_font_mono", ReaderFontCodec.encode(next.readerFontMono))
+            }
+            if (next.readerFontFallback1 != old.readerFontFallback1) {
+                putString("reader_font_fallback_1", ReaderFontCodec.encode(next.readerFontFallback1))
+            }
+            if (next.readerFontFallback2 != old.readerFontFallback2) {
+                putString("reader_font_fallback_2", ReaderFontCodec.encode(next.readerFontFallback2))
+            }
+            if (next.readerFontFallback3 != old.readerFontFallback3) {
+                putString("reader_font_fallback_3", ReaderFontCodec.encode(next.readerFontFallback3))
+            }
+            if (next.readerFontDirectoryUri != old.readerFontDirectoryUri) {
+                putString("reader_font_directory_uri", next.readerFontDirectoryUri)
+            }
+            if (next.readerFontDirectoryLabel != old.readerFontDirectoryLabel) {
+                putString("reader_font_directory_label", next.readerFontDirectoryLabel)
+            }
+            if (next.readerBatteryIndicator != old.readerBatteryIndicator) {
+                putBoolean("reader_battery_indicator", next.readerBatteryIndicator)
+            }
+            if (next.readerProgressLabelSizeSp != old.readerProgressLabelSizeSp) {
+                putInt("reader_progress_label_size", next.readerProgressLabelSizeSp)
+            }
+            if (next.readerPageIndicatorSizeSp != old.readerPageIndicatorSizeSp) {
+                putInt("reader_page_indicator_size", next.readerPageIndicatorSizeSp)
+            }
+            if (next.libraryLayout != old.libraryLayout) putString("library_layout", next.libraryLayout.name)
+            if (next.libraryColumns != old.libraryColumns) putInt("library_columns", next.libraryColumns)
+            if (next.libraryTitleSizeSp != old.libraryTitleSizeSp) putInt("library_title_size", next.libraryTitleSizeSp)
+            if (next.librarySortAscending != old.librarySortAscending) {
+                putBoolean("library_sort_ascending", next.librarySortAscending)
+            }
+            if (next.librarySort != old.librarySort) putString("library_sort", next.librarySort.name)
+            if (next.libraryMetaVisible != old.libraryMetaVisible) {
+                putBoolean("library_meta_visible", next.libraryMetaVisible)
+            }
+            if (next.libraryMetaTextSizeSp != old.libraryMetaTextSizeSp) {
+                putInt("library_meta_text_size", next.libraryMetaTextSizeSp)
+            }
+            if (next.libraryMetaFields != old.libraryMetaFields) {
+                putString("library_meta_fields", next.libraryMetaFields.joinToString(",") { it.name })
+            }
         }
-        if (next.keepScreenOn != old.keepScreenOn) editor.putBoolean("keep_screen_on", next.keepScreenOn)
-        if (next.debugMode != old.debugMode) editor.putBoolean("debug_mode", next.debugMode)
-        if (next.debugUnlocked != old.debugUnlocked) {
-            editor.putBoolean("debug_unlocked", next.debugUnlocked)
-        }
-        if (next.nativeReader != old.nativeReader) editor.putBoolean("native_reader_enabled", next.nativeReader)
-        if (next.readerPageInfo != old.readerPageInfo) editor.putString("reader_page_info", next.readerPageInfo.name)
-        if (next.volumeKeyPaging != old.volumeKeyPaging) editor.putBoolean("volume_key_paging", next.volumeKeyPaging)
-        if (next.readerLiveUpdate != old.readerLiveUpdate) {
-            editor.putBoolean("reader_live_update", next.readerLiveUpdate)
-        }
-        if (next.grayscale != old.grayscale) editor.putBoolean("reader_grayscale", next.grayscale)
-        if (next.invertColors != old.invertColors) editor.putBoolean("reader_invert", next.invertColors)
-        if (next.readerFontSizeSp != old.readerFontSizeSp) {
-            editor.putInt("reader_font_size", next.readerFontSizeSp)
-        }
-        if (next.readerLineHeight != old.readerLineHeight) {
-            editor.putFloat("reader_line_height", next.readerLineHeight)
-        }
-        if (next.readerPageMarginDp != old.readerPageMarginDp) {
-            editor.putInt("reader_page_margin", next.readerPageMarginDp)
-        }
-        if (next.readerImageFullWidth != old.readerImageFullWidth) {
-            editor.putBoolean("reader_image_full_width", next.readerImageFullWidth)
-        }
-        if (next.readerFontFamily != old.readerFontFamily) {
-            editor.putString("reader_font_family", next.readerFontFamily.name)
-        }
-        if (next.readerCustomFont != old.readerCustomFont) {
-            editor.putString("reader_font_custom", ReaderFontCodec.encode(next.readerCustomFont))
-        }
-        if (next.readerFontHei != old.readerFontHei) {
-            editor.putString("reader_font_hei", ReaderFontCodec.encode(next.readerFontHei))
-        }
-        if (next.readerFontSong != old.readerFontSong) {
-            editor.putString("reader_font_song", ReaderFontCodec.encode(next.readerFontSong))
-        }
-        if (next.readerFontMono != old.readerFontMono) {
-            editor.putString("reader_font_mono", ReaderFontCodec.encode(next.readerFontMono))
-        }
-        if (next.readerFontFallback1 != old.readerFontFallback1) {
-            editor.putString("reader_font_fallback_1", ReaderFontCodec.encode(next.readerFontFallback1))
-        }
-        if (next.readerFontFallback2 != old.readerFontFallback2) {
-            editor.putString("reader_font_fallback_2", ReaderFontCodec.encode(next.readerFontFallback2))
-        }
-        if (next.readerFontFallback3 != old.readerFontFallback3) {
-            editor.putString("reader_font_fallback_3", ReaderFontCodec.encode(next.readerFontFallback3))
-        }
-        if (next.readerFontDirectoryUri != old.readerFontDirectoryUri) {
-            editor.putString("reader_font_directory_uri", next.readerFontDirectoryUri)
-        }
-        if (next.readerFontDirectoryLabel != old.readerFontDirectoryLabel) {
-            editor.putString("reader_font_directory_label", next.readerFontDirectoryLabel)
-        }
-        if (next.readerBatteryIndicator != old.readerBatteryIndicator) {
-            editor.putBoolean("reader_battery_indicator", next.readerBatteryIndicator)
-        }
-        if (next.readerProgressLabelSizeSp != old.readerProgressLabelSizeSp) {
-            editor.putInt("reader_progress_label_size", next.readerProgressLabelSizeSp)
-        }
-        if (next.readerPageIndicatorSizeSp != old.readerPageIndicatorSizeSp) {
-            editor.putInt("reader_page_indicator_size", next.readerPageIndicatorSizeSp)
-        }
-        if (next.libraryLayout != old.libraryLayout) editor.putString("library_layout", next.libraryLayout.name)
-        if (next.libraryColumns != old.libraryColumns) editor.putInt("library_columns", next.libraryColumns)
-        if (next.libraryTitleSizeSp != old.libraryTitleSizeSp) editor.putInt("library_title_size", next.libraryTitleSizeSp)
-        if (next.librarySortAscending != old.librarySortAscending) {
-            editor.putBoolean("library_sort_ascending", next.librarySortAscending)
-        }
-        if (next.librarySort != old.librarySort) editor.putString("library_sort", next.librarySort.name)
-        if (next.libraryMetaVisible != old.libraryMetaVisible) {
-            editor.putBoolean("library_meta_visible", next.libraryMetaVisible)
-        }
-        if (next.libraryMetaTextSizeSp != old.libraryMetaTextSizeSp) {
-            editor.putInt("library_meta_text_size", next.libraryMetaTextSizeSp)
-        }
-        if (next.libraryMetaFields != old.libraryMetaFields) {
-            editor.putString("library_meta_fields", next.libraryMetaFields.joinToString(",") { it.name })
-        }
-        editor.apply()
     }
 }
 

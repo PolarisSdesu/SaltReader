@@ -15,6 +15,8 @@ import android.os.Build
 import android.os.ParcelFileDescriptor
 import android.util.Size
 import androidx.exifinterface.media.ExifInterface
+import androidx.core.net.toUri
+import androidx.core.graphics.createBitmap
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.ByteArrayInputStream
@@ -124,7 +126,7 @@ private class EmptyPageSource(override val pageCount: Int) : ComicPageSource {
  */
 internal fun openBookDocument(context: Context, book: ComicBook): RemoteZipReader? {
     book.documentUri?.let { raw ->
-        val uri = runCatching { Uri.parse(raw) }.getOrNull()
+        val uri = runCatching { raw.toUri() }.getOrNull()
         if (uri != null) RemoteZipReader.open(context, uri)?.let { return it }
     }
     val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
@@ -355,7 +357,7 @@ private class SafFolderPageSource(
     private fun ensurePages(): List<Uri>? = synchronized(lock) {
         if (closed) return null
         pages?.let { return it }
-        val tree = runCatching { SafTree(context, Uri.parse(book.treeUri)) }.getOrNull() ?: return null
+        val tree = runCatching { SafTree(context, book.treeUri.toUri()) }.getOrNull() ?: return null
         val folder = tree.find(book.documentPath) ?: return null
         if (!folder.isDirectory) return null
         val children = tree.children(folder.documentId, folder.documentPath) ?: return null
@@ -414,7 +416,7 @@ private class SafPdfPageSource(
             runCatching { context.contentResolver.openFileDescriptor(uri, "r") }.getOrNull()
         }
         val fd = book.documentUri?.let { raw ->
-            runCatching { Uri.parse(raw) }.getOrNull()?.let(opener)
+            runCatching { raw.toUri() }.getOrNull()?.let(opener)
         } ?: run {
             val uri = resolveDocumentUri(context, book.treeUri, book.documentPath) ?: return null
             opener(uri)
@@ -640,7 +642,7 @@ private fun renderPdfPage(renderer: PdfRenderer, index: Int, targetWidth: Int): 
             height = (height * shrink).toInt().coerceAtLeast(1)
         }
 
-        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val bitmap = createBitmap(width, height, Bitmap.Config.ARGB_8888)
         Canvas(bitmap).drawColor(Color.WHITE)
         page.render(bitmap, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
         bitmap

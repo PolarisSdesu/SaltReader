@@ -21,8 +21,12 @@
     <string name="library_importing">正在导入</string>
     <string name="library_import_scanning">正在扫描目录…</string>
     <string name="library_import_failed_one">导入失败：%1$s</string>
-    <string name="library_import_done_failed">已索引 %1$d 本；%2$d 项失败：%3$s</string>
-    <string name="library_import_done">已索引 %1$d 本，EPUB/MOBI/AZW3 可直接阅读</string>
+    <plurals name="library_import_done_failed">
+        <item quantity="other">已索引 %1$d 本；%2$d 项失败：%3$s</item>
+    </plurals>
+    <plurals name="library_import_done">
+        <item quantity="other">已索引 %1$d 本，EPUB/MOBI/AZW3 可直接阅读</item>
+    </plurals>
     <string name="library_import_empty">没有找到可导入的漫画</string>
     <string name="library_import_progress_percent">%1$d%%</string>
 
@@ -30,14 +34,18 @@
     <string name="library_layout_mode">布局模式</string>
     <string name="library_layout_columns">列数  %1$s</string>
     <string name="library_layout_columns_auto">自动</string>
-    <string name="library_layout_columns_custom">自定义 · %1$d 列</string>
+    <plurals name="library_layout_columns_custom">
+        <item quantity="other">自定义 · %1$d 列</item>
+    </plurals>
     <string name="library_layout_title_size">书名大小  %1$dsp</string>
     <string name="library_layout_meta_visible">显示标签</string>
     <string name="library_layout_meta_visible_supporting">格式 / 大小 / 页数 / 进度 / 最近阅读</string>
     <string name="library_layout_meta_size">标签字号  %1$dsp</string>
     <string name="library_layout_meta_fields">标签内容</string>
 
-    <string name="library_book_meta_pages">%1$d 页 · %2$s · %3$s</string>
+    <plurals name="library_book_meta_pages">
+        <item quantity="other">%1$d 页 · %2$s · %3$s</item>
+    </plurals>
     <string name="library_book_meta_format">%1$s · %2$s</string>
     <string name="library_book_percent">%1$d%%</string>
 
@@ -66,7 +74,9 @@
     <string name="library_marked_read">《%1$s》已标为读完</string>
     <string name="library_marked_unread">《%1$s》已标为未读</string>
     <string name="library_update_failed">操作失败：无法更新《%1$s》</string>
-    <string name="library_refresh_partial">刷新完成，%1$d 项无法读取：%2$s（%3$s）</string>
+    <plurals name="library_refresh_partial">
+        <item quantity="other">刷新完成，%1$d 项无法读取：%2$s（%3$s）</item>
+    </plurals>
     <string name="library_refresh_failed">刷新失败：%1$s</string>
     <string name="library_error_unknown">未知错误</string>
 
@@ -74,11 +84,10 @@
     <string name="search_placeholder">搜索书名或作者</string>
     <string name="search_clear">清空搜索</string>
     <string name="search_back">返回</string>
-    <string name="search_hint_title">搜索你的书架</string>
-    <string name="search_hint_body">在 %1$d 本藏书中查找…</string>
-    <string name="search_empty_title">书架还是空的</string>
+    <plurals name="search_hint_body">
+        <item quantity="other">在 %1$d 本藏书中查找…</item>
+    </plurals>
     <string name="search_empty_body">回到书架，先添加一个漫画文件夹。</string>
-    <string name="search_no_results_title">没有找到「%1$s」</string>
     <string name="search_no_results_body">换个关键词，或清空搜索查看全部。</string>
 
     <plurals name="library_result_count">

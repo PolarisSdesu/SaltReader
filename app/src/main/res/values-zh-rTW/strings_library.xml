@@ -21,8 +21,12 @@
     <string name="library_importing">正在匯入</string>
     <string name="library_import_scanning">正在掃描資料夾…</string>
     <string name="library_import_failed_one">匯入失敗：%1$s</string>
-    <string name="library_import_done_failed">已索引 %1$d 本；%2$d 項失敗：%3$s</string>
-    <string name="library_import_done">已索引 %1$d 本，EPUB/MOBI/AZW3 可直接閱讀</string>
+    <plurals name="library_import_done_failed">
+        <item quantity="other">已索引 %1$d 本；%2$d 項失敗：%3$s</item>
+    </plurals>
+    <plurals name="library_import_done">
+        <item quantity="other">已索引 %1$d 本，EPUB/MOBI/AZW3 可直接閱讀</item>
+    </plurals>
     <string name="library_import_empty">沒有找到可匯入的漫畫</string>
     <string name="library_import_progress_percent">%1$d%%</string>
 
@@ -30,14 +34,18 @@
     <string name="library_layout_mode">版面模式</string>
     <string name="library_layout_columns">欄數  %1$s</string>
     <string name="library_layout_columns_auto">自動</string>
-    <string name="library_layout_columns_custom">自訂 · %1$d 欄</string>
+    <plurals name="library_layout_columns_custom">
+        <item quantity="other">自訂 · %1$d 欄</item>
+    </plurals>
     <string name="library_layout_title_size">書名字型大小  %1$dsp</string>
     <string name="library_layout_meta_visible">顯示標籤</string>
     <string name="library_layout_meta_visible_supporting">格式 / 大小 / 頁數 / 進度 / 最近閱讀</string>
     <string name="library_layout_meta_size">標籤字型大小  %1$dsp</string>
     <string name="library_layout_meta_fields">標籤內容</string>
 
-    <string name="library_book_meta_pages">%1$d 頁 · %2$s · %3$s</string>
+    <plurals name="library_book_meta_pages">
+        <item quantity="other">%1$d 頁 · %2$s · %3$s</item>
+    </plurals>
     <string name="library_book_meta_format">%1$s · %2$s</string>
     <string name="library_book_percent">%1$d%%</string>
 
@@ -66,7 +74,9 @@
     <string name="library_marked_read">《%1$s》已標為讀完</string>
     <string name="library_marked_unread">《%1$s》已標為未讀</string>
     <string name="library_update_failed">操作失敗：無法更新《%1$s》</string>
-    <string name="library_refresh_partial">重新整理完成，%1$d 項無法讀取：%2$s（%3$s）</string>
+    <plurals name="library_refresh_partial">
+        <item quantity="other">重新整理完成，%1$d 項無法讀取：%2$s（%3$s）</item>
+    </plurals>
     <string name="library_refresh_failed">重新整理失敗：%1$s</string>
     <string name="library_error_unknown">未知錯誤</string>
 
@@ -74,11 +84,10 @@
     <string name="search_placeholder">搜尋書名或作者</string>
     <string name="search_clear">清除搜尋</string>
     <string name="search_back">返回</string>
-    <string name="search_hint_title">搜尋你的書櫃</string>
-    <string name="search_hint_body">在 %1$d 本藏書中查找…</string>
-    <string name="search_empty_title">書櫃還是空的</string>
+    <plurals name="search_hint_body">
+        <item quantity="other">在 %1$d 本藏書中查找…</item>
+    </plurals>
     <string name="search_empty_body">回到書櫃，先新增一個漫畫資料夾。</string>
-    <string name="search_no_results_title">沒有找到「%1$s」</string>
     <string name="search_no_results_body">換個關鍵字，或清除搜尋查看全部。</string>
 
     <plurals name="library_result_count">

@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 import java.io.File
 import java.security.MessageDigest
 import java.util.Locale
+import androidx.core.net.toUri
 
 /**
  * 阅读器字体：来源分为系统自带字体（按 CSS 字体族名使用）和用户字体目录里的文件
@@ -187,7 +188,7 @@ object ReaderFonts {
     fun ensureCached(context: Context, ref: ReaderFontRef): File? {
         val target = cacheFile(context, ref)
         if (target.isFile && target.length() > 0L) return target
-        val uri = runCatching { Uri.parse(ref.key) }.getOrNull() ?: return null
+        val uri = runCatching { ref.key.toUri() }.getOrNull() ?: return null
         return runCatching {
             target.parentFile?.mkdirs()
             val temp = File(target.parentFile, target.name + ".tmp")
@@ -263,7 +264,7 @@ object ReaderFonts {
      */
     fun directoryFonts(context: Context, treeUri: String?): List<ReaderFontRef> {
         val tree = treeUri?.takeIf { it.isNotBlank() } ?: return emptyList()
-        val uri = runCatching { Uri.parse(tree) }.getOrNull() ?: return emptyList()
+        val uri = runCatching { tree.toUri() }.getOrNull() ?: return emptyList()
         return runCatching {
             val safTree = SafTree(context, uri)
             safTree.children(safTree.rootDocumentId, "")
@@ -281,7 +282,7 @@ object ReaderFonts {
 
     /** 读取字体目录本身的显示名；选目录后立即用来填标题，不必等扫描完成。 */
     fun directoryName(context: Context, treeUri: String?): String? {
-        val uri = treeUri?.takeIf { it.isNotBlank() }?.let { runCatching { Uri.parse(it) }.getOrNull() }
+        val uri = treeUri?.takeIf { it.isNotBlank() }?.let { runCatching { it.toUri() }.getOrNull() }
             ?: return null
         return runCatching { SafTree(context, uri).rootName() }.getOrNull()
     }

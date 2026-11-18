@@ -1,5 +1,6 @@
 package moe.gbxin.saltreader.ui.reader
 
+import android.annotation.SuppressLint
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.Rect
@@ -86,6 +87,7 @@ import androidx.compose.ui.input.pointer.positionChange
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalDensity
@@ -102,6 +104,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.core.graphics.scale
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -233,6 +236,9 @@ private class ScalarHolder(var value: Float = 0f)
  * or prepended as the reader approaches a window edge.
  */
 @Composable
+// The reader renders its own trusted, offline HTML; JavaScript is required for paging
+// and selection, so the XSS warning does not apply to this WebView.
+@SuppressLint("SetJavaScriptEnabled")
 internal fun TextReaderContent(
     vm: ReaderViewModel,
     book: ComicBook,
@@ -261,9 +267,7 @@ internal fun TextReaderContent(
     }
     val density = LocalDensity.current
     // 内联图片注入前的最大宽度（按屏幕宽度降采样，减少 WebView 解码/纹理内存）。
-    val inlineImageMaxWidthPx = with(density) {
-        LocalConfiguration.current.screenWidthDp.dp.toPx()
-    }.roundToInt()
+    val inlineImageMaxWidthPx = LocalWindowInfo.current.containerSize.width
 
     val direction = book.direction ?: settings.readingDirection
     val isLightThemeBackground = MaterialTheme.colorScheme.background.luminance() > 0.5f
@@ -1859,7 +1863,7 @@ private fun downscaleInlineImage(bytes: ByteArray, mime: String, maxWidthPx: Int
             android.graphics.BitmapFactory.Options().apply { inSampleSize = sample },
         ) ?: return@runCatching bytes to mime
         val targetHeight = (decoded.height.toFloat() * maxWidthPx / decoded.width).roundToInt().coerceAtLeast(1)
-        val scaled = android.graphics.Bitmap.createScaledBitmap(decoded, maxWidthPx, targetHeight, true)
+        val scaled = decoded.scale(maxWidthPx, targetHeight)
         if (scaled !== decoded) decoded.recycle()
         val hasAlpha = scaled.hasAlpha()
         val out = java.io.ByteArrayOutputStream(scaled.byteCount.coerceAtMost(4 * 1024 * 1024))

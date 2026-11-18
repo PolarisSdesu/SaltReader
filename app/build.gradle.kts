@@ -124,6 +124,14 @@ android {
         checkReleaseBuilds = !fastRelease
     }
 
+    // Dynamic per-app locales are applied at runtime; disabling the bundle language split
+    // keeps every translation inside the APK (and silences the AppBundleLocaleChanges check).
+    bundle {
+        language {
+            enableSplit = false
+        }
+    }
+
     packaging {
         resources.excludes += setOf(
             "/META-INF/{AL2.0,LGPL2.1}",

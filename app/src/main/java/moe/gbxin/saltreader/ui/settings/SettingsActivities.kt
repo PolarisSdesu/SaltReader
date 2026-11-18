@@ -12,6 +12,7 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.core.content.ContextCompat
+import androidx.core.net.toUri
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
@@ -102,6 +103,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -705,7 +707,7 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
     val snackbar = remember { SnackbarHostState() }
     // Root list is loaded off the composition thread; the repository keeps it as a small cache.
     var roots by remember { mutableStateOf<List<LibraryRoot>>(emptyList()) }
-    var appDataBytes by remember { mutableStateOf(0L) }
+    var appDataBytes by remember { mutableLongStateOf(0L) }
     var scanning by remember { mutableStateOf(false) }
     var clearing by remember { mutableStateOf(false) }
     var scanProgress by remember { mutableFloatStateOf(0f) }
@@ -741,7 +743,7 @@ private fun StorageSettingsPage(onBack: () -> Unit) {
                 }
                 reloadStorage()
                 scanMessage = when {
-                    report.count > 0 -> context.resources.getQuantityString(
+                    report.count > 0 -> resources.getQuantityString(
                         R.plurals.settings_storage_scan_indexed,
                         report.count,
                         report.count,
@@ -1018,6 +1020,7 @@ private val testLibraries = listOf(
 @Composable
 private fun LicensesSettingsPage(onBack: () -> Unit) {
     val context = LocalContext.current
+    val resources = LocalResources.current
     var showApache by remember { mutableStateOf(false) }
     SettingsScaffold(stringResource(R.string.settings_licenses_title), onBack) { innerPadding ->
         LazyColumn(
@@ -1074,9 +1077,9 @@ private fun LicensesSettingsPage(onBack: () -> Unit) {
         }
     }
     if (showApache) {
-        val apacheText = remember {
+        val apacheText = remember(resources) {
             runCatching {
-                context.resources.openRawResource(R.raw.apache_license_2_0)
+                resources.openRawResource(R.raw.apache_license_2_0)
                     .bufferedReader()
                     .use { it.readText() }
             }.getOrDefault("")
@@ -1138,7 +1141,7 @@ private fun AboutSettingsPage(onBack: () -> Unit) {
 
     fun openUrl(url: String) {
         val launched = runCatching {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+            context.startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
         }.isSuccess
         if (!launched) Toast.makeText(context, R.string.about_open_failed, Toast.LENGTH_SHORT).show()
     }

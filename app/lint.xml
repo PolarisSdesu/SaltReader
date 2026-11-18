@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<lint>
+    <!-- Gradle 9.9.1 exists, but the distribution mirror is unreachable from this network; the
+         wrapper stays on the version CI has validated until the upgrade can be built and tested. -->
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+
+    <!-- targetSdk 37 changes system behaviour (edge-to-edge, background limits); bumping it is a
+         product decision that needs device testing, so 36 is deliberate for this release line. -->
+    <issue id="OldTargetApi" severity="ignore" />
+
+    <!-- Kotlin, the Compose compiler plugin and serialization plugin are pinned to the 2.3.21 line
+         that AGP 9.4 was validated against (see gradle.properties). -->
+    <issue id="NewerVersionAvailable">
+        <ignore regexp="org\.jetbrains\.kotlin" />
+    </issue>
+</lint>

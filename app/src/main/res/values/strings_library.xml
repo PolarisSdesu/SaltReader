@@ -22,8 +22,14 @@
     <string name="library_importing">Importing</string>
     <string name="library_import_scanning">Scanning folder…</string>
     <string name="library_import_failed_one">Import failed: %1$s</string>
-    <string name="library_import_done_failed">Indexed %1$d books; %2$d failed: %3$s</string>
-    <string name="library_import_done">Indexed %1$d books. EPUB/MOBI/AZW3 supported.</string>
+    <plurals name="library_import_done_failed">
+        <item quantity="one">Indexed %1$d book; %2$d failed: %3$s</item>
+        <item quantity="other">Indexed %1$d books; %2$d failed: %3$s</item>
+    </plurals>
+    <plurals name="library_import_done">
+        <item quantity="one">Indexed %1$d book. EPUB/MOBI/AZW3 supported.</item>
+        <item quantity="other">Indexed %1$d books. EPUB/MOBI/AZW3 supported.</item>
+    </plurals>
     <string name="library_import_empty">No readable comics found.</string>
     <string name="library_import_progress_percent">%1$d%%</string>
 
@@ -31,14 +37,20 @@
     <string name="library_layout_mode">Layout mode</string>
     <string name="library_layout_columns">Columns  %1$s</string>
     <string name="library_layout_columns_auto">Auto</string>
-    <string name="library_layout_columns_custom">Custom · %1$d columns</string>
+    <plurals name="library_layout_columns_custom">
+        <item quantity="one">Custom · %1$d column</item>
+        <item quantity="other">Custom · %1$d columns</item>
+    </plurals>
     <string name="library_layout_title_size">Title size  %1$dsp</string>
     <string name="library_layout_meta_visible">Show labels</string>
     <string name="library_layout_meta_visible_supporting">Format / size / pages / progress / last read</string>
     <string name="library_layout_meta_size">Label size  %1$dsp</string>
     <string name="library_layout_meta_fields">Label fields</string>
 
-    <string name="library_book_meta_pages">%1$d pages · %2$s · %3$s</string>
+    <plurals name="library_book_meta_pages">
+        <item quantity="one">%1$d page · %2$s · %3$s</item>
+        <item quantity="other">%1$d pages · %2$s · %3$s</item>
+    </plurals>
     <string name="library_book_meta_format">%1$s · %2$s</string>
     <string name="library_book_percent">%1$d%%</string>
 
@@ -67,7 +79,10 @@
     <string name="library_marked_read">%1$s marked as read</string>
     <string name="library_marked_unread">%1$s marked as unread</string>
     <string name="library_update_failed">Could not update %1$s</string>
-    <string name="library_refresh_partial">Refresh finished; %1$d unreadable: %2$s (%3$s)</string>
+    <plurals name="library_refresh_partial">
+        <item quantity="one">Refresh finished; %1$d unreadable: %2$s (%3$s)</item>
+        <item quantity="other">Refresh finished; %1$d unreadable: %2$s (%3$s)</item>
+    </plurals>
     <string name="library_refresh_failed">Refresh failed: %1$s</string>
     <string name="library_error_unknown">Unknown error</string>
 
@@ -75,11 +90,11 @@
     <string name="search_placeholder">Search title or author</string>
     <string name="search_clear">Clear search</string>
     <string name="search_back">Back</string>
-    <string name="search_hint_title">Search your shelf</string>
-    <string name="search_hint_body">Search in %1$d books…</string>
-    <string name="search_empty_title">Your shelf is empty</string>
+    <plurals name="search_hint_body">
+        <item quantity="one">Search in %1$d book…</item>
+        <item quantity="other">Search in %1$d books…</item>
+    </plurals>
     <string name="search_empty_body">Add a comic folder in the shelf first.</string>
-    <string name="search_no_results_title">No results for “%1$s”</string>
     <string name="search_no_results_body">Try another keyword or clear the search.</string>
 
     <plurals name="library_result_count">

@@ -210,38 +210,38 @@ public class MobiDocument {
 	 * @return The text part if the mobi document. Never returns <code>null</code>.
 	 * @throws IOException
 	 */
-  public String getTextContent() throws IOException {
-  	List<MobiContent> contents = MobiUtils.findContentsByType(mobiContents, CONTENT_TYPE.CONTENT);
-  	// Pre-size the output buffer with the amount of stored content bytes. The compressed records are at
-  	// most as large as the decoded text, so for uncompressed books this is the exact size and avoids the
-  	// repeated grow-and-copy of a default sized ByteArrayOutputStream.
-  	int estimatedTextSize = 0;
-  	for (MobiContent mobiContent : contents) {
-  		estimatedTextSize += mobiContent.getContent().length;
-  	}
+	public String getTextContent() throws IOException {
+		List<MobiContent> contents = MobiUtils.findContentsByType(mobiContents, CONTENT_TYPE.CONTENT);
+		// Pre-size the output buffer with the amount of stored content bytes. The compressed records are at
+		// most as large as the decoded text, so for uncompressed books this is the exact size and avoids the
+		// repeated grow-and-copy of a default sized ByteArrayOutputStream.
+		int estimatedTextSize = 0;
+		for (MobiContent mobiContent : contents) {
+			estimatedTextSize += mobiContent.getContent().length;
+		}
 		ByteArrayOutputStream outputStream = new ByteArrayOutputStream(estimatedTextSize);
-  	for (MobiContent mobiContent : contents) {
-  		byte[] decoded = null;
+		for (MobiContent mobiContent : contents) {
+			byte[] decoded = null;
 			if (mobiHeader.getCompressionCode() == COMPRESSION_CODE.PALM_DOC) {
 				decoded = lz77Decode(mobiContent.getContent());
 			} else if (mobiHeader.getCompressionCode() == COMPRESSION_CODE.NONE) {
 				decoded = mobiContent.getContent();
 			} else if (mobiHeader.getCompressionCode() == COMPRESSION_CODE.HUFF_CDIC) {
-				// TODO 
-				throw new UnsupportedEncodingException("HUFF/CDIC encoding is not supported."); 
+				// TODO
+				throw new UnsupportedEncodingException("HUFF/CDIC encoding is not supported.");
 			} else {
 				throw new IllegalArgumentException("Compression not supported " + mobiHeader.getCompressionCode());
 			}
 
 			decoded = removeRandomBytes(decoded);
-			
+
 			if (mobiContent.getType() != CONTENT_TYPE.INDEX) {
 				outputStream.write(decoded);
 			}
 		}
 		return removeUtfReplacementCharacter(outputStream.toString(getCharacterEncoding()));
-  }
-  
+	}
+
   /**
    * Removes the old text content and applies the given text to the {@link MobiDocument}. If a book index exists it will be removed. 
    * 

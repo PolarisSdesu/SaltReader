@@ -28,8 +28,6 @@
     <string name="settings_reader_paging_direction">橫向翻頁方向</string>
     <string name="settings_reader_section_display">顯示</string>
     <string name="settings_reader_paper_color">紙張顏色</string>
-    <string name="settings_reader_show_page_number">顯示頁碼</string>
-    <string name="settings_reader_show_page_number_supporting">在頁面底部顯示目前頁碼</string>
     <string name="settings_reader_keep_screen_on">保持螢幕常亮</string>
     <string name="settings_reader_keep_screen_on_supporting">閱讀時螢幕不會自動熄滅</string>
     <string name="settings_reader_volume_key_paging">音量鍵翻頁</string>
@@ -112,16 +110,7 @@
     <string name="settings_language_en">English</string>
     <string name="settings_language_ja">日本語</string>
     <string name="settings_about_tagline">本機優先的漫畫與電子書閱讀器</string>
-    <string name="settings_about_github">GitHub 儲存庫</string>
     <string name="settings_about_build">建置</string>
-    <string name="settings_about_maintenance">維護</string>
-    <string name="settings_about_clear_cache">清除快取</string>
-    <string name="settings_about_cache_usage">目前佔用 %1$s</string>
-    <string name="settings_about_clearing">正在清除…</string>
-    <string name="settings_about_cache_cleared">已清除快取，釋放 %1$s</string>
-    <string name="settings_about_cache_empty">沒有可清除的快取</string>
-    <string name="settings_about_cache_failed">清除失敗：%1$s</string>
-    <string name="settings_about_section_maintenance">維護</string>
     <string name="settings_licenses_title">開放原始碼授權</string>
     <string name="settings_licenses_intro">Salt Reader 基於以下開放原始碼專案建置，感謝它們的維護者。</string>
     <string name="settings_licenses_runtime">執行階段相依元件</string>

@@ -15,6 +15,7 @@ import kotlinx.coroutines.sync.withPermit
 import kotlinx.serialization.Serializable
 import kotlin.math.max
 import kotlin.math.min
+import androidx.core.graphics.scale
 
 /**
  * 文字型 EPUB 的一个章节。
@@ -1059,7 +1060,7 @@ internal object EpubIndexer {
             decoded
         } else {
             runCatching {
-                Bitmap.createScaledBitmap(decoded, target.width, target.height, true)
+                decoded.scale(target.width, target.height)
             }.getOrNull() ?: run {
                 decoded.recycle()
                 return null

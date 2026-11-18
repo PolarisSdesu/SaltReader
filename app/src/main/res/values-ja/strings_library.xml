@@ -21,8 +21,12 @@
     <string name="library_importing">インポート中</string>
     <string name="library_import_scanning">フォルダをスキャンしています…</string>
     <string name="library_import_failed_one">インポートに失敗しました：%1$s</string>
-    <string name="library_import_done_failed">%1$d 冊を索引化しました。%2$d 件失敗：%3$s</string>
-    <string name="library_import_done">%1$d 冊を索引化しました。EPUB/MOBI/AZW3 は直接読めます</string>
+    <plurals name="library_import_done_failed">
+        <item quantity="other">%1$d 冊を索引化しました。%2$d 件失敗：%3$s</item>
+    </plurals>
+    <plurals name="library_import_done">
+        <item quantity="other">%1$d 冊を索引化しました。EPUB/MOBI/AZW3 は直接読めます</item>
+    </plurals>
     <string name="library_import_empty">読み込めるコミックが見つかりません</string>
     <string name="library_import_progress_percent">%1$d%%</string>
 
@@ -30,14 +34,18 @@
     <string name="library_layout_mode">レイアウトモード</string>
     <string name="library_layout_columns">列数  %1$s</string>
     <string name="library_layout_columns_auto">自動</string>
-    <string name="library_layout_columns_custom">カスタム · %1$d 列</string>
+    <plurals name="library_layout_columns_custom">
+        <item quantity="other">カスタム · %1$d 列</item>
+    </plurals>
     <string name="library_layout_title_size">タイトルサイズ  %1$dsp</string>
     <string name="library_layout_meta_visible">ラベルを表示</string>
     <string name="library_layout_meta_visible_supporting">形式 / サイズ / ページ数 / 進捗 / 最終閲覧</string>
     <string name="library_layout_meta_size">ラベルサイズ  %1$dsp</string>
     <string name="library_layout_meta_fields">ラベルの項目</string>
 
-    <string name="library_book_meta_pages">%1$d ページ · %2$s · %3$s</string>
+    <plurals name="library_book_meta_pages">
+        <item quantity="other">%1$d ページ · %2$s · %3$s</item>
+    </plurals>
     <string name="library_book_meta_format">%1$s · %2$s</string>
     <string name="library_book_percent">%1$d%%</string>
 
@@ -66,7 +74,9 @@
     <string name="library_marked_read">%1$s を既読にしました</string>
     <string name="library_marked_unread">%1$s を未読にしました</string>
     <string name="library_update_failed">操作に失敗しました：%1$s を更新できません</string>
-    <string name="library_refresh_partial">更新が完了しました。%1$d 件を読み取れません：%2$s（%3$s）</string>
+    <plurals name="library_refresh_partial">
+        <item quantity="other">更新が完了しました。%1$d 件を読み取れません：%2$s（%3$s）</item>
+    </plurals>
     <string name="library_refresh_failed">更新に失敗しました：%1$s</string>
     <string name="library_error_unknown">不明なエラー</string>
 
@@ -74,11 +84,10 @@
     <string name="search_placeholder">タイトルまたは著者を検索</string>
     <string name="search_clear">検索をクリア</string>
     <string name="search_back">戻る</string>
-    <string name="search_hint_title">本棚を検索</string>
-    <string name="search_hint_body">%1$d 冊の蔵書から検索…</string>
-    <string name="search_empty_title">本棚は空です</string>
+    <plurals name="search_hint_body">
+        <item quantity="other">%1$d 冊の蔵書から検索…</item>
+    </plurals>
     <string name="search_empty_body">本棚でコミックフォルダーを追加してください。</string>
-    <string name="search_no_results_title">「%1$s」は見つかりません</string>
     <string name="search_no_results_body">キーワードを変えるか、検索をクリアしてください。</string>
 
     <plurals name="library_result_count">

@@ -490,7 +490,6 @@ class ReaderViewModel(
     }
 
     override fun onCleared() {
-        super.onCleared()
         app.removeBitmapCacheTrimmer(cacheTrimmer)
         released = true
         prefetchJob?.cancel()

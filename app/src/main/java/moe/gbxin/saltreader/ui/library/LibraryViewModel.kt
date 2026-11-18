@@ -71,6 +71,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private fun str(id: Int, vararg args: Any): String =
         getApplication<Application>().getString(id, *args)
 
+    private fun pluralStr(id: Int, count: Int, vararg args: Any): String =
+        getApplication<Application>().resources.getQuantityString(id, count, *args)
+
     private fun errorText(e: Exception): String = e.message ?: str(R.string.library_error_unknown)
 
     /**
@@ -165,7 +168,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                     val first = report.failures.first()
                     _events.send(
                         LibraryEvent.Message(
-                            str(R.string.library_refresh_partial, report.failures.size, first.name, first.reason),
+                            pluralStr(R.plurals.library_refresh_partial, report.failures.size, report.failures.size, first.name, first.reason),
                         ),
                     )
                 }

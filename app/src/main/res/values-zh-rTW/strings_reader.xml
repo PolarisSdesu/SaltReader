@@ -22,7 +22,6 @@
     <string name="reader_action_next_page">下一頁</string>
     <string name="reader_show_controls">顯示工具列</string>
     <string name="reader_hide_controls">隱藏工具列</string>
-    <string name="reader_settings_title">閱讀設定</string>
     <string name="reader_more_settings">詳細設定</string>
     <string name="reader_switch_to_vertical">切換為縱向捲動</string>
     <string name="reader_switch_to_paged">切換為橫向翻頁</string>
@@ -31,67 +30,40 @@
     <string name="reader_page_indicator">%1$d / %2$d</string>
     <string name="reader_page_indicator_size_value">%1$d sp</string>
     <string name="reader_page_number">第 %1$d 頁</string>
-    <string name="reader_page_failed">第 %1$d 頁無法顯示</string>
-    <string name="reader_page_slider_label">第 %1$d / %2$d 頁</string>
+    <plurals name="reader_page_failed">
+        <item quantity="other">第 %1$d 頁無法顯示</item>
+    </plurals>
     <string name="reader_percent">%1$d%%</string>
     <string name="reader_progress_combo">%1$d%% · %2$d/%3$d</string>
     <string name="reader_font_size_value">%1$d sp</string>
 
     <!-- 閱讀設定面板 -->
-    <string name="reader_tab_mode">閱讀模式</string>
-    <string name="reader_tab_general">一般</string>
-    <string name="reader_tab_filters">濾鏡</string>
-    <string name="reader_mode_paged">橫向翻頁</string>
-    <string name="reader_mode_vertical">縱向捲動</string>
-    <string name="reader_section_mode">閱讀模式</string>
-    <string name="reader_section_direction">橫向翻頁方向</string>
-    <string name="reader_direction_ltr">從左到右</string>
-    <string name="reader_direction_rtl">從右到左</string>
-    <string name="reader_section_background">背景顏色</string>
     <string name="reader_background_auto">莫奈</string>
     <string name="reader_background_white">純白</string>
     <string name="reader_background_ink">純黑</string>
     <string name="reader_background_sepia">米色</string>
-    <string name="reader_background_green">淺綠</string>
     <string name="reader_background_custom">自訂</string>
     <string name="reader_font_size">字級</string>
     <string name="reader_font_family">字型</string>
     <string name="reader_font_family_song">宋體</string>
     <string name="reader_font_family_hei">黑體</string>
-    <string name="reader_show_page_number">顯示頁碼</string>
-    <string name="reader_keep_screen_on">保持螢幕常亮</string>
-    <string name="reader_volume_keys">音量鍵翻頁</string>
-    <string name="reader_grayscale">灰階模式</string>
-    <string name="reader_invert_colors">反色</string>
-    <string name="reader_text_filters_note">灰階與反色僅對圖片書生效。</string>
     <!-- 閱讀器底欄 / 目錄 / 排版 -->
-    <string name="reader_close">關閉</string>
     <string name="reader_toc_title">目錄</string>
     <string name="reader_toc_count">共 %1$d 章</string>
     <string name="reader_toc_chapter_fallback">第 %1$d 章</string>
     <string name="reader_toc_current">目前</string>
-    <string name="reader_bar_paged">翻頁</string>
-    <string name="reader_bar_vertical">捲動</string>
     <string name="reader_bar_settings">設定</string>
     <string name="reader_progress_slider">閱讀進度</string>
     <string name="reader_section_typography">排版</string>
-    <string name="reader_section_general">一般</string>
     <string name="reader_line_height">行距</string>
     <string name="reader_line_height_value">%1$.1f 倍</string>
     <string name="reader_page_margin">頁邊距</string>
     <string name="reader_page_margin_value">%1$d dp</string>
     <string name="reader_progress_label_size_value">%1$d sp</string>
-    <string name="reader_font_size_decrease">縮小字級</string>
-    <string name="reader_font_size_increase">放大字級</string>
-    <string name="reader_line_height_decrease">縮小行距</string>
-    <string name="reader_line_height_increase">放大行距</string>
-    <string name="reader_page_margin_decrease">縮小頁邊距</string>
-    <string name="reader_page_margin_increase">放大頁邊距</string>
     <!-- 微信讀書式內嵌面板 -->
     <string name="reader_bar_progress">進度</string>
     <string name="reader_bar_theme">主題</string>
     <string name="reader_theme_and_text_size">文字大小與主題</string>
-    <string name="reader_font_style">字型樣式</string>
     <string name="reader_progress_last_read">上次讀到這裡</string>
     <string name="reader_level_small">小</string>
     <string name="reader_level_medium">中</string>
@@ -111,7 +83,9 @@
     <string name="reader_font_directory_choose">選擇字型資料夾</string>
     <string name="reader_font_directory_clear">清除字型資料夾</string>
     <string name="reader_font_directory_none">未選擇字型資料夾</string>
-    <string name="reader_font_directory_count">%1$d 個字型</string>
+    <plurals name="reader_font_directory_count">
+        <item quantity="other">%1$d 個字型</item>
+    </plurals>
     <string name="reader_font_directory_empty">這個資料夾裡沒有字型檔</string>
     <string name="reader_font_default_hei">預設黑體</string>
     <string name="reader_font_default_song">預設宋體</string>
@@ -139,7 +113,6 @@
     <string name="reader_font_fallback_menu">字型操作</string>
     <string name="reader_font_pick_fallback">選擇%1$s</string>
     <string name="reader_font_choose">選擇字型</string>
-    <string name="reader_font_clear">清除</string>
     <string name="reader_font_reorder">拖曳排序</string>
     <string name="reader_font_section_custom_fallback">字型鏈</string>
     <string name="reader_font_chain_add">加入字型</string>
@@ -147,11 +120,8 @@
     <string name="reader_font_remove">移除字型</string>
     <string name="reader_render_failed_title">閱讀器渲染失敗</string>
     <string name="reader_render_failed_hint">頁面渲染失敗，請重試。</string>
-    <string name="reader_selection_selected">已選取段落</string>
     <string name="reader_action_copy">複製</string>
     <string name="reader_action_share">分享</string>
-    <string name="reader_action_select_paragraph">全選</string>
-    <string name="reader_action_cancel">取消</string>
     <string name="reader_empty_content">無法顯示此書內容。</string>
     <string name="reader_action_retry">重試</string>
     <string name="reader_action_switch_webview">改用 WebView 閱讀器</string>
