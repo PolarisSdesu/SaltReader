@@ -742,7 +742,16 @@ internal fun TextReaderContent(
         pendingJumpJob?.cancel()
         pendingJumpJob = jumpScope.launch {
             kotlinx.coroutines.delay(120)
-            jumpToOffset((fraction.toDouble() * totalChars.toDouble()).toLong())
+            // 滑杆两端要落到书的真正首尾：图片章节按 1 个字符计入进度，0.1% 的偏移就会跳过
+            // 封面/目录这几章，停在第 3 章的图片页上（表现为"拉到最左却不是第一页"）。
+            val clamped = when {
+                fraction <= 0.005f -> 0f
+                fraction >= 0.995f -> 1f
+                else -> fraction
+            }
+            val offset = (clamped.toDouble() * totalChars.toDouble()).toLong()
+                .coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L))
+            jumpToOffset(offset)
         }
     }
 
@@ -1452,10 +1461,16 @@ internal fun TextReaderContent(
                     onJump = { fraction ->
                         val target = pagesInfo
                         if (settings.readerMode == ReaderMode.PAGED && target != null && target.second > 1) {
-                            val page = (fraction * (target.second - 1)).roundToInt()
-                                .coerceIn(0, target.second - 1)
-                            val offset = ((page + 0.5) * estimatedCharsPerPage).toLong()
-                                .coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L))
+                            val pages = target.second
+                            val page = (fraction * (pages - 1)).roundToInt().coerceIn(0, pages - 1)
+                            // 首尾必须落到书的真正两端：带内联插图的章节按 1 个字符计入进度，
+                            // 「第一页中间」的偏移（0.5 页）会直接跳过封面/目录几章，停在第一段
+                            // 正文上——表现就是拉到最左却不是第一页、还能继续往左滑。
+                            val offset = when {
+                                page <= 0 -> 0L
+                                page >= pages - 1 -> (totalChars - 1L).coerceAtLeast(0L)
+                                else -> ((page + 0.5) * estimatedCharsPerPage).toLong()
+                            }.coerceIn(0L, (totalChars - 1L).coerceAtLeast(0L))
                             jumpToOffset(offset)
                         } else {
                             jumpToFraction(fraction)
