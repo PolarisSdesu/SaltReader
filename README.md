@@ -17,11 +17,11 @@
 
 ---
 
-## What it is — and isn't
+## What it is
 
-Salt Reader isn't a library manager. It doesn't import books, build a collection in app storage, or ask for storage access. You grant a folder through Android's file picker; the app indexes what is already there and reads it in place. Revoke the grant and the books leave the shelf — the files were never moved.
+A reader for files already on your device. The app indexes a folder you grant through the system file picker and reads it in place: nothing is imported, copied or moved.
 
-There is no account, no sync service and no network permission. Everything happens on the device.
+It has no account, no sync service and no network permission.
 
 ## Screenshots
 
@@ -52,7 +52,7 @@ Covers come from the book's OPF, with a plain placeholder when there is none. Th
 
 ## Permissions
 
-No storage, all-files or network permission. The app can only read folders granted through the system picker, and that access can be revoked at any time. Notifications is the only runtime permission it may request, for the optional Live Update. The text reader blocks network requests and remote resources.
+Notifications is the only runtime permission the app may request, for the optional Live Update. Book folders come from the system picker and can be revoked at any time. The text reader blocks network requests and remote resources.
 
 ## Build
 
