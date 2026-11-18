@@ -99,6 +99,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -113,6 +114,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.max
@@ -531,8 +533,9 @@ private fun ReaderContent(
                 .distinctUntilChanged()
                 .collect { index ->
                     vm.updateProgress(index)
-                    // Vertical reading only advances downwards: warm the next two pages.
-                    vm.prefetchPages(listOf(index + 1, index + 2), livePageTarget.value)
+                    // Vertical reading only advances downwards: warm both neighbours so scrolling
+                    // back up does not show a placeholder. Nearest-first for the prefetch job.
+                    vm.prefetchPages(listOf(index - 1, index + 1, index + 2), livePageTarget.value)
                 }
         } else {
             snapshotFlow { pagerState.settledPage }
@@ -659,7 +662,7 @@ private fun ReaderContent(
         Box(
             Modifier
                 .fillMaxSize()
-                .pointerInput(settings.readerMode, direction, verticalZoomed) {
+                .pointerInput(settings.readerMode, direction) {
                     detectTapGestures { offset ->
                         // While a settings panel is open, a tap on the page only dismisses that
                         // panel; it must not turn the page (side thirds included).
@@ -805,12 +808,13 @@ private fun ReaderContent(
                             },
                     ) {
                         val viewportHeightPx = constraints.maxHeight
+                        val pageWidth = maxWidth
                         LazyColumn(
                             state = listState,
                             modifier = Modifier.fillMaxSize(),
                             userScrollEnabled = !verticalZoomed,
                         ) {
-                            items(count) { index ->
+                            items(count, key = { it }) { index ->
                                 VerticalPage(
                                     vm = vm,
                                     index = index,
@@ -819,6 +823,7 @@ private fun ReaderContent(
                                     animateAppear = allowPageFade,
                                     tallBook = tallPages,
                                     viewportHeightPx = viewportHeightPx,
+                                    pageWidth = pageWidth,
                                 )
                             }
                         }
@@ -1038,7 +1043,13 @@ private fun rememberPageState(vm: ReaderViewModel, index: Int, targetWidth: Int)
     }
     val state by produceState<PageState>(initial, vm, index, targetWidth) {
         if (value is PageState.Ready) return@produceState
-        val bitmap = vm.loadPage(index, targetWidth)
+        var bitmap = vm.loadPage(index, targetWidth)
+        // 一次瞬时失败（并发解码竞争 / 预取被取消 / provider 短暂报错）不应该让这一页永久停在
+        // 错误态：重试一次再放弃。
+        if (bitmap == null && isActive) {
+            delay(250)
+            bitmap = vm.loadPage(index, targetWidth)
+        }
         value = if (bitmap != null) PageState.Ready(bitmap.asImageBitmap()) else PageState.Failed
     }
     return state
@@ -1071,30 +1082,30 @@ private fun VerticalPage(
     animateAppear: Boolean,
     tallBook: Boolean,
     viewportHeightPx: Int,
+    /** 列表宽度（由外层 BoxWithConstraints 量一次），避免每个 item 各自 Subcompose。 */
+    pageWidth: Dp,
 ) {
     if (tallBook && viewportHeightPx > 0) {
-        TallVerticalPage(vm, index, colorFilter, viewportHeightPx)
+        TallVerticalPage(vm, index, colorFilter, viewportHeightPx, pageWidth)
         return
     }
     val state = rememberPageState(vm, index, targetWidth)
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        when (state) {
-            PageState.Loading -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.45f)) { PagePlaceholder(index) }
-            PageState.Failed -> Box(Modifier.fillMaxWidth().height(maxWidth * 1.2f)) { PageError(index) }
-            is PageState.Ready -> {
-                val ratio = state.image.height.toFloat() / state.image.width.toFloat()
-                val appearAlpha = rememberPageAppearAlpha(index, animateAppear)
-                Image(
-                    bitmap = state.image,
-                    contentDescription = stringResource(R.string.reader_page_number, index + 1),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(maxWidth * ratio)
-                        .graphicsLayer(alpha = appearAlpha),
-                    contentScale = ContentScale.FillWidth,
-                    colorFilter = colorFilter,
-                )
-            }
+    when (state) {
+        PageState.Loading -> Box(Modifier.fillMaxWidth().height(pageWidth * 1.45f)) { PagePlaceholder(index) }
+        PageState.Failed -> Box(Modifier.fillMaxWidth().height(pageWidth * 1.2f)) { PageError(index) }
+        is PageState.Ready -> {
+            val ratio = state.image.height.toFloat() / state.image.width.toFloat()
+            val appearAlpha = rememberPageAppearAlpha(index, animateAppear)
+            Image(
+                bitmap = state.image,
+                contentDescription = stringResource(R.string.reader_page_number, index + 1),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(pageWidth * ratio)
+                    .graphicsLayer(alpha = appearAlpha),
+                contentScale = ContentScale.FillWidth,
+                colorFilter = colorFilter,
+            )
         }
     }
 }
@@ -1111,98 +1122,95 @@ private fun TallVerticalPage(
     index: Int,
     colorFilter: ColorFilter?,
     viewportHeightPx: Int,
+    pageWidth: Dp,
 ) {
     val size by produceState<Size?>(null, vm, index) { value = vm.pageSize(index) }
     val pageSize = size
     if (pageSize == null) {
-        BoxWithConstraints(Modifier.fillMaxWidth()) {
-            Box(Modifier.fillMaxWidth().height(maxWidth * 1.45f)) { PagePlaceholder(index) }
-        }
+        Box(Modifier.fillMaxWidth().height(pageWidth * 1.45f)) { PagePlaceholder(index) }
         return
     }
     val density = LocalDensity.current
-    BoxWithConstraints(Modifier.fillMaxWidth()) {
-        val widthPx = constraints.maxWidth.toFloat()
-        val pageHeightPx = widthPx * (pageSize.height.toFloat() / pageSize.width.toFloat())
-        val pageHeightDp = with(density) { pageHeightPx.toDp() }
-        var regionPage by remember(index) { mutableStateOf<RegionPage?>(null) }
-        var slice by remember(index) { mutableStateOf<RegionSlice?>(null) }
-        // Scroll position is only quantised into buckets, so scrolling does not recompose per frame.
-        var bucket by remember(index) { mutableIntStateOf(-1) }
+    val widthPx = with(density) { pageWidth.toPx() }
+    val pageHeightPx = widthPx * (pageSize.height.toFloat() / pageSize.width.toFloat())
+    val pageHeightDp = with(density) { pageHeightPx.toDp() }
+    var regionPage by remember(index) { mutableStateOf<RegionPage?>(null) }
+    var slice by remember(index) { mutableStateOf<RegionSlice?>(null) }
+    // Scroll position is only quantised into buckets, so scrolling does not recompose per frame.
+    var bucket by remember(index) { mutableIntStateOf(-1) }
 
-        LaunchedEffect(index) { regionPage = vm.openRegionPage(index) }
-        DisposableEffect(index) {
-            onDispose {
-                regionPage?.close()
-                regionPage = null
-            }
+    LaunchedEffect(index) { regionPage = vm.openRegionPage(index) }
+    DisposableEffect(index) {
+        onDispose {
+            regionPage?.close()
+            regionPage = null
         }
+    }
 
-        val rp = regionPage
-        LaunchedEffect(rp, pageHeightPx) {
-            val page = rp ?: return@LaunchedEffect
-            snapshotFlow { bucket }
-                .distinctUntilChanged()
-                .collect { requestedBucket ->
-                    if (requestedBucket < 0 || pageHeightPx <= 0f) return@collect
-                    // Do not cancel a blocking BitmapRegionDecoder call every time another bucket
-                    // arrives. Keep one decode in flight, drop stale results, then decode only the
-                    // latest visible bucket; repeated cancellation used to pile up obsolete native
-                    // decodes during a fast fling and leave the viewport waiting for the next tile.
-                    val decodeBucket = bucket
-                    val scale = pageSize.height / pageHeightPx
-                    val viewport = viewportHeightPx.toFloat()
-                    val viewportImagePx = viewport * scale
-                    val bucketTopDisplay = decodeBucket * viewport * 0.75f
-                    val marginDisplay = viewport * 0.75f
-                    val top = ((bucketTopDisplay - marginDisplay) * scale)
-                        .toInt().coerceIn(0, pageSize.height - 1)
-                    val bottom = ((bucketTopDisplay + viewport + marginDisplay) * scale)
-                        .toInt().coerceIn(top + 1, pageSize.height)
-                    // 优先保持解码清晰度：区域过高时裁剪缓冲区高度，而不是提高 inSampleSize。
-                    val maxPixels = 12L * 1024L * 1024L / 4L
-                    val maxChunkHeight = (maxPixels / pageSize.width).toInt()
-                        .coerceAtLeast(viewportImagePx.toInt().coerceAtLeast(1))
-                    val chunkBottom = min(bottom, top + maxChunkHeight).coerceAtLeast(top + 1)
-                    val rect = Rect(0, top, pageSize.width, chunkBottom)
-                    val sample = regionSample(rect.width(), rect.height())
-                    val decoded = withContext(Dispatchers.IO) { page.decodeRegion(rect, sample) }
-                    if (decoded != null && decodeBucket == bucket) {
-                        slice = RegionSlice(decoded, top / scale, rect.height() / scale)
-                    }
+    val rp = regionPage
+    LaunchedEffect(rp, pageHeightPx) {
+        val page = rp ?: return@LaunchedEffect
+        snapshotFlow { bucket }
+            .distinctUntilChanged()
+            .collect { requestedBucket ->
+                if (requestedBucket < 0 || pageHeightPx <= 0f) return@collect
+                // Do not cancel a blocking BitmapRegionDecoder call every time another bucket
+                // arrives. Keep one decode in flight, drop stale results, then decode only the
+                // latest visible bucket; repeated cancellation used to pile up obsolete native
+                // decodes during a fast fling and leave the viewport waiting for the next tile.
+                val decodeBucket = bucket
+                val scale = pageSize.height / pageHeightPx
+                val viewport = viewportHeightPx.toFloat()
+                val viewportImagePx = viewport * scale
+                val bucketTopDisplay = decodeBucket * viewport * 0.75f
+                val marginDisplay = viewport * 0.75f
+                val top = ((bucketTopDisplay - marginDisplay) * scale)
+                    .toInt().coerceIn(0, pageSize.height - 1)
+                val bottom = ((bucketTopDisplay + viewport + marginDisplay) * scale)
+                    .toInt().coerceIn(top + 1, pageSize.height)
+                // 优先保持解码清晰度：区域过高时裁剪缓冲区高度，而不是提高 inSampleSize。
+                val maxPixels = 12L * 1024L * 1024L / 4L
+                val maxChunkHeight = (maxPixels / pageSize.width).toInt()
+                    .coerceAtLeast(viewportImagePx.toInt().coerceAtLeast(1))
+                val chunkBottom = min(bottom, top + maxChunkHeight).coerceAtLeast(top + 1)
+                val rect = Rect(0, top, pageSize.width, chunkBottom)
+                val sample = regionSample(rect.width(), rect.height())
+                val decoded = withContext(Dispatchers.IO) { page.decodeRegion(rect, sample) }
+                if (decoded != null && decodeBucket == bucket) {
+                    slice = RegionSlice(decoded, top / scale, rect.height() / scale)
                 }
             }
+    }
 
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .height(pageHeightDp)
-                .onGloballyPositioned { coordinates ->
-                    val topInWindow = coordinates.positionInWindow().y
-                    val visibleTop = (-topInWindow).coerceIn(0f, pageHeightPx)
-                    val next = if (viewportHeightPx > 0) {
-                        (visibleTop / (viewportHeightPx * 0.75f)).toInt()
-                    } else {
-                        0
-                    }
-                    if (next != bucket) bucket = next
-                },
-        ) {
-            val current = slice
-            if (current != null) {
-                Image(
-                    bitmap = current.bitmap.asImageBitmap(),
-                    contentDescription = stringResource(R.string.reader_page_number, index + 1),
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(with(density) { current.heightPx.toDp() })
-                        .offset(y = with(density) { current.topPx.toDp() }),
-                    contentScale = ContentScale.FillWidth,
-                    colorFilter = colorFilter,
-                )
-            } else {
-                PagePlaceholder(index)
-            }
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(pageHeightDp)
+            .onGloballyPositioned { coordinates ->
+                val topInWindow = coordinates.positionInWindow().y
+                val visibleTop = (-topInWindow).coerceIn(0f, pageHeightPx)
+                val next = if (viewportHeightPx > 0) {
+                    (visibleTop / (viewportHeightPx * 0.75f)).toInt()
+                } else {
+                    0
+                }
+                if (next != bucket) bucket = next
+            },
+    ) {
+        val current = slice
+        if (current != null) {
+            Image(
+                bitmap = current.bitmap.asImageBitmap(),
+                contentDescription = stringResource(R.string.reader_page_number, index + 1),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(with(density) { current.heightPx.toDp() })
+                    .offset(y = with(density) { current.topPx.toDp() }),
+                contentScale = ContentScale.FillWidth,
+                colorFilter = colorFilter,
+            )
+        } else {
+            PagePlaceholder(index)
         }
     }
 }

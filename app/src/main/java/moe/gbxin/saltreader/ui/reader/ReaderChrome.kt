@@ -212,17 +212,6 @@ internal fun ReaderBottomBar(
     containerColor: Color = MaterialTheme.colorScheme.surface,
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    val safeProgress = progress().coerceIn(0f, 1f)
-    val labelText = label()
-    val haptics = LocalHapticFeedback.current
-    val sliderState = rememberSliderState(value = safeProgress, trackRange = 0f..1f)
-    var lastHapticTick by remember { mutableFloatStateOf(safeProgress) }
-    LaunchedEffect(safeProgress) {
-        if (!sliderState.isDragging) {
-            sliderState.value = safeProgress
-            lastHapticTick = safeProgress
-        }
-    }
     val tocLabel = stringResource(R.string.reader_toc_title)
     val themeLabel = stringResource(R.string.reader_bar_theme)
     val settingsLabel = stringResource(R.string.reader_bar_settings)
@@ -231,7 +220,6 @@ internal fun ReaderBottomBar(
         if (readerMode == ReaderMode.PAGED) R.string.reader_switch_to_vertical
         else R.string.reader_switch_to_paged,
     )
-    val sliderLabel = stringResource(R.string.reader_progress_slider)
     val dividerColor = contentColor.copy(alpha = 0.14f)
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -242,56 +230,17 @@ internal fun ReaderBottomBar(
             HorizontalDivider(color = dividerColor)
             Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 4.dp, bottom = 2.dp)) {
                 // The progress slider stays resident so the reading position is always visible and
-                // scrubbable without opening a panel.
-                Column(
-                    Modifier.fillMaxWidth(),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                ) {
-                    // Slider on top, "xx% · xx/xx" centred underneath it.
-                    Slider(
-                        state = sliderState,
-                        onValueChange = { value ->
-                            // 分页模式下把拖动位置吸附到最近的页；非分页仍按连续百分比。
-                            val snapped = if (snapPages > 1) {
-                                val page = (value * (snapPages - 1)).roundToInt()
-                                page.toFloat() / (snapPages - 1)
-                            } else {
-                                value
-                            }
-                            sliderState.value = snapped
-                            // Light tick every ~2% while scrubbing, like a physical page dial.
-                            if (abs(snapped - lastHapticTick) >= 0.02f) {
-                                lastHapticTick = snapped
-                                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
-                            }
-                        },
-                        onValueChangeFinished = { onJump(sliderState.value) },
-                        colors = SliderDefaults.colors(
-                            thumbColor = accentColor,
-                            activeTrackColor = accentColor,
-                            activeTickColor = accentColor.copy(alpha = 0.55f),
-                            inactiveTrackColor = contentColor.copy(alpha = 0.20f),
-                            inactiveTickColor = contentColor.copy(alpha = 0.16f),
-                        ),
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .semantics {
-                                contentDescription = sliderLabel
-                                stateDescription = labelText
-                            },
-                    )
-                    Text(
-                        labelText,
-                        modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
-                        style = MaterialTheme.typography.labelLarge.copy(
-                            fontSize = progressLabelSizeSp.sp,
-                            fontFeatureSettings = "tnum",
-                        ),
-                        color = contentColor.copy(alpha = 0.78f),
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                    )
-                }
+                // scrubbable without opening a panel. It reads progress/label in its own scope so a
+                // page turn does not recompose the button row below.
+                ReaderProgressSection(
+                    progress = progress,
+                    label = label,
+                    onJump = onJump,
+                    snapPages = snapPages,
+                    progressLabelSizeSp = progressLabelSizeSp,
+                    accentColor = accentColor,
+                    contentColor = contentColor,
+                )
                 Row(
                     Modifier.fillMaxWidth().height(52.dp),
                     verticalAlignment = Alignment.CenterVertically,
@@ -351,6 +300,83 @@ internal fun ReaderBottomBar(
                 }
             }
         }
+    }
+}
+
+/**
+ * 进度区（滑杆 + 百分比文字）。单独成一个组合作用域：翻页只重组这里，底栏的模式/主题/设置
+ * 按钮不跟着重组。`progress`/`label` 在函数内部才读取，所以 state 订阅也落在这一层。
+ */
+@Composable
+private fun ReaderProgressSection(
+    progress: () -> Float,
+    label: @Composable () -> String,
+    onJump: (Float) -> Unit,
+    snapPages: Int,
+    progressLabelSizeSp: Int,
+    accentColor: Color,
+    contentColor: Color,
+) {
+    val safeProgress = progress().coerceIn(0f, 1f)
+    val labelText = label()
+    val haptics = LocalHapticFeedback.current
+    val sliderState = rememberSliderState(value = safeProgress, trackRange = 0f..1f)
+    var lastHapticTick by remember { mutableFloatStateOf(safeProgress) }
+    LaunchedEffect(safeProgress) {
+        if (!sliderState.isDragging) {
+            sliderState.value = safeProgress
+            lastHapticTick = safeProgress
+        }
+    }
+    val sliderLabel = stringResource(R.string.reader_progress_slider)
+    Column(
+        Modifier.fillMaxWidth(),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        // Slider on top, "xx% · xx/xx" centred underneath it.
+        Slider(
+            state = sliderState,
+            onValueChange = { value ->
+                // 分页模式下把拖动位置吸附到最近的页；非分页仍按连续百分比。
+                val snapped = if (snapPages > 1) {
+                    val page = (value * (snapPages - 1)).roundToInt()
+                    page.toFloat() / (snapPages - 1)
+                } else {
+                    value
+                }
+                sliderState.value = snapped
+                // Light tick every ~2% while scrubbing, like a physical page dial.
+                if (abs(snapped - lastHapticTick) >= 0.02f) {
+                    lastHapticTick = snapped
+                    haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+                }
+            },
+            onValueChangeFinished = { onJump(sliderState.value) },
+            colors = SliderDefaults.colors(
+                thumbColor = accentColor,
+                activeTrackColor = accentColor,
+                activeTickColor = accentColor.copy(alpha = 0.55f),
+                inactiveTrackColor = contentColor.copy(alpha = 0.20f),
+                inactiveTickColor = contentColor.copy(alpha = 0.16f),
+            ),
+            modifier = Modifier
+                .fillMaxWidth()
+                .semantics {
+                    contentDescription = sliderLabel
+                    stateDescription = labelText
+                },
+        )
+        Text(
+            labelText,
+            modifier = Modifier.padding(top = 2.dp, bottom = 2.dp),
+            style = MaterialTheme.typography.labelLarge.copy(
+                fontSize = progressLabelSizeSp.sp,
+                fontFeatureSettings = "tnum",
+            ),
+            color = contentColor.copy(alpha = 0.78f),
+            textAlign = TextAlign.Center,
+            maxLines = 1,
+        )
     }
 }
 

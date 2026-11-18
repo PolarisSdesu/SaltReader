@@ -110,8 +110,14 @@ class ReaderViewModel(
      */
     private val decodeLimiter = Semaphore(DECODE_CONCURRENCY)
 
-    /** 每页一把锁：保证同一个 key 不会被并发解码两次，同时不同页可以并行。 */
-    private val pageLocks = ConcurrentHashMap<String, Mutex>()
+    /**
+     * 固定数量的分页锁：同一个 key 仍然只会解码一次，但不会为全书每一页常驻一个 Mutex
+     * （旧实现按 key 无限增长）。不同 key 落到同一条带只会短暂串行化，不影响正确性。
+     */
+    private val pageLocks = Array(PAGE_LOCK_STRIPES) { Mutex() }
+
+    private fun pageLock(key: String): Mutex =
+        pageLocks[(key.hashCode() and Int.MAX_VALUE) % PAGE_LOCK_STRIPES]
 
     /** Guards lazy creation of [source]; there is exactly one source per reader. */
     private val sourceMutex = Mutex()
@@ -300,15 +306,11 @@ class ReaderViewModel(
         if (prepareJob?.isActive == true) return
         prepareJob = viewModelScope.launch(Dispatchers.IO) {
             prepareState.value = PrepareState.Running
+            var preparedSource: ComicPageSource? = null
             val result = runCatching {
                 val pageSource = ensureSource(indexed) ?: return@runCatching null
-                val count = pageSource.prepare().takeIf { it > 0 }
-                if (count != null) {
-                    runCatching { pageSource.pageSize(0) }.getOrNull()?.let { size ->
-                        _tallPages.value = size.height > size.width * TALL_PAGE_ASPECT_RATIO
-                    }
-                }
-                count
+                preparedSource = pageSource
+                pageSource.prepare().takeIf { it > 0 }
             }
             val pageCount = result.getOrNull()
             if (pageCount == null) {
@@ -319,6 +321,19 @@ class ReaderViewModel(
                 prepareState.value = PrepareState.Done(pageCount)
                 // Backfill the real count so the shelf page label / progress use it too.
                 runCatching { repo.updatePageCount(bookId, pageCount) }
+                // 条漫判定要把首页整块解压一遍（最大 32MB），别挡在首帧前面：开书完成后
+                // 再在后台探测，普通书几乎立刻 Done，条漫多等几十毫秒再切到分块渲染。
+                val source = preparedSource
+                if (source != null && !_tallPages.value) {
+                    viewModelScope.launch(Dispatchers.IO) {
+                        if (released) return@launch
+                        runCatching { source.pageSize(0) }.getOrNull()?.let { size ->
+                            if (!released) {
+                                _tallPages.value = size.height > size.width * TALL_PAGE_ASPECT_RATIO
+                            }
+                        }
+                    }
+                }
             }
         }
     }
@@ -418,7 +433,7 @@ class ReaderViewModel(
      * 不同页之间最多并行 [DECODE_CONCURRENCY] 张，不再被一把全局锁串行化。
      */
     private suspend fun decodePage(key: String, index: Int, bucket: Int, book: ComicBook): Bitmap? =
-        pageLocks.computeIfAbsent(key) { Mutex() }.withLock page@ {
+        pageLock(key).withLock page@ {
             cache.get(key)?.let { return@page it }
             decodeLimiter.withPermit {
                 val pageSource = ensureSource(book) ?: return@withPermit null
@@ -509,6 +524,9 @@ class ReaderViewModel(
 
         /** 页高宽比超过该值即视为条漫，垂直模式改用分块解码。 */
         const val TALL_PAGE_ASPECT_RATIO = 3f
+
+        /** 分页锁条带数：固定内存，够用来覆盖相邻页预取。 */
+        const val PAGE_LOCK_STRIPES = 64
     }
 
     class Factory(private val application: Application, private val bookId: String) : ViewModelProvider.Factory {
