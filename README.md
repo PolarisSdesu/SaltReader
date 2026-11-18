@@ -7,7 +7,7 @@
 <p align="center">A local-first comic and ebook reader for Android.</p>
 
 <p align="center">
-  <strong>Beta</strong> · <code>1.0.0-beta.1</code> · Android 8.0+
+  <strong>1.0.0-alpha.48</strong> · Android 8.0+
 </p>
 
 <p align="center">
