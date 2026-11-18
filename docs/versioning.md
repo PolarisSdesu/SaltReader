@@ -29,7 +29,7 @@ beta 版本同样遵守该格式（如 `1.0.0-beta.1`）。
 - alpha 序号**不重置**，保证 versionName 单调可比较；beta 序号独立递增。
 - 每次发版 `versionCode` 都 +1。
 - 例：`alpha.48 … alpha.53`（6 个）→ `beta.2` → `alpha.54 … alpha.59` → `beta.3`。
-- 当前已进入 beta 阶段：`1.0.0-beta.1`（对应 alpha.47 之后）。
+- 当前：`1.0.0-alpha.48`（beta.1 之后按节奏继续 alpha 编号；`set` 命令用于指定序号）。
 
 ## 命令
 

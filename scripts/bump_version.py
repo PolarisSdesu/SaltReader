@@ -58,7 +58,7 @@ def bump_code(d: dict[str, str]) -> None:
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 2:
+    if len(argv) < 2:
         print(__doc__)
         return 2
     action = argv[1].lower()
@@ -67,6 +67,10 @@ def main(argv: list[str]) -> int:
     if action == "show":
         show(d)
         return 0
+
+    if action != "set" and len(argv) != 2:
+        print(__doc__)
+        return 2
 
     if action in {"alpha", "beta", "rc"}:
         if d["versionStage"] == action:
