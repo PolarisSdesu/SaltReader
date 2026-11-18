@@ -550,9 +550,14 @@ private fun ReaderContent(
 
     // A zoomed-in page disables horizontal paging; once the pager settles on a (new) page, drop the
     // zoom state so side swipes work again. This also resets the retained neighbours' scale.
-    LaunchedEffect(pagerState.settledPage) {
-        zoomed = false
-        zoomResetToken += 1
+    // snapshotFlow (而不是把 settledPage 当 key) 避免每次翻页都重组整个 ReaderContent。
+    LaunchedEffect(Unit) {
+        snapshotFlow { pagerState.settledPage }
+            .distinctUntilChanged()
+            .collect {
+                zoomed = false
+                zoomResetToken += 1
+            }
     }
 
     DisposableEffect(settings.keepScreenOn) {
@@ -587,13 +592,17 @@ private fun ReaderContent(
             insetsController?.isAppearanceLightNavigationBars = themeBackgroundIsLight
         }
     }
-    LaunchedEffect(insetsController, chromeVisible) {
-        if (insetsController == null) return@LaunchedEffect
-        if (chromeVisible) {
-            insetsController.show(WindowInsetsCompat.Type.systemBars())
-        } else {
-            insetsController.hide(WindowInsetsCompat.Type.systemBars())
-        }
+    LaunchedEffect(insetsController) {
+        val controller = insetsController ?: return@LaunchedEffect
+        snapshotFlow { chromeVisible }
+            .distinctUntilChanged()
+            .collect { visible ->
+                if (visible) {
+                    controller.show(WindowInsetsCompat.Type.systemBars())
+                } else {
+                    controller.hide(WindowInsetsCompat.Type.systemBars())
+                }
+            }
     }
     // Re-applied on every composition, after the theme's own SideEffect, so a reader background
     // change (including a custom colour that stays in the same brightness bucket) always wins.

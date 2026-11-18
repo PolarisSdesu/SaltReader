@@ -154,7 +154,7 @@ A 负责的实现：
   `file/library/**`、`saltreader_library.xml` 全部排除（fullBackupContent + dataExtractionRules 同步）。
 - release 打开 `isMinifyEnabled` + `isShrinkResources`，补第三方 keep 规则（epub4j/mobi4java
   /kotlinx.serialization）；图标只把实际用到的 35 个内联在 `ui/icons/SaltIcons.kt`，
-  不再依赖 `material-icons-extended`；release 只打包 `arm64-v8a` 原生库。
+  不再依赖 `material-icons-extended`。发布包保持通用（包含 arm64-v8a 与 x86_64 原生库）。
 - versionCode=2、versionName=1.1.0；debug 加 `applicationIdSuffix=".debug"`。
 - 依赖：commons-io ≥2.17.0、commons-lang3 ≥3.18.0、commons-collections4 4.5.0（若 API 变更同步修 vendored 代码）；
   引入 `gradle/libs.versions.toml` 作为唯一版本来源；开启 Gradle 配置缓存。
