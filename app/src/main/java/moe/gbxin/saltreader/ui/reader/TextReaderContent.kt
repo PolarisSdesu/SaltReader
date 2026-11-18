@@ -660,14 +660,50 @@ internal fun TextReaderContent(
         )
     }
 
-    val estimatedTotalPages = remember(totalChars, estimatedCharsPerPage) {
-        ceil(totalChars.toDouble() / estimatedCharsPerPage.toDouble()).toInt().coerceAtLeast(1)
+    // 每章的估算页数：图片章节在进度里只占 1 个字符，直接按字符折算等于 0 页，会让前几章
+    // （封面/版权/目录）的页码永远算回第 1 页。这里纯图片章按 1 页计，文字章按字符折算。
+    val chapterPages = remember(chapters, estimatedCharsPerPage) {
+        IntArray(chapters.size) { index ->
+            val chapter = chapters[index]
+            if (chapter.imageOnly || chapter.charCount <= 0) {
+                1
+            } else {
+                max(1, ceil(chapter.charCount.toDouble() / estimatedCharsPerPage).toInt())
+            }
+        }
+    }
+    val pagePrefix = remember(chapterPages) {
+        val prefix = IntArray(chapterPages.size + 1)
+        for (i in chapterPages.indices) prefix[i + 1] = prefix[i] + chapterPages[i]
+        prefix
+    }
+    val estimatedTotalPages = remember(pagePrefix) {
+        (pagePrefix.lastOrNull() ?: 0).coerceAtLeast(1)
     }
     val liveEstimatedTotalPages = rememberUpdatedState(estimatedTotalPages)
+
+    /** 字符偏移 -> 全书页码（1 起）。 */
+    fun pageForOffset(offset: Long): Int {
+        val chapter = chapterIndexForOffset(offset, chapterPrefix)
+        val chapterBase = chapterPrefix.getOrElse(chapter) { 0L }
+        val chars = chapterChars.getOrElse(chapter) { 1L }.coerceAtLeast(1L)
+        val within = ((offset - chapterBase).toDouble() / chars.toDouble()).coerceIn(0.0, 1.0)
+        val pages = chapterPages.getOrElse(chapter) { 1 }
+        return (pagePrefix.getOrElse(chapter) { 0 } + within * pages).roundToInt() + 1
+    }
+
+    /** 窗口内比例 -> 全书页码（1 起），按页权重而不是字符权重换算。 */
+    fun pageForLocalRatio(local: Float): Int {
+        val base = pagePrefix.getOrElse(windowStart) { 0 }
+        val end = pagePrefix.getOrElse(windowEnd) { base }
+        val span = (end - base).coerceAtLeast(1)
+        return base + (local.coerceIn(0f, 1f) * span).roundToInt() + 1
+    }
+
     // 初始页码只按“打开时的保存进度”算一次：不要在组合期读 pageInfo（每次 onState 都会全量重组）。
     val initialEstimatedPage = remember(book.id, estimatedTotalPages) {
-        val ratio = (vm.latestProgressOffset().toFloat() / totalChars.toFloat()).coerceIn(0f, 1f)
-        (ratio * estimatedTotalPages.toFloat()).roundToInt().coerceIn(1, estimatedTotalPages)
+        pageForOffset(maxOf(book.progressOffset, vm.latestProgressOffset()))
+            .coerceIn(1, estimatedTotalPages)
     }
     var pageBase by remember(book.id) { mutableIntStateOf(initialEstimatedPage - 1) }
 
@@ -830,8 +866,14 @@ internal fun TextReaderContent(
         if (script.isEmpty()) return
         // A jump may have rebuilt the window while the payload was being built.
         if (windowStart != startBefore || windowEnd != endBefore) return
+        if (prepend) {
+            // 前插的章节把 DOM 页码整体后移，pageBase 相应减小，保持「base + dom」不变。
+            pageBase -= pagePrefix.getOrElse(startBefore) { 0 } -
+                pagePrefix.getOrElse(nextStart) { 0 }
+        }
         windowStart = nextStart
         windowEnd = nextEnd
+        lastPageWindowStart = nextStart
         rebaseLocalRatio(startBefore, endBefore, windowStart, windowEnd)
         runJs(script)
     }
@@ -857,12 +899,16 @@ internal fun TextReaderContent(
                     // Keep the displayed page continuous across jumps / window changes, then let it
                     // follow the real DOM page index so every swipe adds exactly one.
                     val totalForPages = liveEstimatedTotalPages.value
-                    val expectedFromRatio = (global * totalForPages.toFloat()).roundToInt()
-                        .coerceIn(1, totalForPages)
+                    // 页码期望值按「页权重」换算：图片章节的字符权重只有 1，用字符比例算会把
+                    // 翻到封面之后的位置又折回第 1 页。
+                    val expectedFromRatio = pageForLocalRatio(event.ratio).coerceIn(1, totalForPages)
                     val candidate = pageBase + event.page + 1
                     val pending = pendingJumpPage
-                    val drifted = kotlin.math.abs(candidate - expectedFromRatio) > 3
-                    if (pending != null || windowStart != lastPageWindowStart || drifted) {
+                    // 窗口增删章节时已经按 pagePrefix 精确平移过 pageBase，所以这里只处理
+                    // 「估算和实际差得离谱」（比如首次打开时估计偏差）的情况，避免小误差把
+                    // 页码拉回去。
+                    val drifted = kotlin.math.abs(candidate - expectedFromRatio) > 10
+                    if (pending != null || drifted) {
                         val expected = (pending ?: expectedFromRatio).coerceIn(1, totalForPages)
                         // This offset must be signed: a jump to an earlier page can map to a lower
                         // DOM page inside the same loaded chapter window.
@@ -912,8 +958,12 @@ internal fun TextReaderContent(
                             inlineImageStore.remove(token)
                         }
                     }
+                    // 裁掉的章节都在可视位置之前：DOM 页码整体前移，pageBase 要补上这些页数，
+                    // 否则页码会掉回前面（内容不动、只有数字跳）。
+                    pageBase += pagePrefix.getOrElse(removedEnd) { pagePrefix.last() } -
+                        pagePrefix.getOrElse(removedStart) { 0 }
                     windowStart = removedEnd
-                    lastPageWindowStart = -1
+                    lastPageWindowStart = removedEnd
                     Log.i(TAG_TEXT_PERF, "trimmed=${event.count} window=${windowStart}..${windowEnd}")
                 }
 
@@ -1434,9 +1484,8 @@ internal fun TextReaderContent(
                 val pagesInfo = estimatedTextPage(
                     pageInfo = pageInfo,
                     mode = settings.readerMode,
-                    totalChars = totalChars,
-                    charsPerPage = estimatedCharsPerPage,
                     pageBase = pageBase,
+                    totalPages = liveEstimatedTotalPages.value,
                 )
                 // 分页模式下进度条按"页"走：每页一个位置，百分比也由页码换算，
                 // 避免出现 2/2 页却停在 75% 这种页码与进度不一致的情况。
@@ -1583,12 +1632,13 @@ internal fun TextReaderContent(
                 .navigationBarsPadding()
                 .padding(end = 18.dp, bottom = 12.dp),
         ) {
+            // 页码分母和调试面板/滑杆共用同一个「按页权重」的估算值，避免同一屏出现 14/156
+            // 与 14/171 两个总数。
             val estimatedPages = estimatedTextPage(
                 pageInfo = pageInfo,
                 mode = settings.readerMode,
-                totalChars = totalChars,
-                charsPerPage = estimatedCharsPerPage,
                 pageBase = pageBase,
+                totalPages = liveEstimatedTotalPages.value,
             )
             val pagePercent = estimatedPages?.let { (current, total) ->
                 if (total > 1) (current - 1).toFloat() / (total - 1) else 1f
@@ -1696,16 +1746,15 @@ private fun chapterIndexForOffset(offset: Long, prefix: LongArray): Int {
 private fun estimatedTextPage(
     pageInfo: TextPageInfo,
     mode: ReaderMode,
-    totalChars: Long,
-    charsPerPage: Float,
     pageBase: Int,
+    totalPages: Int,
 ): Pair<Int, Int>? {
-    if (mode != ReaderMode.PAGED || totalChars <= 0L || charsPerPage <= 0f) return null
-    val totalPages = ceil(totalChars.toDouble() / charsPerPage.toDouble()).toInt().coerceAtLeast(1)
+    if (mode != ReaderMode.PAGED) return null
+    val total = totalPages.coerceAtLeast(1)
     // pageInfo.page is the real DOM page index (each swipe = +1); pageBase anchors the loaded window
     // to a book page so the number stays continuous after jumps.
-    val currentPage = (pageBase + pageInfo.page + 1).coerceIn(1, totalPages)
-    return currentPage to totalPages
+    val currentPage = (pageBase + pageInfo.page + 1).coerceIn(1, total)
+    return currentPage to total
 }
 
 /**
@@ -2300,6 +2349,7 @@ private val HTML_TAIL = """
     trimming = true;
     setTimeout(function () { trimming = false; }, 300);
     beginNoSnap();
+    layoutGeneration++;
     for (var j = 0; j < keepFrom; j++) {
       secs[j].parentNode.removeChild(secs[j]);
     }
@@ -2751,6 +2801,9 @@ private val HTML_TAIL = """
   // 页面整体后退一两页（用户看到的"跳页"）。变更窗口期间临时关掉 snapping，写入整页位置，
   // 等标记重建完再恢复。
   var noSnapDepth = 0;
+  // 每次布局变更（append/prepend/trim）递增；延迟回调只在没有别的变更插队时才重新锚定，
+  // 否则会把「变更前记住的页码」写到已经被裁过的文档上（表现为页码/内容往前跳几页）。
+  var layoutGeneration = 0;
   function beginNoSnap() {
     if (mode !== 'paged') return;
     if (noSnapDepth === 0) scroll.style.scrollSnapType = 'none';
@@ -2772,19 +2825,19 @@ private val HTML_TAIL = """
 
   function appendChapters(html) {
     if (!html) return;
-    var paged = mode === 'paged';
-    var page = paged ? Math.round(scroll.scrollLeft / pageWidthPx()) : 0;
+    var gen = ++layoutGeneration;
     beginNoSnap();
     book.insertAdjacentHTML('beforeend', html);
     refreshSnapPoints();
-    if (paged) setPagedPage(page);
     report(true);
     // Inline illustrations decode asynchronously and add columns: the snap markers must follow,
     // otherwise a later fling has no snap target for the new pages and can run past them.
+    // 追加只影响文档尾部，不动滚动位置；期间如果裁过章节，回调直接作废。
     whenImagesReady(function () {
-      refreshSnapPoints();
-      if (paged) setPagedPage(page);
-      report(true);
+      if (gen === layoutGeneration) {
+        refreshSnapPoints();
+        report(true);
+      }
       endNoSnap();
     });
   }
@@ -2795,6 +2848,8 @@ private val HTML_TAIL = """
     var page = paged ? Math.round(scroll.scrollLeft / w) : 0;
     var oldSize = paged ? scroll.scrollWidth : scroll.scrollHeight;
     beginNoSnap();
+    layoutGeneration++;
+    var gen = layoutGeneration;
     book.insertAdjacentHTML('afterbegin', html);
     // 保持当前阅读位置：前插的内容（尤其内联插图）会同步/异步地增加文档尺寸，按增量补偿滚动偏移。
     // 用"当前滚动位置 + 增量"而不是固定锚点：锚点写法会把插入期间用户的惯性位移抹掉，
@@ -2816,7 +2871,7 @@ private val HTML_TAIL = """
     refreshSnapPoints();
     compensate();
     whenImagesReady(function () {
-      compensate();
+      if (gen === layoutGeneration) compensate();
       endNoSnap();
     });
   }
