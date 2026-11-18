@@ -1,17 +1,18 @@
 <p align="center">
-  <img src="readme/logo.png" width="120" alt="Salt Reader" />
+  <img src="readme/logo.png" width="96" alt="" />
 </p>
 
 <h1 align="center">Salt Reader</h1>
 
+<p align="center">A local-first comic and ebook reader for Android.</p>
+
 <p align="center">
-  <strong>A local-first comic and ebook reader for Android.</strong>
+  <strong>Beta</strong> · <code>1.0.0-beta.1</code> · Android 8.0+
 </p>
 
 <p align="center">
-  <strong>Status:</strong> Beta · <code>1.0.0-beta.1</code> · Android 8.0 (API 26)+
-  <br />
   <a href="https://github.com/PolarisSdesu/SaltReader/actions/workflows/android.yml"><img src="https://github.com/PolarisSdesu/SaltReader/actions/workflows/android.yml/badge.svg?branch=main" alt="Build status" /></a>
+  &nbsp;·&nbsp;
   <a href="README.zh-CN.md">简体中文</a>
 </p>
 
