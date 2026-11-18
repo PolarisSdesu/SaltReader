@@ -6,6 +6,7 @@ import android.view.WindowManager
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -348,15 +349,15 @@ internal fun ReaderDebugPanel(
                     dragY = (dragY + drag.y).coerceIn(0f, maxY)
                 }
             }
-            .width(if (expanded) 276.dp else 180.dp),
+            .width(if (expanded) 276.dp else 180.dp)
+            .plainClickable {
+                if (SystemClock.elapsedRealtime() - dragEndedAt > 300) expanded = !expanded
+            },
         shape = RoundedCornerShape(12.dp),
         color = colors.surfaceContainerHigh,
         contentColor = colors.onSurface,
         tonalElevation = 3.dp,
         shadowElevation = 6.dp,
-        onClick = {
-            if (SystemClock.elapsedRealtime() - dragEndedAt > 300) expanded = !expanded
-        },
     ) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -678,6 +679,18 @@ private fun ActionRow(label: String, color: Color, onClick: () -> Unit) {
             .fillMaxWidth()
             .padding(top = 8.dp)
             .clickable { onClick() },
+    )
+}
+
+/** 无 ripple 的点击：调试面板是常驻浮层，水波纹会一直闪，干扰读数。 */
+@Composable
+private fun Modifier.plainClickable(enabled: Boolean = true, onClick: () -> Unit): Modifier {
+    val interaction = remember { MutableInteractionSource() }
+    return this.clickable(
+        interactionSource = interaction,
+        indication = null,
+        enabled = enabled,
+        onClick = onClick,
     )
 }
 
