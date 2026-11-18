@@ -127,6 +127,8 @@ import moe.gbxin.saltreader.data.ReadingDirection
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
@@ -340,6 +342,11 @@ internal fun NativeTextReaderContent(
         val height = (area.height - topPadPx - bottomPadPx).coerceAtLeast(64f)
         val layoutHeight = height
         value = withContext(Dispatchers.IO) {
+            // 开书过程中 pageArea、系统栏 inset、字体解析会连续改变 key，原实现每次都发起一次
+            // 整书排版（日志里常见 token 1/2/3 同时跑）。100ms 内的连续变化合并成一次；
+            // produceState 重启会取消旧的 delay，所以只有最后一次真正开始排版。
+            delay(100)
+            ensureActive()
             val typeface = nativeTypeface(context, settings)
             typefaceState = typeface
             val built0 = buildNativePageSet(

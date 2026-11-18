@@ -2531,7 +2531,9 @@ private val HTML_TAIL = """
 
   function turn(delta) {
     if (mode !== 'paged') return;
-    refreshMetrics();
+    // 文档尺寸只在布局边界（字体/图片/视口变化）改变，那些路径自己会调 refreshMetrics；
+    // 翻页时再读 scrollWidth 会强制一次 12000px 文档的同步排版，是翻页卡顿的主要来源。
+    if (!cachedWidth) refreshMetrics();
     var pages = pagedPages();
     var p = Math.min(pages - 1, Math.max(0, pagedPage() + delta));
     // Native smooth scrolling + CSS scroll snap: the settle curve is the platform fling curve,
@@ -2542,7 +2544,7 @@ private val HTML_TAIL = """
   // Tap zones: jump straight to the page boundary, no animation at all.
   function turnInstant(delta) {
     if (mode !== 'paged') return;
-    refreshMetrics();
+    if (!cachedWidth) refreshMetrics();
     var pages = pagedPages();
     var p = Math.min(pages - 1, Math.max(0, pagedPage() + delta));
     scroll.scrollLeft = p * viewportWidth();
@@ -2551,7 +2553,7 @@ private val HTML_TAIL = """
   // Volume keys: a short, snappy glide instead of the browser's longer smooth scroll.
   function turnFast(delta) {
     if (mode !== 'paged') return;
-    refreshMetrics();
+    if (!cachedWidth) refreshMetrics();
     var pages = pagedPages();
     var p = Math.min(pages - 1, Math.max(0, pagedPage() + delta));
     var start = scroll.scrollLeft;
