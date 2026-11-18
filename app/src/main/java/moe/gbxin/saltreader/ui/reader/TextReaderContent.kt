@@ -349,12 +349,14 @@ internal fun TextReaderContent(
 
     val initialChunk = remember(book.id, chapters) {
         val index = chapterIndexForOffset(progressOffset, chapterPrefix)
-        val start = (index - CHAPTER_START_LEAD).coerceAtLeast(0)
         // 纵向模式首屏更小：图片型章节的 base64 负载很大，一次注入太多会明显卡顿。
         if (settings.readerMode == ReaderMode.VERTICAL) {
+            val start = (index - CHAPTER_START_LEAD).coerceAtLeast(0)
             start to renderWindowEnd(start, VERTICAL_INITIAL_CHAPTER_BATCH, VERTICAL_INITIAL_RENDER_CHAR_BUDGET, index)
         } else {
-            start to renderWindowEnd(start, INITIAL_CHAPTER_BATCH, INITIAL_RENDER_CHAR_BUDGET, index)
+            // 分页模式先只注入当前章：首帧排版量约减半，前后章节在首帧之后由
+            // LaunchedEffect(pageFinishedToken) 在后台补进来（用户翻到章末前就绪）。
+            index to (index + 1)
         }
     }
 
@@ -735,7 +737,7 @@ internal fun TextReaderContent(
      * [Dispatchers.Default]; the main thread only flips the window bookkeeping and posts the script.
      */
     var lastChapterLoadAt by remember { mutableLongStateOf(0L) }
-    suspend fun maybeLoadMoreChapters(ratio: Float) {
+    suspend fun maybeLoadMoreChapters(ratio: Float, batch: Int = CHAPTER_BATCH) {
         val now = SystemClock.elapsedRealtime()
         if (now - lastChapterLoadAt < CHAPTER_LOAD_THROTTLE_MS) return
         val append = ratio >= PREFETCH_RATIO && windowEnd < chapters.size
@@ -744,12 +746,12 @@ internal fun TextReaderContent(
         val startBefore = windowStart
         val endBefore = windowEnd
         val nextStart = if (prepend) {
-            renderWindowStart(windowStart, CHAPTER_BATCH, WINDOW_RENDER_CHAR_BUDGET)
+            renderWindowStart(windowStart, batch, WINDOW_RENDER_CHAR_BUDGET)
         } else {
             windowStart
         }
         val nextEnd = if (append) {
-            renderWindowEnd(windowEnd, CHAPTER_BATCH, WINDOW_RENDER_CHAR_BUDGET)
+            renderWindowEnd(windowEnd, batch, WINDOW_RENDER_CHAR_BUDGET)
         } else {
             windowEnd
         }
@@ -990,6 +992,17 @@ internal fun TextReaderContent(
         if (lastAppliedOptionsJson == optionsJson) return@LaunchedEffect
         lastAppliedOptionsJson = optionsJson
         runJs("window.__reader && window.__reader.apply($optionsJson, ${localRatio.value});")
+    }
+    // 分页模式首帧只注入了当前章：等首帧排版落定后，在后台补上一章（向左翻）和下一章
+    // （向右翻）。打开时少排一半文档，正常翻页时窗口已经补齐，不需要等。
+    LaunchedEffect(pageFinishedToken) {
+        if (pageFinishedToken == 0) return@LaunchedEffect
+        if (liveMode.value != ReaderMode.PAGED) return@LaunchedEffect
+        if (windowEnd - windowStart >= 2) return@LaunchedEffect
+        kotlinx.coroutines.delay(200)
+        if (windowStart > 0) maybeLoadMoreChapters(0f, batch = 1)
+        kotlinx.coroutines.delay(CHAPTER_LOAD_THROTTLE_MS + 80)
+        if (windowEnd < chapters.size) maybeLoadMoreChapters(1f, batch = 1)
     }
 
     DisposableEffect(settings.keepScreenOn) {
@@ -1891,7 +1904,7 @@ private const val MAX_TOTAL_HTML_CHARS = 24 * 1024 * 1024
 /** 每次注入 WebView 的章节数：只加载阅读位置附近的窗口。 */
 private const val CHAPTER_BATCH = 3
 private const val INITIAL_CHAPTER_BATCH = 2
-private const val JUMP_BATCH = 3
+private const val JUMP_BATCH = 2
 
 /** 单次注入的字符预算：图片型文字书按章限流，避免首帧/追加时 WebView 排版过重。 */
 private const val INITIAL_RENDER_CHAR_BUDGET = 360_000L
