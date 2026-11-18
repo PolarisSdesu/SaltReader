@@ -1,4 +1,6 @@
-<img src="readme/logo.png" align="left" width="120" hspace="10" vspace="10">
+<p align="center">
+  <img src="readme/logo.png" width="120" alt="Salt Reader" />
+</p>
 
 <h1 align="center">Salt Reader</h1>
 
@@ -12,8 +14,6 @@
   <a href="https://github.com/PolarisSdesu/SaltReader/actions/workflows/android.yml"><img src="https://github.com/PolarisSdesu/SaltReader/actions/workflows/android.yml/badge.svg?branch=main" alt="Build status" /></a>
   <a href="README.zh-CN.md">简体中文</a>
 </p>
-
-<br clear="all" />
 
 ---
 
