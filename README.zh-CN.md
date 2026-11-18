@@ -1,12 +1,27 @@
-# Salt Reader ![构建状态](https://github.com/PolarisSdesu/SaltReader/actions/workflows/android.yml/badge.svg?branch=main)
-
-[English](README.md) | [简体中文](README.zh-CN.md)
-
 <img src="readme/logo.png" align="left" width="120" hspace="10" vspace="10">
 
-一个 Android 漫画与电子书阅读器。通过系统文件选择器授权文件夹后，应用在原地索引并读取文件：不导入、不复制书库，也不需要存储权限。
+<h1 align="center">Salt Reader</h1>
+
+<p align="center">
+  <strong>本地优先的 Android 漫画与电子书阅读器。</strong>
+</p>
+
+<p align="center">
+  <strong>状态：</strong> Beta · <code>1.0.0-beta.1</code> · Android 8.0（API 26）及以上
+  <br />
+  <a href="https://github.com/PolarisSdesu/SaltReader/actions/workflows/android.yml"><img src="https://github.com/PolarisSdesu/SaltReader/actions/workflows/android.yml/badge.svg?branch=main" alt="构建状态" /></a>
+  <a href="README.md">English</a>
+</p>
 
 <br clear="all" />
+
+---
+
+## 它是什么，不是什么
+
+Salt Reader 不是书库管理器。它不导入书籍、不在应用私有目录里重建书库，也不申请存储权限。你通过系统文件选择器授权一个文件夹，应用就在原地索引并读取里面的文件。撤销授权后书架清空，但文件从未被移动。
+
+没有账号、没有同步服务，也没有网络权限，一切都在设备上完成。
 
 ## 截图
 
@@ -14,30 +29,26 @@
 [<img src="readme/screenshot-reader.png" width="220" hspace="10" vspace="10">](readme/screenshot-reader.png)
 [<img src="readme/screenshot-settings.png" width="220" hspace="10" vspace="10">](readme/screenshot-settings.png)
 
-## 下载
-
-最新 APK 见 [Releases](https://github.com/PolarisSdesu/SaltReader/releases/latest)。单一通用包，支持 arm64-v8a 与 x86_64，要求 Android 8.0（API 26）及以上。当前版本：`1.0.0-beta.1`。
-
 ## 支持的格式
 
 | 格式 | 读取方式 |
-| --- | --- |
-| CBZ、ZIP | 从压缩包中央目录直接读取页面，不解包。 |
-| PDF | 交给系统 `PdfRenderer` 渲染。 |
-| 图片文件夹 | 按文件名自然序读取。 |
-| 图片型 EPUB | 按 EPUB spine 读取图片。 |
-| 文字型 EPUB | 重排文字，封面取自 OPF。 |
-| MOBI、AZW、AZW3 | 重排文字。不支持 HUFF/CDIC 压缩。 |
+|---|---|
+| CBZ、ZIP | 从压缩包中央目录直接读取页面，不解包 |
+| PDF | 交给系统 `PdfRenderer` 渲染 |
+| 图片文件夹 | 按文件名自然序读取 |
+| 图片型 EPUB | 按 EPUB spine 读取图片 |
+| 文字型 EPUB | 重排文字，封面取自 OPF |
+| MOBI、AZW、AZW3 | 重排文字；不支持 HUFF/CDIC 压缩 |
 
-## 功能
+## 阅读
 
-漫画：横向翻页或纵向连续滚动，RTL，点击分区，双指缩放，页码滑杆。
+漫画可横向翻页或纵向连续滚动，支持 RTL、点击分区、双指缩放和页码滑杆。
 
-文字：字号、行距、页边距，字体可选系统字体或自备字体（支持回退顺序），章节列表，页码或百分比显示。排版可由平台 WebView（默认）或实验性的原生渲染器完成：Rust 排版引擎，在 Compose Canvas 上绘制。纸张配色：自动、白、米色、浅绿、墨黑、自定义。插图可满宽显示，也可收在页边距内。
+文字可调字号、行距、页边距，可选系统字体或自备字体（支持回退顺序），带章节列表、页码或百分比显示。排版默认由平台 WebView 完成，也可切换到实验性的原生渲染器：Rust 排版引擎，在 Compose Canvas 上绘制。纸张配色有自动、白、米色、浅绿、墨黑和自定义；插图可满宽或收在页边距内。
 
-书库：封面取自 OPF，缺失时用纯色占位；搜索、筛选、排序；可选择书卡上显示的标签；按书记录进度；Android 16+ 可显示阅读进度 Live Update 通知。
+## 书库
 
-界面：Material You 动态取色，深浅色主题，AMOLED 纯黑。English、简体中文、繁體中文、日本語。
+封面取自书籍的 OPF，缺失时显示纯色占位。书架支持搜索、筛选、排序，以及选择书卡上显示哪些标签。阅读进度按书保存；Android 16+ 可显示为 Live Update 通知。
 
 ## 权限
 
@@ -53,7 +64,7 @@
 ./gradlew :app:testDebugUnitTest # JVM 单元测试
 ```
 
-设备调试时可用 `-PfastRelease` 跳过 R8、资源压缩与 release lint；CI 与 Play 构建不会带这个参数。配置缓存默认开启；迭代时不要跑 `clean`。
+设备调试时可用 `-PfastRelease` 跳过 R8、资源压缩与 release lint；CI 与 Play 构建不会带这个参数。Gradle 配置缓存默认开启；迭代时不要跑 `clean`。
 
 ## 参与贡献
 
