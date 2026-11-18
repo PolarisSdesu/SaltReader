@@ -88,6 +88,7 @@ private const val SAMPLE_INTERVAL_MS = 500L
 private const val MB = 1024f * 1024f
 private const val TAB_PERF = 0
 private const val TAB_LAYOUT = 1
+private const val TAB_RECORD = 2
 
 /**
  * 帧率 + 内存采样。[enabled] 为 false 时不注册任何回调，正常阅读没有额外开销。
@@ -178,6 +179,10 @@ internal fun ReaderDebugPanel(
     ratio: Float,
     nativeAvailable: Boolean,
     onSwitchRenderer: () -> Unit,
+    recording: Boolean,
+    recordRows: Int,
+    recordFileName: String,
+    onToggleRecording: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable { mutableStateOf(true) }
@@ -263,6 +268,7 @@ internal fun ReaderDebugPanel(
             )
             when (tab) {
                 TAB_LAYOUT -> LayoutTab(debugText)
+                TAB_RECORD -> RecordTab(recording, recordRows, recordFileName, onToggleRecording)
                 else -> PerfTab(stats, windowSize, density.density, refreshRate, page, pages, ratio)
             }
             DebugTabs(selected = tab, onSelect = { tab = it })
@@ -335,6 +341,41 @@ private fun LayoutTab(debugText: String) {
     )
 }
 
+/**
+ * 录制 tab：把每次采样写进 CSV。文件落在应用外部私有目录，`adb pull` 即可取出。
+ */
+@Composable
+private fun RecordTab(
+    recording: Boolean,
+    rows: Int,
+    fileName: String,
+    onToggle: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Column {
+        DebugRow("状态 STATUS", if (recording) "录制中 REC · $rows 行" else "未录制 IDLE")
+        DebugRow("文件 FILE", fileName.ifBlank { "—" })
+        Text(
+            text = if (recording) "停止录制 STOP" else "开始录制 START",
+            color = colors.primary,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp, bottom = 4.dp)
+                .clickable { onToggle() },
+        )
+        Text(
+            text = "Android/data/<pkg>/files/debug/ · adb pull",
+            color = colors.onSurfaceVariant,
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(bottom = 4.dp),
+        )
+    }
+}
+
 /** 渲染器切换：原本是阅读器右上角的浮动按钮，现在收进面板。 */
 @Composable
 private fun SwitchRow(nativeActive: Boolean, enabled: Boolean, onSwitch: () -> Unit) {
@@ -361,7 +402,7 @@ private fun SwitchRow(nativeActive: Boolean, enabled: Boolean, onSwitch: () -> U
 private fun DebugTabs(selected: Int, onSelect: (Int) -> Unit) {
     val colors = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth()) {
-        listOf("性能 PERF", "布局 LAYOUT").forEachIndexed { index, label ->
+        listOf("性能 PERF", "布局 LAYOUT", "录制 RECORD").forEachIndexed { index, label ->
             val active = index == selected
             Column(
                 modifier = Modifier

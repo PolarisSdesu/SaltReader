@@ -137,6 +137,12 @@ new build is actually published.
 - **Selection/copy**: the native reader selects whole paragraphs and drops the per-line breaks plus
   the full-width `　` indent when copying, so a paragraph pastes as a single line.
 
+- **Debug panel**: debug mode adds a draggable panel above every reader with three tabs —
+  `PERF` (fps, frame time, java/native heap, PSS, GC, threads, screen), `LAYOUT` (the WebView DOM
+  metrics or native pagination parameters, previously drawn over the page) and `RECORD` (writes a
+  CSV row per 500ms sample to `Android/data/<pkg>/files/debug/`). Debug-only text is intentionally
+  hard-coded bilingual instead of living in `strings_*.xml`.
+
 ## Native text reader parity
 
 `NativeTextReaderContent` + `native/text-reader` reproduce the WebView reader, and the **WebView is

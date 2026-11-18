@@ -11,6 +11,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -22,6 +23,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlin.math.roundToInt
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableSharedFlow
 import moe.gbxin.saltreader.SaltReaderApplication
 import moe.gbxin.saltreader.data.NativeTextLayout
@@ -118,6 +122,14 @@ class ReaderActivity : LocalizedActivity() {
                 var debugPage by remember { mutableIntStateOf(0) }
                 var debugPages by remember { mutableIntStateOf(0) }
                 var debugSwitchRatio by remember { mutableStateOf<Float?>(null) }
+                // CSV 录制：只在按下「开始录制」时创建文件，离开阅读器自动收尾。
+                val recorder = remember { DebugCsvRecorder(applicationContext) }
+                var recording by remember { mutableStateOf(false) }
+                var recordRows by remember { mutableIntStateOf(0) }
+                var recordFileName by remember { mutableStateOf("") }
+                DisposableEffect(Unit) {
+                    onDispose { recorder.stop() }
+                }
                 Box(Modifier.fillMaxSize()) {
                     AnimatedVisibility(
                         visible = visible,
@@ -151,6 +163,13 @@ class ReaderActivity : LocalizedActivity() {
                         } else {
                             "image · $mode"
                         }
+                        LaunchedEffect(stats, recording) {
+                            if (!recording) return@LaunchedEffect
+                            withContext(Dispatchers.IO + NonCancellable) {
+                                recorder.append(renderer, debugPage, debugPages, debugRatio, stats)
+                            }
+                            recordRows = recorder.rows
+                        }
                         ReaderDebugPanel(
                             stats = stats,
                             renderer = renderer,
@@ -162,6 +181,24 @@ class ReaderActivity : LocalizedActivity() {
                             onSwitchRenderer = {
                                 debugSwitchRatio = debugRatio
                                 app.settings.update { it.copy(nativeReader = !it.nativeReader) }
+                            },
+                            recording = recording,
+                            recordRows = recordRows,
+                            recordFileName = recordFileName,
+                            onToggleRecording = {
+                                if (recording) {
+                                    recorder.stop()
+                                    recording = false
+                                } else {
+                                    val started = recorder.start(
+                                        readerViewModel.latestBook()?.title ?: "book",
+                                    )
+                                    if (started != null) {
+                                        recordFileName = started.name
+                                        recordRows = 0
+                                        recording = true
+                                    }
+                                }
                             },
                             modifier = Modifier.align(Alignment.TopStart),
                         )
