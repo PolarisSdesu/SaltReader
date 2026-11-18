@@ -19,6 +19,7 @@ import android.view.WindowManager
 import android.annotation.SuppressLint
 import android.text.Html
 import android.util.Base64
+import android.util.LruCache
 import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animate
@@ -2454,7 +2455,77 @@ android.util.Log.i(
 /**
  * 两端对齐：按 Blink 的可拉伸边界（空格之后、CJK 两侧）拉开间距，
  * 最后一行由 Rust 标记为左对齐，不参与拉伸。
+ *
+ * 这段逻辑在 Canvas 的 draw lambda 里，每次重绘都会跑一遍；一页 20 行 × 25 字意味着每帧
+ * 上千次 `measureText` + `substring`。这里把「切簇 + 量宽 + 数边界」的结果按行缓存，
+ * 绘制端仍然逐簇 `drawText`，渲染结果与逐帧重算完全一致，只是不再重复测量。
  */
+private class JustifiedLayout(
+    val source: String,
+    val clusters: Array<String>,
+    val widths: FloatArray,
+    val boundaries: BooleanArray,
+    val measured: Float,
+    val gaps: Int,
+)
+
+/** 行文本 + 画笔特征 → 布局。key 碰撞时用 `source === text` 复核，不会错绘。 */
+private val justifiedLayouts = object : LruCache<Long, JustifiedLayout>(512) {
+    override fun sizeOf(key: Long, value: JustifiedLayout): Int = 1
+}
+
+private fun paintSignature(paint: Paint): Int {
+    var h = System.identityHashCode(paint)
+    h = 31 * h + paint.textSize.toBits()
+    h = 31 * h + (paint.typeface?.hashCode() ?: 0)
+    h = 31 * h + paint.letterSpacing.toBits()
+    h = 31 * h + paint.textScaleX.toBits()
+    h = 31 * h + paint.textSkewX.toBits()
+    return h
+}
+
+private fun justifiedLayout(text: String, paint: Paint): JustifiedLayout {
+    val key = (text.hashCode().toLong() shl 32) xor paintSignature(paint).toLong()
+    justifiedLayouts.get(key)?.let { if (it.source === text) return it }
+
+    val clusters = ArrayList<String>(text.length)
+    val widths = ArrayList<Float>(text.length)
+    var index = 0
+    while (index < text.length) {
+        val codePoint = text.codePointAt(index)
+        val count = Character.charCount(codePoint)
+        val cluster = text.substring(index, index + count)
+        clusters.add(cluster)
+        widths.add(paint.measureText(cluster))
+        index += count
+    }
+    val measured = widths.sum()
+    val boundaries = BooleanArray(clusters.size)
+    var gaps = 0
+    for (position in 0 until clusters.size - 1) {
+        val previous = clusters[position]
+        val next = clusters[position + 1]
+        if (TextJustification.isExpansionBoundary(
+                previous.codePointBefore(previous.length),
+                next.codePointAt(0),
+            )
+        ) {
+            boundaries[position] = true
+            gaps++
+        }
+    }
+    val layout = JustifiedLayout(
+        source = text,
+        clusters = clusters.toTypedArray(),
+        widths = FloatArray(widths.size) { widths[it] },
+        boundaries = boundaries,
+        measured = measured,
+        gaps = gaps,
+    )
+    justifiedLayouts.put(key, layout)
+    return layout
+}
+
 private fun drawJustifiedLine(
     canvas: android.graphics.Canvas,
     text: String,
@@ -2463,43 +2534,22 @@ private fun drawJustifiedLine(
     targetWidth: Float,
     paint: Paint,
 ) {
-    val clusters = ArrayList<String>(text.length)
-    val clusterWidths = ArrayList<Float>(text.length)
-    var index = 0
-    while (index < text.length) {
-        val codePoint = text.codePointAt(index)
-        val count = Character.charCount(codePoint)
-        val cluster = text.substring(index, index + count)
-        clusters.add(cluster)
-        clusterWidths.add(paint.measureText(cluster))
-        index += count
-    }
-    val measured = clusterWidths.sum()
-    if (measured <= 0f || targetWidth <= measured + 0.5f || clusters.size < 2) {
+    val layout = justifiedLayout(text, paint)
+    val measured = layout.measured
+    if (measured <= 0f || targetWidth <= measured + 0.5f || layout.clusters.size < 2) {
         canvas.drawText(text, x, baseline, paint)
         return
     }
-    fun gapBoundary(position: Int): Boolean {
-        if (position >= clusters.size - 1) return false
-        val previous = clusters[position]
-        val next = clusters[position + 1]
-        return TextJustification.isExpansionBoundary(
-            previous.codePointBefore(previous.length),
-            next.codePointAt(0),
-        )
-    }
-    var gaps = 0
-    for (position in 0 until clusters.size - 1) if (gapBoundary(position)) gaps++
-    if (gaps == 0) {
+    if (layout.gaps == 0) {
         canvas.drawText(text, x, baseline, paint)
         return
     }
-    val extra = (targetWidth - measured) / gaps
+    val extra = (targetWidth - measured) / layout.gaps
     var cursor = x
-    clusters.forEachIndexed { position, cluster ->
+    layout.clusters.forEachIndexed { position, cluster ->
         canvas.drawText(cluster, cursor, baseline, paint)
-        cursor += clusterWidths[position]
-        if (gapBoundary(position)) cursor += extra
+        cursor += layout.widths[position]
+        if (layout.boundaries[position]) cursor += extra
     }
 }
 
