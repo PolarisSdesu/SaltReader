@@ -168,6 +168,27 @@ class ReaderViewModel(
     /** 系统内存回收时清空页缓存：内容随时可以从文件重新解码。 */
     private val cacheTrimmer: () -> Unit = { cache.evictAll() }
 
+    /** 调试面板：页缓存的条目数、占用字节、命中率。 */
+    data class PageCacheStats(val entries: Int, val bytes: Long, val hitRate: Float)
+
+    fun pageCacheStats(): PageCacheStats {
+        val snapshot = cache.snapshot()
+        val bytes = snapshot.values.sumOf { it.byteCount.toLong() }
+        val hits = cache.hitCount()
+        val misses = cache.missCount()
+        val attempts = hits + misses
+        return PageCacheStats(
+            entries = snapshot.size,
+            bytes = bytes,
+            hitRate = if (attempts > 0) hits.toFloat() / attempts else 0f,
+        )
+    }
+
+    /** 调试面板：手动清空页缓存（之后会重新解码）。 */
+    fun clearPageCache() {
+        cache.evictAll()
+    }
+
     private fun stateFor(
         ready: Boolean,
         indexed: ComicBook?,

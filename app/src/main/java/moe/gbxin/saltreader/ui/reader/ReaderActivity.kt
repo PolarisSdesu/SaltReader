@@ -111,6 +111,10 @@ class ReaderActivity : LocalizedActivity() {
             return
         }
         val app = application as SaltReaderApplication
+        // 调试模式下打开 WebView 远程调试：连 adb 后可在 chrome://inspect 里直接看 DOM/控制台。
+        if (app.settings.state.value.debugMode) {
+            runCatching { android.webkit.WebView.setWebContentsDebuggingEnabled(true) }
+        }
         setContent {
             val settings by app.settings.state.collectAsStateWithLifecycle()
             SaltReaderTheme(themeMode = settings.themeMode, dynamicColor = settings.dynamicColor, amoledBlack = settings.amoledBlack) {
@@ -155,7 +159,11 @@ class ReaderActivity : LocalizedActivity() {
                     }
                     if (settings.debugMode) {
                         // 调试浮层覆盖在所有阅读器（图片 / WebView / 原生）之上；点一下折叠。
-                        val stats = rememberReaderDebugStats(enabled = true)
+                        val refreshRate = remember {
+                            getSystemService(android.view.WindowManager::class.java)
+                                ?.defaultDisplay?.refreshRate ?: 60f
+                        }
+                        val stats = rememberReaderDebugStats(enabled = true, refreshRate = refreshRate)
                         val book = readerViewModel.latestBook()
                         val mode = settings.readerMode.name.lowercase()
                         val renderer = if (book != null && book.reflowable) {
@@ -189,9 +197,27 @@ class ReaderActivity : LocalizedActivity() {
                                 debugSwitchRatio = debugRatio
                                 app.settings.update { it.copy(nativeReader = !it.nativeReader) }
                             },
+                            refreshRate = refreshRate,
                             recording = recording,
                             recordRows = recordRows,
                             recordFileName = recordFileName,
+                            cacheStats = if (book?.reflowable == true) {
+                                null
+                            } else {
+                                readerViewModel.pageCacheStats()
+                            },
+                            onClearPageCache = { readerViewModel.clearPageCache() },
+                            onGc = { System.gc() },
+                            onCopyPath = {
+                                val path = recorder.file?.absolutePath
+                                    ?: "${getExternalFilesDir("debug")?.absolutePath}/"
+                                runCatching {
+                                    getSystemService(android.content.ClipboardManager::class.java)
+                                        ?.setPrimaryClip(
+                                            android.content.ClipData.newPlainText("csv", path),
+                                        )
+                                }
+                            },
                             onToggleRecording = {
                                 if (recording) {
                                     recorder.stop()

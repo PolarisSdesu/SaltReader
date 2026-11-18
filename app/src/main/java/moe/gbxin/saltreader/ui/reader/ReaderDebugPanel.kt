@@ -14,8 +14,8 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
@@ -79,6 +79,8 @@ internal data class ReaderDebugStats(
     val blockingGcCount: Int = 0,
     val gcTimeMs: Int = 0,
     val threads: Int = 0,
+    val frames: Int = 0,
+    val jankFrames: Int = 0,
     val fpsHistory: List<Float> = emptyList(),
     val heapHistory: List<Float> = emptyList(),
 )
@@ -92,6 +94,7 @@ private data class DebugLabels(
     val perf: String,
     val layout: String,
     val record: String,
+    val actions: String,
     val page: String,
     val frame: String,
     val java: String,
@@ -112,14 +115,21 @@ private data class DebugLabels(
     val start: String,
     val stop: String,
     val hint: String,
+    val jank: String,
     val paged: String,
     val vertical: String,
+    val pageCache: String,
+    val clearCache: String,
+    val runGc: String,
+    val copyPath: String,
+    val remoteDebug: String,
 )
 
 private val LABELS_EN = DebugLabels(
     perf = "PERF",
     layout = "LAYOUT",
     record = "RECORD",
+    actions = "ACTIONS",
     page = "PAGE",
     frame = "FRAME",
     java = "JAVA",
@@ -140,14 +150,21 @@ private val LABELS_EN = DebugLabels(
     start = "START RECORDING",
     stop = "STOP RECORDING",
     hint = "Android/data/<pkg>/files/debug/ · adb pull",
+    jank = "JANK",
     paged = "paged",
     vertical = "vertical",
+    pageCache = "PAGE CACHE",
+    clearCache = "CLEAR PAGE CACHE",
+    runGc = "RUN GC",
+    copyPath = "COPY CSV PATH",
+    remoteDebug = "WebView debugging: chrome://inspect",
 )
 
 private val LABELS_ZH = DebugLabels(
     perf = "性能",
     layout = "布局",
     record = "录制",
+    actions = "操作",
     page = "页",
     frame = "帧耗时",
     java = "内存",
@@ -168,22 +185,32 @@ private val LABELS_ZH = DebugLabels(
     start = "开始录制",
     stop = "停止录制",
     hint = "Android/data/<pkg>/files/debug/ · adb pull",
+    jank = "卡顿",
     paged = "分页",
     vertical = "纵向",
+    pageCache = "页缓存",
+    clearCache = "清空页缓存",
+    runGc = "触发 GC",
+    copyPath = "复制 CSV 路径",
+    remoteDebug = "WebView 调试：chrome://inspect",
 )
 
 private const val TAB_PERF = 0
 private const val TAB_LAYOUT = 1
 private const val TAB_RECORD = 2
+private const val TAB_ACTIONS = 3
+private val CONTENT_HEIGHT = 250.dp
 
 /**
  * 帧率 + 内存采样。[enabled] 为 false 时不注册任何回调，正常阅读没有额外开销。
  */
 @Composable
-internal fun rememberReaderDebugStats(enabled: Boolean): ReaderDebugStats {
+internal fun rememberReaderDebugStats(enabled: Boolean, refreshRate: Float): ReaderDebugStats {
     var stats by remember { mutableStateOf(ReaderDebugStats()) }
-    LaunchedEffect(enabled) {
+    LaunchedEffect(enabled, refreshRate) {
         if (!enabled) return@LaunchedEffect
+        // 超过 1.5 个刷新周期算掉帧（60Hz 上约 25ms），和「慢帧」的直觉一致。
+        val jankThresholdMs = 1500f / refreshRate.coerceAtLeast(1f)
         // 只统计「连续渲染」的帧间隔：面板自己每 500ms 触发的一次重绘间隔是 500ms，
         // 如果算进去，空闲时会显示 2 FPS。>100ms 的间隔视为空闲，不计入。
         val intervals = ArrayDeque<Float>()
@@ -211,6 +238,8 @@ internal fun rememberReaderDebugStats(enabled: Boolean): ReaderDebugStats {
             // 最近 30 帧（60Hz 上约半秒）足够平滑，又不会把一分钟前的卡顿一直留在数字里。
             val recent = intervals.toList().takeLast(30)
             val active = framesSinceSample > 0 && recent.isNotEmpty()
+            val windowFrames = recent.size
+            val jankFrames = recent.count { it > jankThresholdMs }
             val avgMs = if (active) recent.average().toFloat() else 0f
             val fps = if (active) 1000f / avgMs else 0f
             framesSinceSample = 0
@@ -239,6 +268,8 @@ internal fun rememberReaderDebugStats(enabled: Boolean): ReaderDebugStats {
                     ?.toIntOrNull() ?: stats.blockingGcCount,
                 gcTimeMs = Debug.getRuntimeStat("art.gc.gc-time")?.toIntOrNull() ?: stats.gcTimeMs,
                 threads = Thread.activeCount(),
+                frames = windowFrames,
+                jankFrames = jankFrames,
                 fpsHistory = fpsHistory.toList(),
                 heapHistory = heapHistory.toList(),
             )
@@ -270,6 +301,11 @@ internal fun ReaderDebugPanel(
     recordRows: Int,
     recordFileName: String,
     onToggleRecording: () -> Unit,
+    refreshRate: Float,
+    cacheStats: ReaderViewModel.PageCacheStats?,
+    onClearPageCache: () -> Unit,
+    onGc: () -> Unit,
+    onCopyPath: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     var expanded by rememberSaveable { mutableStateOf(true) }
@@ -294,10 +330,6 @@ internal fun ReaderDebugPanel(
         val maxY = (windowSize.height - panelSize.height).coerceAtLeast(0).toFloat()
         dragX = dragX.coerceIn(0f, maxX)
         dragY = dragY.coerceIn(0f, maxY)
-    }
-    val context = LocalContext.current
-    val refreshRate = remember(context) {
-        context.getSystemService(WindowManager::class.java)?.defaultDisplay?.refreshRate ?: 60f
     }
     val colors = MaterialTheme.colorScheme
     Surface(
@@ -366,10 +398,20 @@ internal fun ReaderDebugPanel(
                 enabled = nativeAvailable,
                 onSwitch = onSwitchRenderer,
             )
-            when (tab) {
-                TAB_LAYOUT -> LayoutTab(debugText)
-                TAB_RECORD -> RecordTab(labels, recording, recordRows, recordFileName, onToggleRecording)
-                else -> PerfTab(labels, stats, windowSize, density.density, refreshRate, page, pages, ratio)
+            // 固定内容高度：切 tab 时面板不会跳动，放不下的内容自己滚动。
+            Box(Modifier.fillMaxWidth().height(CONTENT_HEIGHT)) {
+                when (tab) {
+                    TAB_LAYOUT -> LayoutTab(debugText)
+                    TAB_RECORD -> RecordTab(labels, recording, recordRows, recordFileName, onToggleRecording)
+                    TAB_ACTIONS -> ActionsTab(
+                        labels = labels,
+                        cacheStats = cacheStats,
+                        onClearPageCache = onClearPageCache,
+                        onGc = onGc,
+                        onCopyPath = onCopyPath,
+                    )
+                    else -> PerfTab(labels, stats, windowSize, density.density, refreshRate, page, pages, ratio)
+                }
             }
             DebugTabs(labels, selected = tab, onSelect = { tab = it })
         }
@@ -387,16 +429,21 @@ private fun PerfTab(
     pages: Int,
     ratio: Float,
 ) {
-    Column {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         val percent = (ratio.coerceIn(0f, 1f) * 100f).roundToInt()
         DebugRow(labels.page, "$page / $pages · $percent%")
         DebugRow(labels.frame, "${oneDecimal(stats.frameMs)} ms · max ${oneDecimal(stats.worstFrameMs)}")
+        val jankPercent = if (stats.frames > 0) stats.jankFrames * 100f / stats.frames else 0f
+        DebugRow(
+            labels.jank,
+            "${stats.jankFrames} / ${stats.frames} · ${oneDecimal(jankPercent)}%",
+        )
         Sparkline(
             values = stats.fpsHistory,
             // 60Hz 屏幕满格；高刷设备自动按观测到的峰值缩放，免得曲线一直贴顶。
             maxValue = maxOf(60f, stats.fpsHistory.maxOrNull() ?: 0f),
             color = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.fillMaxWidth().height(26.dp).padding(vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth().height(72.dp).padding(vertical = 4.dp),
         )
         val heapPercent = if (stats.javaMaxMb > 0f) {
             (stats.javaUsedMb / stats.javaMaxMb * 100f).roundToInt()
@@ -411,7 +458,7 @@ private fun PerfTab(
             values = stats.heapHistory,
             maxValue = stats.javaMaxMb.coerceAtLeast(1f),
             color = MaterialTheme.colorScheme.tertiary,
-            modifier = Modifier.fillMaxWidth().height(26.dp).padding(vertical = 4.dp),
+            modifier = Modifier.fillMaxWidth().height(72.dp).padding(vertical = 4.dp),
         )
         DebugRow(labels.native, "${oneDecimal(stats.nativeMb)} MB")
         DebugRow(labels.pss, "${stats.pssMb.roundToInt()} MB")
@@ -435,8 +482,7 @@ private fun LayoutTab(debugText: String) {
         lineHeight = 12.sp,
         fontFamily = FontFamily.Monospace,
         modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 220.dp)
+            .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(vertical = 6.dp),
     )
@@ -454,7 +500,7 @@ private fun RecordTab(
     onToggle: () -> Unit,
 ) {
     val colors = MaterialTheme.colorScheme
-    Column {
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
         DebugRow(labels.status, if (recording) labels.recording.format(rows) else labels.idle)
         DebugRow(labels.file, fileName.ifBlank { "—" })
         Text(
@@ -509,7 +555,7 @@ private fun SwitchRow(
 private fun DebugTabs(labels: DebugLabels, selected: Int, onSelect: (Int) -> Unit) {
     val colors = MaterialTheme.colorScheme
     Row(Modifier.fillMaxWidth()) {
-        listOf(labels.perf, labels.layout, labels.record).forEachIndexed { index, label ->
+        listOf(labels.perf, labels.layout, labels.record, labels.actions).forEachIndexed { index, label ->
             val active = index == selected
             Column(
                 modifier = Modifier
@@ -587,6 +633,52 @@ private fun Sparkline(
         }
         drawPath(path, color = color, style = Stroke(width = 1.5.dp.toPx(), cap = StrokeCap.Round))
     }
+}
+
+/** 操作 tab：清缓存 / GC / 复制 CSV 路径，并显示页缓存占用。 */
+@Composable
+private fun ActionsTab(
+    labels: DebugLabels,
+    cacheStats: ReaderViewModel.PageCacheStats?,
+    onClearPageCache: () -> Unit,
+    onGc: () -> Unit,
+    onCopyPath: () -> Unit,
+) {
+    val colors = MaterialTheme.colorScheme
+    Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        if (cacheStats != null) {
+            DebugRow(
+                labels.pageCache,
+                "${cacheStats.entries} · ${cacheStats.bytes / (1024f * 1024f)} MB · " +
+                    "hit ${(cacheStats.hitRate * 100f).roundToInt()}%",
+            )
+        }
+        ActionRow(labels.clearCache, colors.primary, onClearPageCache)
+        ActionRow(labels.runGc, colors.primary, onGc)
+        ActionRow(labels.copyPath, colors.primary, onCopyPath)
+        Text(
+            text = labels.remoteDebug,
+            color = colors.onSurfaceVariant,
+            fontSize = 9.sp,
+            fontFamily = FontFamily.Monospace,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+}
+
+@Composable
+private fun ActionRow(label: String, color: Color, onClick: () -> Unit) {
+    Text(
+        text = label,
+        color = color,
+        fontSize = 11.sp,
+        fontWeight = FontWeight.Bold,
+        fontFamily = FontFamily.Monospace,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 8.dp)
+            .clickable { onClick() },
+    )
 }
 
 /** 面板语言的 EN / 中 开关。 */
