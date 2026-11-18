@@ -4,36 +4,11 @@
 
 <img src="readme/logo.png" align="left" width="120" hspace="10" vspace="10">
 
-Salt Reader is a free, local-first comic and ebook reader for Android.
-
-It reads your files in place and supports CBZ/ZIP, image and text EPUB, MOBI/AZW3, PDF and folders of images.
+An Android reader for comics and ebooks. It indexes folders opened through the system file picker
+and reads the files where they are, with no import step, no copy of the library and no storage
+permission.
 
 <br clear="all" />
-
-## About
-
-Most comic readers either copy your library into app-private storage or ask for broad storage permissions. Salt Reader does neither: you grant access to a folder through Android's Storage Access Framework, and the app indexes the original files in place using only the access you granted.
-
-The reader is written with Jetpack Compose and Material 3 Expressive. Images are decoded on demand; text books are reflowed by the platform WebView, so font size, line spacing, page margins, paged/scroll layout, chapter navigation and progress work without converting anything to another format.
-
-An experimental native reader (a small Rust layout engine, `libsaltreader_layout.so`) can be enabled in the reading settings; it draws pages with Compose Canvas and is tuned to match the WebView rendering.
-
-## Features
-
-Salt Reader lets you:
-
-- Add library folders through SAF; originals are indexed in place and never copied.
-- Fast by design: archives are indexed from their central directory without being unpacked, pages are decoded only when visible, and the whole viewport scales on the GPU for smooth pinch zoom.
-- Read CBZ/ZIP archives directly from the granted folder, including large files.
-- Read image EPUBs straight from their spine, and reflow text EPUB/MOBI/AZW3 in a native reader with a WeChat-Reading-style toolbar (contents / progress / theme / type panels), a chapter contents sheet, adjustable font size, line spacing, page margins, a serif/sans/custom font picker (system fonts plus your own font folder, with ordered fallback fonts for mixing Latin and CJK), switchable page-number or progress indicator, finger-following page swipes and one shared reader settings screen for comics and novels.
-- See real covers for text EPUBs (read from the book's OPF) and a clean solid placeholder when a book genuinely has none.
-- Open PDFs through the system `PdfRenderer` and image folders in natural order.
-- Page through comics horizontally or scroll continuously, with RTL, tap zones, pinch zoom and a page slider.
-- Search the library, filter by all / reading / unread and customise the layout and book-card labels.
-- Follow the system light/dark theme, Material You dynamic colours and an optional AMOLED black mode, and pick a reading paper tone (auto / white / beige / green / black / custom).
-- Choose between the default WebView text renderer and the experimental native renderer (Rust layout + Compose Canvas), and render illustrations full-width or inside the page margins.
-- Use the interface in English, Simplified Chinese, Traditional Chinese or Japanese.
-- Run without storage or network permissions: the app can only see folders you explicitly granted.
 
 ## Screenshots
 
@@ -41,24 +16,48 @@ Salt Reader lets you:
 [<img src="readme/screenshot-reader.png" width="220" hspace="10" vspace="10">](readme/screenshot-reader.png)
 [<img src="readme/screenshot-settings.png" width="220" hspace="10" vspace="10">](readme/screenshot-settings.png)
 
+## Download
+
+Latest APK: [Releases](https://github.com/PolarisSdesu/SaltReader/releases/latest). One universal
+build for arm64-v8a and x86_64, Android 8.0 (API 26) and newer. Current version: `1.0.0-beta.1`.
+
+## Formats
+
+| Format | How it is read |
+| --- | --- |
+| CBZ, ZIP | Pages read from the archive's central directory, nothing unpacked. |
+| PDF | Rendered with the system `PdfRenderer`. |
+| Image folder | Images in natural filename order. |
+| Image EPUB | Images from the EPUB spine. |
+| Text EPUB | Reflowed text, cover taken from the OPF. |
+| MOBI, AZW, AZW3 | Reflowed text. HUFF/CDIC compression is not supported. |
+
+## Features
+
+Comics: horizontal paging or continuous scrolling, RTL, tap zones, pinch zoom, page slider.
+
+Text: font size, line spacing, page margins, font choice (system fonts or your own font folder, with
+ordered fallbacks), chapter list, page number or percentage. Pages can be drawn by the platform
+WebView (default) or by an experimental native renderer: a Rust layout engine drawing on Compose
+Canvas. Paper colours: auto, white, sepia, green, ink, custom. Illustrations can run full width or
+stay inside the margins.
+
+Library: OPF covers with a plain placeholder when missing, search, filter, sort, selectable card
+labels, per-book progress, and a reading-progress Live Update notification on Android 16+.
+
+UI: Material You dynamic colour, light and dark themes, AMOLED black. English, Simplified Chinese,
+Traditional Chinese and Japanese.
+
 ## Permissions
 
-Salt Reader declares no storage, all-files or network permissions. Everything it can read comes from folders you pick in the system file picker, and that access can be revoked at any time.
-
-The text reader blocks network loads and remote resources; only local book content is rendered.
-
-## Contributing
-
-Salt Reader is a small open-source project; contributions are welcome:
-
-- [Report bugs or suggest features](https://github.com/PolarisSdesu/SaltReader/issues).
-- Improve translations (English, Simplified Chinese, Traditional Chinese and Japanese strings live in `app/src/main/res/values*/`).
-- Send code. Please keep the existing style and make sure `./gradlew :app:testDebugUnitTest` passes.
-- The debug menu is hidden by default; unlock it by tapping the app logo five times on the About screen.
+No storage, all-files or network permission. The app can only read folders granted through the
+system picker, and that access can be revoked at any time. The only runtime permission it may ask
+for is notifications, for the optional Live Update. The text reader blocks network requests and
+remote resources.
 
 ## Build
 
-Requires JDK 21 and Android SDK Platform 37.
+JDK 21 and Android SDK Platform 37.
 
 ```bash
 ./gradlew :app:assembleDebug     # debug APK
@@ -66,24 +65,17 @@ Requires JDK 21 and Android SDK Platform 37.
 ./gradlew :app:testDebugUnitTest # JVM unit tests
 ```
 
-### Faster local builds
+`-PfastRelease` skips R8, resource shrinking and release lint for device testing. CI and Play builds
+never pass it. The configuration cache is on; don't run `clean` between iterations.
 
-A full release build is dominated by R8 and release lint (about 1m45s from a cold cache on an
-8-core laptop; roughly 25s warm, mostly `lintVitalAnalyzeRelease`). When you only need an
-installable release APK for device testing, skip the shrinker and release lint:
+## Contributing
 
-```bash
-./gradlew :app:assembleDebug                      # fastest: Compose debug build, no R8
-./gradlew :app:assembleRelease -PfastRelease      # unminified release APK, no R8/lint/shrink
-```
-
-`-PfastRelease` only affects local builds: CI and Play builds never pass it, so they keep the
-full R8 + resource-shrinking + lint pipeline. The configuration cache is enabled, so repeat
-builds also skip the configuration phase; pass `--no-configuration-cache` if a task ever
-misbehaves after an AGP upgrade. Avoid `clean` between iterations — incremental Kotlin
-compilation and the Gradle build cache are what keep warm builds fast.
+- [Report bugs or suggest features](https://github.com/PolarisSdesu/SaltReader/issues).
+- Translations live in `app/src/main/res/values*/`; every key must exist in all four locales.
+- Patches should keep the existing style and pass `./gradlew :app:testDebugUnitTest`.
+- The debug menu is hidden by default. Tap the app logo five times on the About screen to unlock it.
 
 ## Third-party components
 
-Salt Reader builds on the AndroidX, Compose and Kotlin ecosystems and includes a vendored MOBI parser.
-See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for the full list and their licenses.
+AndroidX, Compose, Kotlin and a vendored MOBI parser. See
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for licenses.
