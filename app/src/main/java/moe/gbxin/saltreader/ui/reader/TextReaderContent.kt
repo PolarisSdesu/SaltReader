@@ -2485,6 +2485,9 @@ private val HTML_TAIL = """
     }, 120);
   }
   var applyRetries = 0;
+  // 首屏会进两次 apply：HTML 末尾的 bootstrap 一次、Kotlin 在 onPageFinished 后又一次。
+  // 参数与目标比例完全相同时直接跳过，避免对几万像素宽的文档重复 setOptions/restore。
+  var lastApplyKey = null;
   function apply(opts, r) {
     // 初始视口还没测量出来时先不布局（见 viewportReady 注释）；最多等约 2 秒。
     if (!viewportReady()) {
@@ -2497,6 +2500,10 @@ private val HTML_TAIL = """
       console.log('JSPERF apply-abort invalid-viewport');
       return;
     }
+    // bootstrap 传的是对象、Kotlin 传的是对象字面量，身份比较不可靠；用序列化后的内容去重。
+    var applyKey = JSON.stringify(opts) + '|' + r;
+    if (applyKey === lastApplyKey) return;
+    lastApplyKey = applyKey;
     applyRetries = 0;
     updateViewportHeight();
     setOptions(opts);
