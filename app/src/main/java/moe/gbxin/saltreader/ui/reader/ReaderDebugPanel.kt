@@ -13,13 +13,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -312,7 +310,8 @@ internal fun ReaderDebugPanel(
     onCopyPath: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var expanded by rememberSaveable { mutableStateOf(true) }
+    // 默认折叠：展开的面板会盖住正文，需要时点一下再展开。
+    var expanded by rememberSaveable { mutableStateOf(false) }
     var tab by rememberSaveable { mutableIntStateOf(TAB_PERF) }
     // 默认跟随系统语言，用户可以在面板里手动切换并保留到本次阅读结束。
     var chinese by rememberSaveable { mutableStateOf(Locale.getDefault().language == "zh") }
@@ -323,20 +322,32 @@ internal fun ReaderDebugPanel(
         else -> "Image"
     }
     // 位置是相对窗口左上角的绝对偏移（不含任何外层 padding），这样边界可以直接用窗口尺寸算。
+    // placed=false 表示还没定位：首次测量到面板尺寸后放到右下角，之后由拖动/夹取维持。
     val density = LocalDensity.current
-    val initialX = with(density) { 8.dp.roundToPx() }
-    // 默认放在顶栏下方，避免一上来就盖住返回按钮；位置可以拖。
-    val initialY = WindowInsets.safeDrawing.getTop(density) + with(density) { 72.dp.roundToPx() }
-    var dragX by rememberSaveable { mutableFloatStateOf(initialX.toFloat()) }
-    var dragY by rememberSaveable { mutableFloatStateOf(initialY.toFloat()) }
+    var dragX by rememberSaveable { mutableFloatStateOf(0f) }
+    var dragY by rememberSaveable { mutableFloatStateOf(0f) }
+    var placed by rememberSaveable { mutableStateOf(false) }
+    var lastPanelSize by remember { mutableStateOf(IntSize.Zero) }
     val windowSize = LocalWindowInfo.current.containerSize
     var panelSize by remember { mutableStateOf(IntSize.Zero) }
     // 拖动结束后短暂忽略点击，否则「拖完手指抬起」会被当成一次展开/折叠。
     var dragEndedAt by remember { mutableLongStateOf(0L) }
-    // 折叠/展开会改变面板尺寸，位置要重新收进屏幕内。
+    // 折叠/展开会改变面板尺寸，位置要重新收进屏幕内；首次布局时落到右下角。
     LaunchedEffect(panelSize, windowSize) {
+        if (panelSize.width <= 0 || panelSize.height <= 0) return@LaunchedEffect
+        val margin = with(density) { 16.dp.toPx() }
         val maxX = (windowSize.width - panelSize.width).coerceAtLeast(0).toFloat()
         val maxY = (windowSize.height - panelSize.height).coerceAtLeast(0).toFloat()
+        if (!placed) {
+            dragX = (maxX - margin).coerceIn(0f, maxX)
+            dragY = (maxY - margin).coerceIn(0f, maxY)
+            placed = true
+        } else if (lastPanelSize != IntSize.Zero && lastPanelSize != panelSize) {
+            // 展开/折叠时保持右下角不动：位置跟着尺寸差平移，而不是只做边界夹取。
+            dragX += (panelSize.width - lastPanelSize.width).toFloat()
+            dragY += (panelSize.height - lastPanelSize.height).toFloat()
+        }
+        lastPanelSize = panelSize
         dragX = dragX.coerceIn(0f, maxX)
         dragY = dragY.coerceIn(0f, maxY)
     }

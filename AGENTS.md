@@ -137,7 +137,8 @@ new build is actually published.
 - **Selection/copy**: the native reader selects whole paragraphs and drops the per-line breaks plus
   the full-width `　` indent when copying, so a paragraph pastes as a single line.
 
-- **Debug panel**: debug mode adds a draggable panel above every reader with three tabs —
+- **Debug panel**: debug mode adds a draggable panel above every reader (starts collapsed at the
+  bottom-right so it does not cover the page) with four tabs —
   `PERF` (fps, frame time, java/native heap, PSS, GC, threads, screen), `LAYOUT` (the WebView DOM
   metrics or native pagination parameters, previously drawn over the page) and `RECORD` (writes a
   CSV row per 500ms sample to `Android/data/<pkg>/files/debug/`). Debug-only text is intentionally
