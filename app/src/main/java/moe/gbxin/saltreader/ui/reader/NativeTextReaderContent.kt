@@ -325,6 +325,8 @@ internal fun NativeTextReaderContent(
 
     val totalPages = pageSet?.pages?.size ?: 0
     val safePageIndex = pageIndex.coerceIn(0, (totalPages - 1).coerceAtLeast(0))
+    // 分页模式用平台 Pager：拖动/fling/吸附与系统滚动同源（与 WebView 的手感一致）。
+    val pagerState = rememberPagerState { totalPages.coerceAtLeast(1) }
     LaunchedEffect(pageIndex, totalPages, initialised) {
         if (initialised && totalPages > 1 && pageIndex in 0 until totalPages) {
             anchorRatio = pageIndex.toFloat() / (totalPages - 1)
@@ -334,12 +336,23 @@ internal fun NativeTextReaderContent(
     val imageCache = remember(book.id, settings.readerMode, settings.readerImageFullWidth) {
         mutableStateMapOf<Int, Bitmap>()
     }
-    LaunchedEffect(pageSet, safePageIndex, settings.readerMode, settings.readerImageFullWidth) {
+    LaunchedEffect(
+        pageSet,
+        safePageIndex,
+        pagerState.currentPage,
+        settings.readerMode,
+        settings.readerImageFullWidth,
+    ) {
         val set = pageSet ?: return@LaunchedEffect
         if (set.pages.isEmpty()) return@LaunchedEffect
-        val window = ((safePageIndex - 3)..(safePageIndex + 3)).filter { it in set.pages.indices }
+        // 恢复阅读位置时 Pager 会先显示第 0 页再滚到目标页；只按 safePageIndex 预取会让
+        // 那一帧的插图缺席（表现为开书瞬间整页空白）。把 Pager 当前页也当作锚点。
+        val anchor = pagerState.currentPage.coerceIn(0, set.pages.size - 1)
+        val window = (((safePageIndex - 3)..(safePageIndex + 3)) + ((anchor - 1)..(anchor + 1)))
+            .filter { it in set.pages.indices }
+            .distinct()
         val idsByPage = window.associateWith { pageImageIds(set, it) }
-        val ordered = listOf(safePageIndex) + window.filter { it != safePageIndex }
+        val ordered = (listOf(anchor, safePageIndex) + window).distinct()
         val targetWidth = (set.contentWidthPx * 1.2f).roundToInt().coerceAtLeast(240)
         for (page in ordered) {
             if (!currentCoroutineContext().isActive) break
@@ -378,8 +391,6 @@ internal fun NativeTextReaderContent(
     }
     // 纵向模式共享的列表状态：进度条/角标需要读取连续滚动位置。
     val verticalListState = rememberLazyListState()
-    // 分页模式用平台 Pager：拖动/fling/吸附与系统滚动同源（与 WebView 的手感一致）。
-    val pagerState = rememberPagerState { totalPages.coerceAtLeast(1) }
     // pageIndex -> Pager：点击/音量键/进度条跳转。
     LaunchedEffect(pageIndex, initialised, totalPages) {
         if (initialised && totalPages > 0) {
