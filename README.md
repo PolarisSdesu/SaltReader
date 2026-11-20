@@ -6,7 +6,7 @@
 <p align="center">A local-first comic and ebook reader for Android.</p>
 
 <p align="center">
-  <strong>1.0.0-alpha.48</strong> · Android 8.0+
+  <strong>1.0.0-alpha.49</strong> · Android 8.0+
 </p>
 
 <p align="center">
