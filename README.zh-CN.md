@@ -7,7 +7,7 @@
 <p align="center">本地优先的 Android 漫画与电子书阅读器。</p>
 
 <p align="center">
-  <strong>1.0.0-alpha.49</strong> · Android 8.0 及以上
+  <strong>1.0.0-alpha.50</strong> · Android 8.0 及以上
 </p>
 
 <p align="center">
