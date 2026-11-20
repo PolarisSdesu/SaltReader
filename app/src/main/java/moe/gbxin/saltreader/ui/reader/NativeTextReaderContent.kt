@@ -3,27 +3,18 @@ package moe.gbxin.saltreader.ui.reader
 import android.app.Activity
 import android.content.ClipData
 import android.content.ClipboardManager
-import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.DashPathEffect
 import android.graphics.Paint
 import android.graphics.Typeface
-import android.os.Build
 import android.os.SystemClock
 import android.view.ActionMode
 import android.view.Menu
 import android.view.MenuItem
 import android.view.WindowManager
 import android.annotation.SuppressLint
-import android.text.Html
-import android.util.Base64
-import android.util.LruCache
-import androidx.annotation.RequiresApi
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.animate
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -35,13 +26,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
-import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.gestures.draggable
-import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -52,10 +38,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -70,20 +53,19 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateMapOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import kotlinx.coroutines.flow.distinctUntilChanged
 import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
@@ -93,7 +75,6 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.nativeCanvas
@@ -107,13 +88,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import java.util.concurrent.atomic.AtomicInteger
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -130,7 +108,6 @@ import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
@@ -140,10 +117,6 @@ import moe.gbxin.saltreader.data.ComicBook
 import moe.gbxin.saltreader.data.EbookChapter
 import moe.gbxin.saltreader.data.NativeTextLayout
 import moe.gbxin.saltreader.data.ReaderBackground
-import moe.gbxin.saltreader.data.ReaderFontFamily
-import moe.gbxin.saltreader.data.ReaderFontRef
-import moe.gbxin.saltreader.data.ReaderFontSource
-import moe.gbxin.saltreader.data.ReaderFonts
 import moe.gbxin.saltreader.ui.components.BatteryIndicator
 import moe.gbxin.saltreader.ui.components.CustomColorPickerDialog
 import moe.gbxin.saltreader.ui.components.SaltLoading
@@ -152,46 +125,6 @@ import moe.gbxin.saltreader.ui.settings.ReaderSettingsActivity
 import moe.gbxin.saltreader.ui.theme.pageBackgroundColor
 import moe.gbxin.saltreader.ui.theme.readerAccentColor
 import moe.gbxin.saltreader.ui.theme.readerForegroundColor
-
-/** Rust 排版后的单行：文本 + 行内样式（字号/行高倍率、粗斜、对齐、左缩进）。 */
-internal data class NativeLine(
-    val text: String,
-    val sizeRatio: Float = 1f,
-    val lineHeightRatio: Float = 1.8f,
-    val bold: Boolean = false,
-    val italic: Boolean = false,
-    val mono: Boolean = false,
-    val align: Int = 0,
-    val leftIndentEm: Float = 0f,
-    val tableCol: Int = 0,
-    val tableCols: Int = 0,
-    val tableRowStart: Boolean = false,
-    val tableLastRow: Boolean = false,
-    val tableRowEnd: Boolean = false,
-    val imageId: Int = -1,
-    val gapEm: Float = 0f,
-)
-
-/** 内联图片引用：按需从章节 HTML 里重新取出 data URI 解码，避免全书图片字节常驻。 */
-private data class ImageRef(val chapterIndex: Int, val dataUriIndex: Int)
-
-private val NATIVE_DATA_URI =
-    Regex("data:image/([A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=\\r\\n]+)", RegexOption.IGNORE_CASE)
-
-private data class NativePageSet(
-    val pages: List<List<NativeLine>>,
-    val imageRefs: List<ImageRef> = emptyList(),
-    val imageAspects: List<Float> = emptyList(),
-    /** 图片原始宽度（物理 px）；0 表示不限（按版面宽度）。 */
-    val imageWidths: List<Float> = emptyList(),
-    val contentLeftPx: Float = 0f,
-    val contentWidthPx: Float = 1f,
-    val topPadPx: Float = 0f,
-    val bottomPadPx: Float = 0f,
-    val contentHeightPx: Float = 1f,
-)
-
-private val nativeParserToken = AtomicInteger(0)
 
 /**
  * 原生文字阅读器（实验性）：章节文本 → Rust(`libsaltreader_layout.so`) 断行分页 → Compose Canvas
@@ -2193,539 +2126,3 @@ internal fun NativeTextReaderContent(
 }
 
 /** 行内字符是否完全不可见（样式标记、控制符、格式符、零宽字符、空白）。 */
-private fun isInvisibleNativeChar(ch: Char): Boolean {
-    if (ch.code in 0xE000..0xE016 || ch.code == 0x0014) return true
-    if (ch.code < 0x20 || ch.code == 0x7F) return true
-    if (ch.isWhitespace() || Character.isSpaceChar(ch)) return true
-    if (ch == '\uFEFF' || ch in '\u200B'..'\u200F' || ch in '\u2060'..'\u2064') return true
-    // 电子书常用的“不可见占位符”：韩文填充符、盲文空白、缺省字形等，渲染出来是空白。
-    if (ch == '\u3164' || ch == '\u2800' || ch == '\u115F' || ch == '\u1160' ||
-        ch == '\uFFA0' || ch == '\u180E' || ch == '\u2007' || ch == '\u2063'
-    ) {
-        return true
-    }
-    val type = Character.getType(ch)
-    return type == Character.FORMAT.toInt() || type == Character.UNASSIGNED.toInt()
-}
-
-/** 只有不可见内容、没有块图片/表格的行：不应占用行高，也不参与切片。 */
-private fun isInvisibleNativeLine(line: NativeLine): Boolean {
-    if (line.imageId >= 0) return false
-    if (line.tableCols > 0) return false
-    var position = 0
-    while (position < line.text.length) {
-        val ch = line.text[position]
-        if (ch == '\u0004') {
-            // 只含行内图片 token 的行没有可见正文，按空行处理（避免出现整行空白）。
-            val tokenEnd = line.text.indexOf('\u0005', position)
-            position = if (tokenEnd < 0) line.text.length else tokenEnd + 1
-            continue
-        }
-        if (!isInvisibleNativeChar(ch)) return false
-        position += 1
-    }
-    return true
-}
-
-/** 章节 HTML → 纯文本（Rust 排版只吃纯文本）。 */
-private fun chapterPlainText(chapter: EbookChapter): String {
-    if (chapter.imageOnly) return ""
-    val text = runCatching {
-        Html.fromHtml(chapter.html, Html.FROM_HTML_MODE_LEGACY).toString()
-    }.getOrElse { chapter.html.replace(Regex("<[^>]+>"), "") }
-    return text
-        .replace('\u00A0', ' ')
-        .lines()
-        .map { it.trimEnd() }
-        .joinToString("\n")
-        .trim('\n', ' ')
-}
-
-private fun buildNativePageSet(
-    chapters: List<EbookChapter>,
-    width: Float,
-    height: Float,
-    fontSizePx: Float,
-    lineHeightFactor: Float,
-    typeface: Typeface,
-    contentLeftPx: Float = 0f,
-    contentWidthPx: Float = 1f,
-    topPadPx: Float = 0f,
-    bottomPadPx: Float = 0f,
-    contentHeightPx: Float = 1f,
-    imageFullWidth: Boolean = false,
-    fullPageWidth: Float = 1f,
-    imageMaxHeightRatio: Float = 0.92f,
-    imagePlaceholder: String = "［图片］",
-    imageDensity: Float = 1f,
-    monoAdvanceEm: Float = 0.6f,
-): NativePageSet? {
-    if (!NativeTextLayout.isAvailable) return null
-    val token = nativeParserToken.incrementAndGet()
-    val text = buildString {
-        for ((chapterPosition, chapter) in chapters.withIndex()) {
-            val body = chapterPlainText(chapter).trim()
-            if (body.isBlank()) continue
-            val title = chapter.title?.trim().orEmpty()
-            if (title.isNotEmpty() && chapter.showHeading) {
-                append(title)
-                append('\n')
-            }
-            append(body)
-            append("\n\n")
-        }
-    }.trim()
-    if (text.isBlank()) return NativePageSet(emptyList())
-
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = fontSizePx
-        this.typeface = typeface
-    }
-    // 等宽字宽：行内代码/代码块用 Typeface.MONOSPACE 绘制，断行必须用同一字宽，
-    // 否则 Rust 会按偏宽的估值提前折行，Kotlin 再把短行两端对齐 → 出现夸张空隙。
-    val measuredMonoEm = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = fontSizePx
-        this.typeface = Typeface.MONOSPACE
-    }.let { monoPaint ->
-        (monoPaint.measureText("0000") / 4f / fontSizePx).takeIf { it.isFinite() && it > 0.2f }
-            ?: 0.6f
-    }
-    // 字宽表：整本书去重后的码点各测一次，Rust 用它做精确断行。
-    val codePoints = ArrayList<Int>(1024)
-    val seen = HashSet<Int>(2048)
-    var index = 0
-    while (index < text.length) {
-        val codePoint = text.codePointAt(index)
-        if (seen.add(codePoint)) codePoints.add(codePoint)
-        index += Character.charCount(codePoint)
-    }
-    val advances = FloatArray(codePoints.size) { i ->
-        val codePoint = codePoints[i]
-        val measured = paint.measureText(String(Character.toChars(codePoint)))
-        // 自定义/系统字体缺少 CJK 字形时，measureText 可能给出 0 或极小值，
-        // 会直接导致 Rust 认为一行能塞下整段文字。宽字符给一个全角下限。
-        val isWide = codePoint in 0x2E80..0x9FFF || codePoint in 0xF900..0xFAFF ||
-            codePoint in 0xFF00..0xFF60 || codePoint in 0x20000..0x2FFFD
-        when {
-            !measured.isFinite() || measured <= 0f ->
-                if (isWide) fontSizePx else fontSizePx * 0.55f
-            // CJK 字形回退到系统字体时，实测宽度可能比真实绘制窄，统一按全角宽度排版。
-            isWide -> maxOf(measured, fontSizePx)
-            else -> measured
-        }
-    }
-
-    // 把章节 HTML 交给 Rust 解析（含书籍自带 CSS 子集）；标题缺失时补一个 h2。
-    // 只记录图片所在章节与序号；解码时按需从章节 HTML 取 data URI，避免全书图片字节常驻。
-    val imageRefs = ArrayList<ImageRef>()
-    val imageAspects = ArrayList<Float>()
-    val imageWidths = ArrayList<Float>()
-    // 必须连同 src="..." 引号整体替换，否则会生成畸形属性：src="data-salt-img="0""。
-    val dataUri = Regex(
-        "src=\"data:image/([A-Za-z0-9.+-]+);base64,([A-Za-z0-9+/=\\r\\n]+)\"",
-        RegexOption.IGNORE_CASE,
-    )
-    var perChapterImageBase = 0
-    val htmlChapters = ArrayList<String>(chapters.size)
-    for ((chapterPosition, chapter) in chapters.withIndex()) {
-        val imagesBeforeChapter = imageRefs.size
-        perChapterImageBase = imagesBeforeChapter
-        // image-only（彩页）章节也要参与：它们的正文就是插图，跳过会丢掉整章插画。
-        val withImages = if (chapter.html.contains("data:image", ignoreCase = true)) {
-            // 保留原 <img> 的 class/style（脚注/封面/插图类名决定内联还是块级），
-            // 只把 data URI 换成 data-salt-img 占位。
-            val imgTag = Regex("(?is)<img\\b[^>]*>")
-            chapter.html.replace(imgTag) { match ->
-                val tag = match.value
-                val dataMatch = dataUri.find(tag)
-                if (dataMatch == null) {
-                    tag
-                } else {
-                    val payload = dataMatch.groupValues[2]
-                    val bytes = runCatching { Base64.decode(payload, Base64.DEFAULT) }.getOrNull()
-                    if (bytes == null) {
-                        tag
-                    } else {
-                        val id = imageRefs.size
-                        imageRefs.add(ImageRef(chapterPosition, id - perChapterImageBase))
-                        val info = imageInfo(bytes)
-                        imageAspects.add(info.first)
-                        // WebView 的 max-width: 图片原始 CSS 宽度 × density；0 表示不限。
-                        imageWidths.add(info.second * imageDensity)
-                        tag.replaceRange(dataMatch.range, "data-salt-img=\"$id\"")
-                    }
-                }
-            }
-        } else {
-            chapter.html
-        }
-        val body = withImages.stripHeavyPayloads()
-        if (body.isBlank()) continue
-        val title = chapter.title?.trim().orEmpty()
-        val addHeading = !chapter.imageOnly && title.isNotEmpty() && chapter.showHeading &&
-            !body.contains(title, ignoreCase = true)
-        htmlChapters += if (addHeading) {
-            // 与 WebView 自动章节标题一致：使用 #book h2.chapter-heading 的紧凑间距。
-            "<h2 class=\"chapter-heading\">${title.escapeHtml()}</h2>$body"
-        } else {
-            body
-        }
-    }
-    if (htmlChapters.isEmpty()) {
-        return NativePageSet(emptyList())
-    }
-android.util.Log.i(
-        "SaltReaderNative",
-        "images extracted=${imageRefs.size}; " +
-            "sample=${
-                htmlChapters.firstOrNull()?.let { html ->
-                    Regex("(?is)<img[^>]{0,160}>").find(html)?.value ?: "(no img)"
-                }
-            }",
-    )
-
-    return runCatching {
-        val startedAt = System.nanoTime()
-        val raw = NativeTextLayout.paginateHtml(
-            htmlChapters.toTypedArray(),
-            width,
-            height,
-            fontSizePx,
-            lineHeightFactor,
-            codePoints.toIntArray(),
-            advances,
-            imageAspects.toFloatArray(),
-            imageWidths.toFloatArray(),
-            imageFullWidth,
-            fullPageWidth,
-            imageMaxHeightRatio,
-            imagePlaceholder,
-            measuredMonoEm,
-        )
-        val pages = if (raw.isNullOrEmpty()) {
-            emptyList()
-        } else {
-            raw.split('\u0000').map { page -> page.split('\n').map(::decodeNativeLine) }
-        }
-        android.util.Log.i(
-            "SaltReaderNative",
-            "paginate ${htmlChapters.size} chapters -> ${pages.size} pages in " +
-                "${(System.nanoTime() - startedAt) / 1_000_000}ms (token=$token)",
-        )
-        NativePageSet(
-            pages, imageRefs.toList(), imageAspects.toList(), imageWidths.toList(),
-            contentLeftPx, contentWidthPx, topPadPx, bottomPadPx, contentHeightPx,
-        )
-    }.getOrElse {
-        android.util.Log.w("SaltReaderNative", "native paginate failed (token=$token)", it)
-        null
-    }
-}
-
-/**
- * 两端对齐：按 Blink 的可拉伸边界（空格之后、CJK 两侧）拉开间距，
- * 最后一行由 Rust 标记为左对齐，不参与拉伸。
- *
- * 这段逻辑在 Canvas 的 draw lambda 里，每次重绘都会跑一遍；一页 20 行 × 25 字意味着每帧
- * 上千次 `measureText` + `substring`。这里把「切簇 + 量宽 + 数边界」的结果按行缓存，
- * 绘制端仍然逐簇 `drawText`，渲染结果与逐帧重算完全一致，只是不再重复测量。
- */
-private class JustifiedLayout(
-    val source: String,
-    val clusters: Array<String>,
-    val widths: FloatArray,
-    val boundaries: BooleanArray,
-    val measured: Float,
-    val gaps: Int,
-    /** 每个字都是可拉伸边界（纯 CJK 行）：可以用 letterSpacing 一次画完整行。 */
-    val uniform: Boolean,
-)
-
-/** 行文本 + 画笔特征 → 布局。key 碰撞时用 `source === text` 复核，不会错绘。 */
-private val justifiedLayouts = object : LruCache<Long, JustifiedLayout>(512) {
-    override fun sizeOf(key: Long, value: JustifiedLayout): Int = 1
-}
-
-private fun paintSignature(paint: Paint): Int {
-    var h = System.identityHashCode(paint)
-    h = 31 * h + paint.textSize.toBits()
-    h = 31 * h + (paint.typeface?.hashCode() ?: 0)
-    h = 31 * h + paint.letterSpacing.toBits()
-    h = 31 * h + paint.textScaleX.toBits()
-    h = 31 * h + paint.textSkewX.toBits()
-    return h
-}
-
-private fun justifiedLayout(text: String, paint: Paint): JustifiedLayout {
-    val key = (text.hashCode().toLong() shl 32) xor paintSignature(paint).toLong()
-    justifiedLayouts.get(key)?.let { if (it.source === text) return it }
-
-    val clusters = ArrayList<String>(text.length)
-    val widths = ArrayList<Float>(text.length)
-    var index = 0
-    while (index < text.length) {
-        val codePoint = text.codePointAt(index)
-        val count = Character.charCount(codePoint)
-        val cluster = text.substring(index, index + count)
-        clusters.add(cluster)
-        widths.add(paint.measureText(cluster))
-        index += count
-    }
-    val measured = widths.sum()
-    val boundaries = BooleanArray(clusters.size)
-    var gaps = 0
-    for (position in 0 until clusters.size - 1) {
-        val previous = clusters[position]
-        val next = clusters[position + 1]
-        if (TextJustification.isExpansionBoundary(
-                previous.codePointBefore(previous.length),
-                next.codePointAt(0),
-            )
-        ) {
-            boundaries[position] = true
-            gaps++
-        }
-    }
-    val layout = JustifiedLayout(
-        source = text,
-        clusters = clusters.toTypedArray(),
-        widths = FloatArray(widths.size) { widths[it] },
-        boundaries = boundaries,
-        measured = measured,
-        gaps = gaps,
-        uniform = gaps == clusters.size - 1 && clusters.size >= 2,
-    )
-    justifiedLayouts.put(key, layout)
-    return layout
-}
-
-private fun drawJustifiedLine(
-    canvas: android.graphics.Canvas,
-    text: String,
-    x: Float,
-    baseline: Float,
-    targetWidth: Float,
-    paint: Paint,
-) {
-    val layout = justifiedLayout(text, paint)
-    val measured = layout.measured
-    if (measured <= 0f || targetWidth <= measured + 0.5f || layout.clusters.size < 2) {
-        canvas.drawText(text, x, baseline, paint)
-        return
-    }
-    if (layout.gaps == 0) {
-        canvas.drawText(text, x, baseline, paint)
-        return
-    }
-    val extra = (targetWidth - measured) / layout.gaps
-    // 纯 CJK 行每个字后都要加同样的间距：用 Paint.letterSpacing 一次画完整行，
-    // 把每帧几十次 drawText 降到一次（拉丁/含空格的行仍走逐簇绘制）。
-    if (layout.uniform) {
-        val original = paint.letterSpacing
-        paint.letterSpacing = extra / paint.textSize
-        canvas.drawText(text, x, baseline, paint)
-        paint.letterSpacing = original
-        return
-    }
-    var cursor = x
-    layout.clusters.forEachIndexed { position, cluster ->
-        canvas.drawText(cluster, cursor, baseline, paint)
-        cursor += layout.widths[position]
-        if (layout.boundaries[position]) cursor += extra
-    }
-}
-
-/** 解析 Rust 返回的样式前缀；兼容无前缀的纯文本行。 */
-private fun imageInfo(bytes: ByteArray): Pair<Float, Float> = runCatching {
-    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-    val width = options.outWidth
-    val height = options.outHeight
-    if (width > 0 && height > 0) {
-        (width.toFloat() / height.toFloat()) to width.toFloat()
-    } else {
-        1.5f to 0f
-    }
-}.getOrElse { 1.5f to 0f }
-
-private fun imageAspect(bytes: ByteArray): Float = runCatching {
-    val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-    val width = options.outWidth
-    val height = options.outHeight
-    if (width > 0 && height > 0) width.toFloat() / height.toFloat() else 1.5f
-}.getOrElse { 1.5f }
-
-private const val MAX_CACHED_IMAGES = 24
-private const val MAX_IMAGE_CACHE_BYTES = 48L * 1024 * 1024
-
-/** 一页里出现的图片 id（块级图片 + 行内 \u0004 token），用于预渲染。 */
-private fun pageImageIds(pageSet: NativePageSet, pageIndex: Int): List<Int> {
-    val page = pageSet.pages.getOrNull(pageIndex) ?: return emptyList()
-    val ids = LinkedHashSet<Int>()
-    for (line in page) {
-        if (line.imageId >= 0) ids.add(line.imageId)
-        var position = line.text.indexOf('\u0004')
-        while (position >= 0) {
-            val end = line.text.indexOf('\u0005', position)
-            if (end < 0) break
-            line.text.substring(position + 1, end).toIntOrNull()?.let { ids.add(it) }
-            position = line.text.indexOf('\u0004', end + 1)
-        }
-    }
-    return ids.toList()
-}
-
-private fun resolveImageBytes(ref: ImageRef, chapters: List<EbookChapter>): ByteArray? {
-    val html = chapters.getOrNull(ref.chapterIndex)?.html ?: return null
-    val match = NATIVE_DATA_URI.findAll(html).elementAtOrNull(ref.dataUriIndex) ?: return null
-    return runCatching { Base64.decode(match.groupValues[2], Base64.DEFAULT) }.getOrNull()
-}
-
-private fun decodeInlineBitmap(
-    ref: ImageRef,
-    chapters: List<EbookChapter>,
-    targetWidth: Int,
-): Bitmap? = runCatching {
-    val bytes = resolveImageBytes(ref, chapters) ?: return@runCatching null
-    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
-    val width = bounds.outWidth
-    if (width <= 0) return@runCatching null
-    var sample = 1
-    while (width / (sample * 2) >= targetWidth.coerceAtLeast(1)) sample *= 2
-    val options = BitmapFactory.Options().apply { inSampleSize = sample }
-    BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
-}.getOrNull()
-
-internal fun decodeNativeLine(raw: String): NativeLine {
-    if (raw.length >= 8 && raw[0] == '\u0003') {
-        return NativeLine(
-            text = "",
-            imageId = raw.substring(1, 6).toIntOrNull() ?: -1,
-            gapEm = raw.substring(6, 8).toFloatOrNull()?.div(10f) ?: 0f,
-        )
-    }
-    if (raw.length >= 18 && raw[0] == '\u0002') {
-        val col = raw.substring(1, 3).toIntOrNull() ?: 0
-        val cols = raw.substring(3, 5).toIntOrNull() ?: 0
-        val flags = raw[5].digitToIntOrNull() ?: 0
-        val inner = decodeNativeLine(raw.substring(6))
-        return inner.copy(
-            tableCol = col,
-            tableCols = cols,
-            tableRowStart = flags and 1 != 0,
-            tableLastRow = flags and 2 != 0,
-            tableRowEnd = flags and 4 != 0,
-        )
-    }
-    if (raw.length < 12 || raw[0] != '\u0001') return NativeLine(raw)
-    return NativeLine(
-        text = raw.substring(12),
-        sizeRatio = raw.substring(1, 3).toFloatOrNull()?.div(10f) ?: 1f,
-        lineHeightRatio = raw.substring(3, 5).toFloatOrNull()?.div(10f) ?: 1.8f,
-        bold = raw[5] == '1' || raw[5] == '3' || raw[5] == '5' || raw[5] == '7',
-        italic = raw[5] == '2' || raw[5] == '3' || raw[5] == '6' || raw[5] == '7',
-        mono = raw[5] == '4' || raw[5] == '5' || raw[5] == '6' || raw[5] == '7',
-        align = raw.substring(6, 8).toIntOrNull() ?: 0,
-        leftIndentEm = raw.substring(8, 10).toFloatOrNull()?.div(10f) ?: 0f,
-        gapEm = raw.substring(10, 12).toFloatOrNull()?.div(10f) ?: 0f,
-    )
-}
-
-/**
- * 原生排版只需要文字结构：把 base64 内联图片、内联 SVG、超长 data URI 去掉，
- * 避免把整本图片书的负载复制进 Rust（否则内存会被放大到 OOM）。
- */
-private fun String.stripHeavyPayloads(): String {
-    if (!contains("data:") && !contains("<svg", ignoreCase = true) && length < 2_000_000) {
-        return this
-    }
-    var result = this
-    if (result.contains("<svg", ignoreCase = true)) {
-        result = result.replace(Regex("(?is)<svg.*?</svg>"), "［图片］")
-    }
-    if (result.contains("data:")) {
-        result = result.replace(Regex("(?is)data:[^\"'\\s>]{64,}"), "data:image")
-    }
-    if (result.contains("<img", ignoreCase = true)) {
-        result = result.replace(Regex("(?is)<img(?![^>]*data-salt-img)[^>]*>"), "［图片］")
-    }
-    return result
-}
-
-private fun String.escapeHtml(): String = this
-    .replace("&", "&amp;")
-    .replace("<", "&lt;")
-    .replace(">", "&gt;")
-    .replace("\"", "&quot;")
-
-/**
- * 解析原生渲染用的 Typeface：自定义字体（字体目录文件或系统字体）+ 回退字体链。
- * API 29+ 用 [Typeface.CustomFallbackBuilder] 把回退字体串成真正的 fallback chain；
- * 更低版本退回主字体（Android 仍会做系统兜底）。
- */
-private fun nativeTypeface(context: Context, settings: AppSettings): Typeface {
-    val customRef = settings.readerCustomFont
-    val customFile = if (settings.readerFontFamily == ReaderFontFamily.CUSTOM) {
-        customFontFile(context, customRef)
-    } else {
-        null
-    }
-    if (customFile != null && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-        val fallbackRefs = listOfNotNull(
-            settings.readerFontFallback1,
-            settings.readerFontFallback2,
-            settings.readerFontFallback3,
-        )
-        val fallbackFiles = fallbackRefs.mapNotNull { customFontFile(context, it) }
-        val systemFallback = fallbackRefs.firstOrNull { it.source == ReaderFontSource.SYSTEM }?.key
-        return runCatching {
-            val builder = Typeface.CustomFallbackBuilder(fontFamilyOf(customFile))
-            fallbackFiles.forEach { builder.addCustomFallback(fontFamilyOf(it)) }
-            if (fallbackFiles.isEmpty() && !systemFallback.isNullOrBlank()) {
-                builder.setSystemFallback(systemFallback)
-            }
-            builder.build()
-        }.getOrElse { Typeface.createFromFile(customFile) }
-    }
-    return when (settings.readerFontFamily) {
-        ReaderFontFamily.SONG -> Typeface.SERIF
-        ReaderFontFamily.HEI -> Typeface.SANS_SERIF
-        ReaderFontFamily.CUSTOM -> {
-            if (customRef?.source == ReaderFontSource.SYSTEM) {
-                runCatching { Typeface.create(customRef.key, Typeface.NORMAL) }.getOrElse { Typeface.SANS_SERIF }
-            } else {
-                Typeface.SANS_SERIF
-            }
-        }
-    }
-}
-
-private fun customFontFile(context: Context, ref: ReaderFontRef?): java.io.File? {
-    if (ref == null || ref.key.isBlank() || ref.source != ReaderFontSource.DOCUMENT) return null
-    return ReaderFonts.ensureCached(context, ref)
-}
-
-// Callers already gate this on Build.VERSION_CODES.Q; the annotation makes that contract
-// explicit because lint cannot see the guard across the function boundary.
-@RequiresApi(Build.VERSION_CODES.Q)
-private fun fontFamilyOf(file: java.io.File): android.graphics.fonts.FontFamily =
-    android.graphics.fonts.FontFamily.Builder(android.graphics.fonts.Font.Builder(file).build()).build()
-
-private fun nativeChapterIndex(offset: Long, prefix: LongArray): Int {
-    var low = 0
-    var high = prefix.size - 1
-    while (low < high) {
-        val mid = (low + high + 1) ushr 1
-        if (prefix[mid] <= offset) low = mid else high = mid - 1
-    }
-    return (low - 1).coerceIn(0, (prefix.size - 2).coerceAtLeast(0))
-}
-
-private fun Color.toArgbCompat(): Int = android.graphics.Color.argb(
-    (alpha * 255).roundToInt(),
-    (red * 255).roundToInt(),
-    (green * 255).roundToInt(),
-    (blue * 255).roundToInt(),
-)
