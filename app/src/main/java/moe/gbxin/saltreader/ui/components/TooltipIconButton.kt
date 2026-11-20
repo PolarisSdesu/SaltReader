@@ -40,7 +40,7 @@ fun TooltipIconButton(
                     TooltipAnchorPosition.Below,
                 )
             } else {
-                TooltipDefaults.rememberPlainTooltipPositionProvider()
+                TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above)
             },
             tooltip = { PlainTooltip { Text(label) } },
             state = rememberTooltipState(),
@@ -54,7 +54,8 @@ fun TooltipIconButton(
                         var moved = false
                         var released = false
                         val timeout = viewConfiguration.longPressTimeoutMillis
-                        val timedOut = withTimeoutOrNull(timeout) {
+                        // 按住超过长按阈值且没有移动/松开时给一次震动；循环靠超时取消。
+                        withTimeoutOrNull(timeout) {
                             while (true) {
                                 val event = awaitPointerEvent()
                                 val change = event.changes.firstOrNull { it.id == down.id } ?: break
@@ -69,9 +70,8 @@ fun TooltipIconButton(
                                     break
                                 }
                             }
-                            null
                         }
-                        if (timedOut == null && !moved && !released) {
+                        if (!moved && !released) {
                             hostView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                         }
                     }

@@ -13,12 +13,19 @@ mod html;
 mod layout;
 mod jni_api;
 
+// 测试模块统一从 crate 根拿到 html/layout/style 的公开项。
+#[cfg(test)]
+pub(crate) use std::collections::HashMap;
+#[cfg(test)]
+pub(crate) use crate::html::*;
+#[cfg(test)]
+pub(crate) use crate::layout::*;
+#[cfg(test)]
+pub(crate) use crate::style::*;
+
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-    use crate::html::*;
-    use crate::layout::*;
-    use crate::style::*;
+    use super::*;
 
     #[test]
     fn parses_table_into_block() {
@@ -33,10 +40,7 @@ mod tests {
 
 #[cfg(test)]
 mod gap_tests {
-    use std::collections::HashMap;
-    use crate::html::*;
-    use crate::layout::*;
-    use crate::style::*;
+    use super::*;
 
 
 
@@ -266,10 +270,7 @@ mod gap_tests {
 
 #[cfg(test)]
 mod chapter_break_tests {
-    use std::collections::HashMap;
-    use crate::html::*;
-    use crate::layout::*;
-    use crate::style::*;
+    use super::*;
 
     /// 上一页只有插图时，下一章的标题/正文应接在同一页（与 WebView 插图章一致）。
     #[test]
@@ -330,10 +331,7 @@ mod chapter_break_tests {
 
 #[cfg(test)]
 mod inline_code_break_tests {
-    use std::collections::HashMap;
-    use crate::html::*;
-    use crate::layout::*;
-    use crate::style::*;
+    use super::*;
 
     fn layout(html: &str, width: f32, font: f32) -> Vec<Vec<RenderLine>> {
         let mut after = 0.0;
@@ -392,10 +390,7 @@ mod inline_code_break_tests {
 
 #[cfg(test)]
 mod heading_style_tests {
-    use std::collections::HashMap;
-    use crate::html::*;
-    use crate::layout::*;
-    use crate::style::*;
+    use super::*;
 
     #[test]
     fn generated_chapter_heading_uses_web_view_margins() {
@@ -416,10 +411,7 @@ mod heading_style_tests {
 
 #[cfg(test)]
 mod html5_structure_tests {
-    use std::collections::HashMap;
-    use crate::html::*;
-    use crate::layout::*;
-    use crate::style::*;
+    use super::*;
 
     fn blocks(html: &str) -> Vec<Block> {
         let mut after = 0.0;
@@ -511,10 +503,7 @@ mod html5_structure_tests {
 
 #[cfg(test)]
 mod perf_bench {
-    use std::collections::HashMap;
-    use crate::html::*;
-    use crate::layout::*;
-    use crate::style::*;
+    use super::*;
     use std::time::Instant;
 
     /// 手动基准：`cargo test --release bench_large_book -- --ignored --nocapture`

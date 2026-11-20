@@ -475,10 +475,11 @@ pub(crate) fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &
                         "code" | "tt" => inline.depth[2] = inline.depth[2].saturating_sub(1),
                         _ => {}
                     }
-                } else if tag == "p" || tag == "li" || tag == "td" || tag == "th" {
-                    if !text.ends_with('\n') && !text.is_empty() {
-                        text.push('\n');
-                    }
+                } else if (tag == "p" || tag == "li" || tag == "td" || tag == "th")
+                    && !text.ends_with('\n')
+                    && !text.is_empty()
+                {
+                    text.push('\n');
                 }
                 continue;
             }
@@ -535,11 +536,11 @@ pub(crate) fn parse_html_blocks(html: &str, css_rules: &[CssRule], base_after: &
 
             if is_block_tag(&tag) {
                 flush_block(&mut blocks, &mut text, current_style, preserve, base_after);
-                if tag == "li" {
-                    if let Some(counter) = ol_stack.last_mut() {
-                        *counter += 1;
-                        text.push_str(&format!("{}. ", counter));
-                    }
+                if tag == "li"
+                    && let Some(counter) = ol_stack.last_mut()
+                {
+                    *counter += 1;
+                    text.push_str(&format!("{}. ", counter));
                 }
                 tag_stack.push(tag.clone());
                 let class_attr = attr_value(attributes, "class");
@@ -712,15 +713,15 @@ pub(crate) fn apply_class_css(
 pub(crate) fn rules_display_none(tag: &str, class_attr: &str, rules: &[CssRule]) -> bool {
     let classes: Vec<&str> = class_attr.split_whitespace().collect();
     for rule in rules {
-        if let Some(rule_tag) = &rule.tag {
-            if rule_tag != tag {
-                continue;
-            }
+        if let Some(rule_tag) = &rule.tag
+            && rule_tag != tag
+        {
+            continue;
         }
-        if let Some(rule_class) = &rule.class_name {
-            if !classes.contains(&rule_class.as_str()) {
-                continue;
-            }
+        if let Some(rule_class) = &rule.class_name
+            && !classes.contains(&rule_class.as_str())
+        {
+            continue;
         }
         for (name, value) in &rule.declarations {
             if name == "display" && value.eq_ignore_ascii_case("none") {

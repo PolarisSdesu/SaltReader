@@ -54,6 +54,7 @@ import moe.gbxin.saltreader.ui.icons.ViewCarousel
 import moe.gbxin.saltreader.ui.icons.ViewStream
 import moe.gbxin.saltreader.ui.icons.WbSunny
 import androidx.compose.material3.ButtonGroupDefaults
+import androidx.compose.material3.TooltipAnchorPosition
 import androidx.compose.material3.ToggleButton
 import androidx.compose.material3.ToggleButtonDefaults
 import androidx.compose.material3.HorizontalDivider
@@ -408,7 +409,7 @@ private fun ReaderBarIcon(
     // 外层 Box 承载 Row 的 weight；TooltipBox 自身不吃 weight，否则会占满整行。
     Box(modifier = modifier, contentAlignment = Alignment.Center) {
         TooltipBox(
-            positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+            positionProvider = TooltipDefaults.rememberTooltipPositionProvider(TooltipAnchorPosition.Above),
             tooltip = { PlainTooltip { Text(label) } },
             state = rememberTooltipState(),
         ) {
@@ -424,7 +425,7 @@ private fun ReaderBarIcon(
                             var moved = false
                             var released = false
                             val timeout = viewConfiguration.longPressTimeoutMillis
-                            val timedOut = withTimeoutOrNull(timeout) {
+                            withTimeoutOrNull(timeout) {
                                 while (true) {
                                     val event = awaitPointerEvent()
                                     val change = event.changes.firstOrNull { it.id == down.id } ?: break
@@ -439,9 +440,8 @@ private fun ReaderBarIcon(
                                         break
                                     }
                                 }
-                                null
                             }
-                            if (timedOut == null && !moved && !released) {
+                            if (!moved && !released) {
                                 hostView.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
                             }
                         }

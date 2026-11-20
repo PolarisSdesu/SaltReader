@@ -82,7 +82,6 @@ import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -98,6 +97,7 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.graphics.withClip
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.collectLatest
 import moe.gbxin.saltreader.data.ReaderPageInfo
@@ -1529,7 +1529,7 @@ internal fun NativeTextReaderContent(
                                 val dashPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
                                     style = Paint.Style.STROKE
                                     strokeWidth = 1.dp.toPx()
-                                    color = 0x73009688.toInt()
+                                    color = 0x73009688
                                     pathEffect = DashPathEffect(floatArrayOf(4.dp.toPx(), 4.dp.toPx()), 0f)
                                 }
                                 // 直接复用绘制端的 lineTops：图片/表格/段间距的推进与真实内容完全一致，

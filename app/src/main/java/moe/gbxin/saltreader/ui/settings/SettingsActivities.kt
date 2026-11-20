@@ -92,6 +92,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Slider
+import androidx.compose.material3.rememberSliderState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
@@ -1552,9 +1553,18 @@ private fun SettingsSliderRow(
 ) {
     var draft by remember { mutableFloatStateOf(value.coerceIn(valueRange)) }
     var dragging by remember { mutableStateOf(false) }
-    // 外部值（例如恢复默认值）变化时同步草稿；拖动中不打断手指位置。
+    val sliderState = rememberSliderState(
+        value = draft,
+        steps = steps,
+        trackRange = valueRange,
+    )
+    // 外部值（例如恢复默认值）变化时同步草稿与滑杆；拖动中不打断手指位置。
     LaunchedEffect(value, dragging) {
-        if (!dragging) draft = value.coerceIn(valueRange)
+        if (!dragging) {
+            val target = value.coerceIn(valueRange)
+            draft = target
+            if (sliderState.value != target) sliderState.value = target
+        }
     }
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
@@ -1568,7 +1578,7 @@ private fun SettingsSliderRow(
             )
         }
         Slider(
-            value = draft,
+            state = sliderState,
             onValueChange = { dragged ->
                 dragging = true
                 draft = dragged.coerceIn(valueRange)
@@ -1577,8 +1587,6 @@ private fun SettingsSliderRow(
                 dragging = false
                 onValueChange(draft)
             },
-            valueRange = valueRange,
-            steps = steps,
             modifier = Modifier.fillMaxWidth().padding(start = 40.dp),
         )
     }

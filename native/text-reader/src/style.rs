@@ -87,7 +87,7 @@ pub(crate) fn apply_declarations(style: &mut Style, declarations: &[(String, Str
                 }
             }
             "line-height" => {
-                if let Some(multiplier) = value.parse::<f32>().ok() {
+                if let Ok(multiplier) = value.parse::<f32>() {
                     style.line_height = Some(multiplier.clamp(0.9, 3.0));
                 }
             }
@@ -113,10 +113,7 @@ pub(crate) fn apply_declarations(style: &mut Style, declarations: &[(String, Str
                     "margin-top" => style.space_before = parts.first().copied().unwrap_or(0.0),
                     "margin-bottom" => style.space_after = parts.first().copied().unwrap_or(0.0),
                     _ => {
-                        if parts.len() >= 4 {
-                            style.space_before = parts[0];
-                            style.space_after = parts[2];
-                        } else if parts.len() == 3 {
+                        if parts.len() >= 3 {
                             style.space_before = parts[0];
                             style.space_after = parts[2];
                         } else if parts.len() == 2 {

@@ -159,6 +159,8 @@ class ReaderActivity : LocalizedActivity() {
                     }
                     if (settings.debugMode) {
                         // 调试浮层覆盖在所有阅读器（图片 / WebView / 原生）之上；点一下折叠。
+                        // currentWindowMetrics 不暴露刷新率，调试用途继续用 defaultDisplay。
+                        @Suppress("DEPRECATION")
                         val refreshRate = remember {
                             getSystemService(android.view.WindowManager::class.java)
                                 ?.defaultDisplay?.refreshRate ?: 60f

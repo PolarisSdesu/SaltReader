@@ -773,9 +773,6 @@ private fun ReaderFontListItem(
     onClick: () -> Unit,
 ) {
     ListItem(
-        headlineContent = {
-            Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        },
         supportingContent = supporting?.let {
             { Text(it, style = MaterialTheme.typography.bodySmall) }
         },
@@ -814,7 +811,9 @@ private fun ReaderFontListItem(
             .fillMaxWidth()
             .clip(MaterialTheme.shapes.extraLarge)
             .clickable(role = Role.RadioButton, onClick = onClick),
-    )
+    ) {
+        Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 /** 字体样张：有 Typeface 时直接用该字体的字形渲染 "Aa"，否则显示图标。 */

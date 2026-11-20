@@ -76,10 +76,10 @@ pub(crate) fn char_width(ch: char, font_size: f32, scale: f32, advances: &WidthT
     if ('\u{E000}'..='\u{E016}').contains(&ch) {
         return 0.0;
     }
-    if let Some(w) = advances.get(ch as u32) {
-        if w > 0.0 {
-            return w * scale;
-        }
+    if let Some(w) = advances.get(ch as u32)
+        && w > 0.0
+    {
+        return w * scale;
     }
     match UnicodeWidthChar::width(ch).unwrap_or(1) {
         2 => font_size,
@@ -262,6 +262,7 @@ pub(crate) fn image_box_height(width: f32, page_height: f32, aspect: f32, max_he
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn layout_blocks(
     blocks: &[Block],
     chapter_starts: &[usize],
@@ -648,10 +649,11 @@ pub(crate) fn layout_blocks(
                 continue;
             }
             // 记录行内样式标记，供折行后重新开启；\u000E 之后的字符按 0.92em 等宽估算。
-            if let Some(ch) = grapheme.chars().next() {
-                if grapheme.len() == ch.len_utf8() && ('\u{E000}'..='\u{E016}').contains(&ch) {
-                    markers.observe(ch);
-                }
+            if let Some(ch) = grapheme.chars().next()
+                && grapheme.len() == ch.len_utf8()
+                && ('\u{E000}'..='\u{E016}').contains(&ch)
+            {
+                markers.observe(ch);
             }
             let width = grapheme
                 .chars()

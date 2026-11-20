@@ -49,23 +49,23 @@ pub extern "system" fn Java_moe_gbxin_saltreader_data_NativeTextLayout_paginateH
     }
 
     let mut aspect_list: Vec<f32> = Vec::new();
-    if let Ok(length) = env.get_array_length(&image_aspects) {
-        if length > 0 {
-            let mut values = vec![0f32; length as usize];
-            if env.get_float_array_region(&image_aspects, 0, &mut values).is_ok() {
-                aspect_list = values;
-            }
+    if let Ok(length) = env.get_array_length(&image_aspects)
+        && length > 0
+    {
+        let mut values = vec![0f32; length as usize];
+        if env.get_float_array_region(&image_aspects, 0, &mut values).is_ok() {
+            aspect_list = values;
         }
     }
 
     // 图片原始宽度（物理 px，0 = 不限）：对应 WebView 的 max-width 语义。
     let mut width_list: Vec<f32> = Vec::new();
-    if let Ok(length) = env.get_array_length(&image_widths) {
-        if length > 0 {
-            let mut values = vec![0f32; length as usize];
-            if env.get_float_array_region(&image_widths, 0, &mut values).is_ok() {
-                width_list = values;
-            }
+    if let Ok(length) = env.get_array_length(&image_widths)
+        && length > 0
+    {
+        let mut values = vec![0f32; length as usize];
+        if env.get_float_array_region(&image_widths, 0, &mut values).is_ok() {
+            width_list = values;
         }
     }
 

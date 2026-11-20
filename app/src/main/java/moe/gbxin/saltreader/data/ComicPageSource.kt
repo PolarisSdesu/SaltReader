@@ -106,6 +106,9 @@ private fun pageBytesSize(page: PageBytes): Size? = runCatching {
     if (options.outWidth > 0 && options.outHeight > 0) Size(options.outWidth, options.outHeight) else null
 }.getOrNull()
 
+// ByteArray 重载在 API 31 起标记为 deprecated，但 ByteBuffer 版本只有 31+ 才有；
+// minSdk 26 下必须继续用它。
+@Suppress("DEPRECATION")
 private fun pageBytesOpenRegion(page: PageBytes): RegionPage? {
     val size = pageBytesSize(page) ?: return null
     val decoder = runCatching {
