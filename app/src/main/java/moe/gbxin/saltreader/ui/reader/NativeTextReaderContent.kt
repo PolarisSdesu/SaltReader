@@ -305,50 +305,6 @@ internal fun NativeTextReaderContent(
             )
             // 纵向：直接使用 Rust 分页结果（保证内容完整），页面按真实内容高度连续堆叠。
             val built = built0
-            if (built != null && settings.debugMode) {
-                if (settings.readerMode == ReaderMode.VERTICAL) {
-                    for ((pageIndex, page) in built.pages.withIndex()) {
-                        val first = page.firstOrNull()?.text?.replace('\u0001', ' ')?.take(16)
-                        val last = page.lastOrNull()?.text?.replace('\u0001', ' ')?.take(16)
-                        android.util.Log.i(
-                            "SaltReaderPerf",
-                            "page-summary idx=$pageIndex lines=${page.size} first=\"$first\" last=\"$last\"",
-                        )
-                    }
-                }
-            }
-            if (built != null && settings.debugMode) {
-                // 诊断：统计每块中图片/表格行，定位“视觉空白但占高”的行。
-                for ((chunkIndex, page) in built.pages.withIndex()) {
-                    val special = page.mapIndexedNotNull { lineIndex, line ->
-                        val hasText = if (line.text.isEmpty()) false else run {
-                            var visible = false
-                            var position = 0
-                            while (position < line.text.length) {
-                                val ch = line.text[position]
-                                if (ch == '\u0004') {
-                                    val end = line.text.indexOf('\u0005', position)
-                                    position = if (end < 0) line.text.length else end + 1
-                                    continue
-                                }
-                                if (!isInvisibleNativeChar(ch)) { visible = true; break }
-                                position += 1
-                            }
-                            visible
-                        }
-                        if (hasText) return@mapIndexedNotNull null
-                        val kind = when {
-                            line.imageId >= 0 -> "img id=${line.imageId} aspect=${built.imageAspects.getOrNull(line.imageId)}"
-                            line.tableCols > 0 -> "table col=${line.tableCol}/${line.tableCols} row=${line.tableRowStart}/${line.tableLastRow}"
-                            else -> "text len=${line.text.length}"
-                        }
-                        "chunk$chunkIndex line$lineIndex $kind gap=${line.gapEm} h=${line.lineHeightRatio} size=${line.sizeRatio}"
-                    }
-                    if (special.isNotEmpty()) {
-                        for (entry in special.take(4)) android.util.Log.i("SaltReaderPerf", "special-line $entry")
-                    }
-                }
-            }
             if (built != null && built.pages.isNotEmpty()) {
                 // 分页完成的同一帧内决定页码：首次按保存进度，重排（字号/行距/页边距）按比例恢复。
                 val savedRatio = (savedProgress.toFloat() / totalChars.toFloat()).coerceIn(0f, 1f)
@@ -1059,14 +1015,6 @@ internal fun NativeTextReaderContent(
         ) {
                 val drawPage: @Composable (List<NativeLine>, Float, Float, Boolean, Int) -> Unit = { pageLines, offsetX, topInset, showDebug, chunkIndex ->
                         Canvas(modifier.fillMaxSize().graphicsLayer { translationX = offsetX }) {
-                        if (settings.debugMode && chunkIndex >= 0 && offsetX == 0f) {
-                            android.util.Log.i(
-                                "SaltReaderPerf",
-                                "canvas-size chunk=$chunkIndex sizeH=${size.height} sizeW=${size.width} " +
-                                    "expect=${pageContentHeightPx(pageLines).roundToInt()} " +
-                                    "topInset=$topInset",
-                            )
-                        }
                         drawIntoCanvas { canvas ->
                             val layout = pageSet
                             var yTop = if (topInset.isNaN()) (layout?.topPadPx ?: topPadPx) else topInset
@@ -1443,24 +1391,6 @@ internal fun NativeTextReaderContent(
                                     }
                                 }
                                 flushText()
-                                if (settings.debugMode && offsetX == 0f && chunkIndex >= 0 &&
-                                    (line.text.contains("满肚子气") || line.text.contains("冰淇淋") || line.text.contains("什么事"))
-                                ) {
-                                    android.util.Log.i(
-                                        "SaltReaderPerf",
-                                        "probe chunk=$chunkIndex i=$lineIndex y=${yTop.roundToInt()} " +
-                                            "h=${lineBox.roundToInt()} text=\"${plainLineText(line).take(14)}\"",
-                                    )
-                                }
-                                if (settings.debugMode && offsetX == 0f && chunkIndex >= 0 && paintFor(line).measureText(plainLineText(line)) <= 0.5f) {
-                                    val plain = plainLineText(line)
-                                    android.util.Log.i(
-                                        "SaltReaderPerf",
-                                        "line10 i=$lineIndex y=${yTop.roundToInt()} gap=${debugGapPx.roundToInt()} " +
-                                            "plainLen=${plain.length} w=${paintFor(line).measureText(plain).roundToInt()} " +
-                                            "text=\"${plain.take(12)}\"",
-                                    )
-                                }
                                 yTop += lineBox
                             } else if (line.imageId >= 0) {
                                     // 插画：按宽高比预留整块，居中绘制；位图还没解码好时画占位块。
@@ -1499,13 +1429,6 @@ internal fun NativeTextReaderContent(
                                             dstSize = IntSize(imageWidth.roundToInt(), imageHeight.roundToInt()),
                                         )
                                     } else {
-                                        if (settings.debugMode) {
-                                            android.util.Log.i(
-                                                "SaltReaderPerf",
-                                                "image-miss id=${line.imageId} w=${imageWidth.roundToInt()} " +
-                                                    "h=${imageHeight.roundToInt()} y=${yTop.roundToInt()}",
-                                            )
-                                        }
                                         drawRoundRect(
                                             color = readerTextColor.copy(alpha = 0.06f),
                                             topLeft = Offset(left, yTop),
@@ -1638,16 +1561,6 @@ internal fun NativeTextReaderContent(
                                         dashPaint,
                                     )
                                 }
-                            }
-                            if (settings.debugMode && topInset == 0f && offsetX == 0f) {
-                                val measured = pageContentHeightPx(pageLines)
-                                val first = pageLines.firstOrNull()?.text?.replace('\u0001', ' ')?.take(14)
-                                val last = pageLines.lastOrNull()?.text?.replace('\u0001', ' ')?.take(14)
-                                android.util.Log.i(
-                                    "SaltReaderPerf",
-                                    "draw-chunk idx=$chunkIndex lines=${pageLines.size} measure=${measured.roundToInt()} " +
-                                        "drawn=${yTop.roundToInt()} first=\"$first\" last=\"$last\"",
-                                )
                             }
                         }
                     }
@@ -1790,15 +1703,6 @@ internal fun NativeTextReaderContent(
                 ) {
                     items(pages.size) { index ->
                         val itemHeightDp = with(density) { pageContentHeightPx(pages[index]).toDp() }
-                        if (settings.debugMode) {
-                            val lines = pages[index]
-                            android.util.Log.i(
-                                "SaltReaderPerf",
-                                "compose-item idx=$index lines=${lines.size} " +
-                                    "heightPx=${pageContentHeightPx(lines).roundToInt()} " +
-                                    "first=\"${lines.firstOrNull()?.text?.replace('\u0001', ' ')?.take(12)}\"",
-                            )
-                        }
                         var lastTouch by remember { mutableStateOf(Offset.Zero) }
                         Box(
                             Modifier
