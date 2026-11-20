@@ -87,9 +87,7 @@ pub(crate) fn decode_entities(input: &str) -> String {
 
 #[derive(Default)]
 pub(crate) struct InlineState {
-    pub(crate) bold: bool,
-    pub(crate) italic: bool,
-    pub(crate) mono: bool,
+    /// b / i / code / u / s / sup-sub 六层嵌套深度，用来判断闭合标签是否还在行内。
     pub(crate) depth: [u8; 6],
 }
 

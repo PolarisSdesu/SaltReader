@@ -283,7 +283,7 @@ pub(crate) fn layout_blocks(
     let mut y = 0.0f32;
     let mut pending_after = 0.0f32;
 
-    let mut new_page = |pages: &mut Vec<Vec<RenderLine>>, page_lines: &mut Vec<RenderLine>| {
+    let new_page = |pages: &mut Vec<Vec<RenderLine>>, page_lines: &mut Vec<RenderLine>| {
         if !page_lines.is_empty() {
             pages.push(std::mem::take(page_lines));
         }
@@ -321,7 +321,6 @@ pub(crate) fn layout_blocks(
             };
             let image_height = image_box_height(base_width, height, aspect, image_max_height_ratio);
             let gap = pending_after.max(block.style.space_before * font_size);
-            pending_after = 0.0;
             let mut gap_em = 0.0f32;
             if !page_lines.is_empty() || y > 0.0 {
                 if y + gap + image_height > height {
@@ -365,7 +364,6 @@ pub(crate) fn layout_blocks(
             let col_width = width / cols as f32;
             let cell_width = (col_width - pad * 2.0).max(8.0);
             let gap = pending_after.max(style.space_before * font_size);
-            pending_after = 0.0;
             let mut table_gap_em = 0.0f32;
             if !page_lines.is_empty() || y > 0.0 {
                 if y + gap > height {
@@ -464,7 +462,6 @@ pub(crate) fn layout_blocks(
 
         // WebView/CSS margin 折叠：相邻块间距取两者较大值，而不是相加。
         let gap = pending_after.max(style.space_before * font_size);
-        pending_after = 0.0;
         let mut line_gap_em = gap / font_size;
         if !page_lines.is_empty() || y > 0.0 {
             if y + gap > height {
@@ -540,7 +537,6 @@ pub(crate) fn layout_blocks(
                     );
                     first_line = false;
                     start_indent = 0.0;
-                    has_content = false;
                 }
                 line.push_str(&token);
                 line_width += inline_width;
@@ -614,7 +610,6 @@ pub(crate) fn layout_blocks(
                     );
                     first_line = false;
                     start_indent = 0.0;
-                    has_content = false;
                 }
                 line.push_str(&token);
                 line_width += ruby_width;
@@ -658,7 +653,7 @@ pub(crate) fn layout_blocks(
                     markers.observe(ch);
                 }
             }
-            let mut width = grapheme
+            let width = grapheme
                 .chars()
                 .map(|ch| {
                     if style.mono {
