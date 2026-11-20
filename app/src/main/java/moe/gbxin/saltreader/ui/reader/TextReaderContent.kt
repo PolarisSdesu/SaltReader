@@ -739,9 +739,9 @@ internal fun TextReaderContent(
         lastSentOffset = target
         lastSentAt = SystemClock.elapsedRealtime()
         vm.updateTextProgress(target)
-        val targetPage = (
-            (target.toDouble() / totalChars.toDouble()) * liveEstimatedTotalPages.value.toDouble()
-            ).roundToInt().coerceIn(1, liveEstimatedTotalPages.value)
+        // 页码按「页权重」估算，不能再用字符比例乘总页数：图片章节的字符权重只有 1，
+        // 两者换算出来的页码会差好几页。
+        val targetPage = pageForOffset(target).coerceIn(1, liveEstimatedTotalPages.value)
         pendingJumpPage = targetPage
         // Keep the page label in sync immediately. The WebView's restore callback is delayed and
         // can be dropped by the stale-event guard while it is rebuilding after a distant jump.
