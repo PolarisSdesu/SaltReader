@@ -327,7 +327,6 @@ internal fun ReaderDebugPanel(
     var dragX by rememberSaveable { mutableFloatStateOf(0f) }
     var dragY by rememberSaveable { mutableFloatStateOf(0f) }
     var placed by rememberSaveable { mutableStateOf(false) }
-    var lastPanelSize by remember { mutableStateOf(IntSize.Zero) }
     val windowSize = LocalWindowInfo.current.containerSize
     var panelSize by remember { mutableStateOf(IntSize.Zero) }
     // 拖动结束后短暂忽略点击，否则「拖完手指抬起」会被当成一次展开/折叠。
@@ -338,16 +337,12 @@ internal fun ReaderDebugPanel(
         val margin = with(density) { 16.dp.toPx() }
         val maxX = (windowSize.width - panelSize.width).coerceAtLeast(0).toFloat()
         val maxY = (windowSize.height - panelSize.height).coerceAtLeast(0).toFloat()
+        // 首次布局落到右下角；之后（含展开）保持左上角不动，只做屏幕内夹取。
         if (!placed) {
             dragX = (maxX - margin).coerceIn(0f, maxX)
             dragY = (maxY - margin).coerceIn(0f, maxY)
             placed = true
-        } else if (lastPanelSize != IntSize.Zero && lastPanelSize != panelSize) {
-            // 展开/折叠时保持右下角不动：位置跟着尺寸差平移，而不是只做边界夹取。
-            dragX += (panelSize.width - lastPanelSize.width).toFloat()
-            dragY += (panelSize.height - lastPanelSize.height).toFloat()
         }
-        lastPanelSize = panelSize
         dragX = dragX.coerceIn(0f, maxX)
         dragY = dragY.coerceIn(0f, maxY)
     }
